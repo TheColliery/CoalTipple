@@ -23,7 +23,7 @@ function freshProject() {
   return { dir, home };
 }
 const globalPath = (home) => path.join(home, '.claude', '.coaltipple.json');
-const projectPath = (dir) => path.join(dir, '.coaltipple.json');
+const projectPath = (dir) => path.join(dir, '.claude', '.coaltipple.json');
 const run = ({ dir, home }, ...a) =>
   spawnSync(process.execPath, [CONFIGURE, ...a],
     { cwd: dir, env: { ...process.env, USERPROFILE: home, HOME: home }, encoding: 'utf8', timeout: 60000 });
@@ -100,6 +100,7 @@ test('an existing config is edited in place; other keys + comments survive (proj
   const p = freshProject();
   try {
     // Seed a minimal commented project config, then flip one value via --project.
+    fs.mkdirSync(path.join(p.dir, '.claude'), { recursive: true });
     fs.writeFileSync(projectPath(p.dir),
       '{\n  // keep me\n  "mode": "auto",\n  "qualityBar": 60\n}\n', 'utf8');
     const r = run(p, '--project', '--mode', 'delegation');

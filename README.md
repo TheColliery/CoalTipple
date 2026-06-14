@@ -85,7 +85,7 @@ Because every staleness mode degrades **safe** (unknown → `heavy`, listed-but-
 
 A rate-limit is uncontrollable; the blast radius of a mid-run death is not.
 
-- A file-mutating delegation in a git repo prefers **worktree-isolation** (a kill discards the worktree, real files stay pristine); the `.coaltipple/proposed/` sandbox plus a `state.json` journal is the **git-agnostic** fallback (a resume skips the finished subtasks).
+- A file-mutating delegation in a git repo prefers **worktree-isolation** (a kill discards the worktree, real files stay pristine); the `<project>/.claude/.coaltipple/proposed/` sandbox plus a `state.json` journal is the **git-agnostic** fallback (a resume skips the finished subtasks).
 - A **limit-hit fallback** walks *down* the ranking to the next available tier (the availability move — the opposite of the quality climb) — within-tier first, then a tier down — but **never below a sensitive task's safe-minimum tier**.
 - A step with a **side-effect** (a bash mutation, an external call, a commit) is never delegated and never retried — a retry runs it twice, and bash is not checkpointed.
 
@@ -104,7 +104,7 @@ A worker starts **context-fresh** — it sees only the task contract, not the co
 
 CoalTipple ships zero-config: sensible, token-thrifty, safe defaults that work out of the box. Every value is tunable, and the schema is the single source of truth.
 
-- **Config lives in two levels.** A **global** `~/.claude/.coaltipple.json` holds your defaults for every project; an **optional per-project** `<project>/.coaltipple.json` overrides it. Precedence is **project → global → schema default** (a per-key shallow merge). A project file is created only when you customize one — a global install never clutters a project.
+- **Config lives in two levels.** A **global** `~/.claude/.coaltipple.json` holds your defaults for every project; an **optional per-project** `<project>/.claude/.coaltipple.json` overrides it. Precedence is **project → global → schema default** (a per-key shallow merge). A project file is created only when you customize one — a global install never clutters a project. Everything CoalTipple writes lives under `.claude/` (mirroring CoalMine): the global config and the shared model **ranking** sit at `~/.claude/`, the project override and per-project work-state at `<project>/.claude/`. The ranking is platform-level, so it is built once globally and shared across every project — nothing is left loose at a project root.
 - **The schema is the SSoT.** Every key (~22) is defined, typed, and range-checked in [`scripts/lib/config-schema.mjs`](scripts/lib/config-schema.mjs); `scripts/verify.mjs` validates the factory config against it, so a typo'd key or out-of-range value fails loud. The shipped factory config is fully commented — every key carries its purpose, type, and default inline.
 
 Representative keys (see the schema for the complete, authoritative list):
@@ -155,7 +155,7 @@ node scripts/install.mjs --uninstall <agent|PATH>
 node scripts/install.mjs --reset        # the ONLY path that restores factory config + ranking
 ```
 
-For a per-project override, set `<project>/.coaltipple.json` (or run `configure.mjs --project`). Your config and your refined ranking are preserved across every update — only `--reset` overwrites them.
+For a per-project override, set `<project>/.claude/.coaltipple.json` (or run `configure.mjs --project`). Your config and your refined ranking are preserved across every update — only `--reset` overwrites them.
 
 ### Verify
 

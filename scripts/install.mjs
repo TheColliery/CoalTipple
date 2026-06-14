@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 // CoalTipple installer — copy the coaltipple skill into a target agent's skills
-// dir, seed the factory .coaltipple.json and a floor model-ranking, and copy the
-// conductor hook. The SKILL.md is self-sufficient (it self-heals the ranking and
-// self-activates), so the conductor hook is an OPTIMIZATION, not a requirement.
-// Cross-platform. Run from YOUR project root (project targets resolve vs cwd).
+// dir, seed the factory .coaltipple.json (under .claude/) and the shared model
+// ranking, and copy the conductor hook. The SKILL.md is self-sufficient (it
+// self-heals the ranking and self-activates), so the conductor hook is an
+// OPTIMIZATION, not a requirement. Cross-platform. Run from YOUR project root.
 //   node scripts/install.mjs all            -> every agent configured in this repo
-//   node scripts/install.mjs claude         -> ~/.claude/skills/   (GLOBAL: seeds the global config)
-//   node scripts/install.mjs --global        -> seed only the global config (no skill copy)
+//   node scripts/install.mjs claude         -> ~/.claude/skills/   (GLOBAL: seeds the global config + ranking)
+//   node scripts/install.mjs --global        -> seed only the global config + ranking (no skill copy)
 //   node scripts/install.mjs <agent|PATH>
 //   node scripts/install.mjs --uninstall <agent|PATH>
-//   node scripts/install.mjs --reset        -> restore factory config + ranking (the ONLY overwrite; a user's config is otherwise never touched by install/update)
+//   node scripts/install.mjs --reset        -> restore factory config (--global also resets the shared ranking)
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -17,7 +17,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { TARGETS, detectPresentAgents } from './lib/targets.mjs';
 import { buildFloorRanking, writeRankingAtomic } from './lib/classify.mjs';
-import { globalConfigPath } from './lib/config-load.mjs';
+import { globalConfigPath, projectConfigPath, globalStateDir, projectStateDir } from './lib/config-load.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const skillSrc = path.join(repo, 'skills', 'coaltipple');
@@ -42,12 +42,9 @@ function installSkill(dest) {
   console.log(`  installed skill -> ${to}`);
 }
 
-// GLOBAL config seeding — for a global install (the `claude` target / --global).
-// Creates ~/.claude/.coaltipple.json (the user's defaults for ALL projects) only
-// when ABSENT; preserves an existing one (same hard rule as the project config).
-// --reset forces it back to factory. Does NOT create any project file (no-clutter:
-// a global install is not bound to one project's cwd) — per-project overrides are
-// created on demand via `configure.mjs --project`.
+// GLOBAL config seeding — ~/.claude/.coaltipple.json (the user's defaults for ALL
+// projects), create-if-absent; --reset forces it back to factory. Never creates a
+// project file (no-clutter) — per-project overrides come from configure.mjs --project.
 function seedGlobalConfig(force = false) {
   try {
     const dest = globalConfigPath();
@@ -59,34 +56,40 @@ function seedGlobalConfig(force = false) {
   } catch (e) { console.warn(`  [warn] global settings: ${e.message}`); process.exitCode = 1; }
 }
 
-// CONFIG PRESERVATION (the user's hard rule: an update must NEVER clobber a user's
-// settings). `.coaltipple.json` and `ranking.json` are created only when ABSENT;
-// the ONLY path that overwrites them is the explicit --reset (force=true). The
-// conductor hook is CODE, so it is always refreshed (an update should ship it).
-function seedProjectFiles(force = false) {
-  // 1. factory config — create-if-absent; never overwritten by (re)install. --reset forces it.
+// GLOBAL ranking seeding — ~/.claude/.coaltipple/ranking.json. The model ranking is
+// platform-level (the same models across every project), so it lives ONCE globally
+// and is shared; any install ensures it exists. Create-if-absent (it self-heals via
+// the validity gate on a model-list change); --reset --global re-seeds the floor.
+function seedGlobalRanking(force = false) {
   try {
-    const dest = path.join(process.cwd(), '.coaltipple.json');
-    if (force || !fs.existsSync(dest)) {
-      fs.copyFileSync(factoryCfg, dest);
-      console.log(`  ${force ? 'RESET settings to factory' : 'created default settings'} -> ${dest}`);
-    } else console.log(`  settings PRESERVED (yours, untouched) -> ${dest}`);
-  } catch (e) { console.warn(`  [warn] settings: ${e.message}`); process.exitCode = 1; }
-  // 2. floor ranking — seed-if-absent; preserved across updates (it self-heals via the
-  //    validity gate on a schema/list change). --reset re-seeds the floor.
-  try {
-    const stateDir = path.join(process.cwd(), '.coaltipple');
+    const stateDir = globalStateDir();
     const rankingPath = path.join(stateDir, 'ranking.json');
     if (force || !fs.existsSync(rankingPath)) {
       const ranking = buildFloorRanking([]);
       ranking.source = 'install-floor';
       writeRankingAtomic(stateDir, ranking);
-      console.log(`  ${force ? 'RESET ranking to floor' : 'seeded floor ranking'} -> ${rankingPath}`);
-    } else console.log(`  ranking PRESERVED (self-heals) -> ${rankingPath}`);
+      console.log(`  ${force ? 'RESET ranking to floor' : 'seeded shared floor ranking'} -> ${rankingPath}`);
+    } else console.log(`  ranking PRESERVED (self-heals, shared) -> ${rankingPath}`);
   } catch (e) { console.warn(`  [warn] ranking seed: ${e.message}`); process.exitCode = 1; }
-  // 3. conductor hook = CODE -> always refreshed so an update ships the new hook.
+}
+
+// PROJECT files (a non-global install) — all under <cwd>/.claude:
+//   .claude/.coaltipple.json        per-project config override (create-if-absent)
+//   .claude/.coaltipple/hooks/...   the conductor copy (CODE -> always refreshed)
+// The ranking is NOT here (it is global + shared). CONFIG PRESERVATION: the config is
+// created only when ABSENT; the ONLY overwrite is the explicit --reset.
+function seedProjectFiles(force = false) {
   try {
-    const hookDir = path.join(process.cwd(), '.coaltipple', 'hooks');
+    const dest = projectConfigPath();
+    fs.mkdirSync(path.dirname(dest), { recursive: true }); // ensure <cwd>/.claude exists
+    if (force || !fs.existsSync(dest)) {
+      fs.copyFileSync(factoryCfg, dest);
+      console.log(`  ${force ? 'RESET settings to factory' : 'created default settings'} -> ${dest}`);
+    } else console.log(`  settings PRESERVED (yours, untouched) -> ${dest}`);
+  } catch (e) { console.warn(`  [warn] settings: ${e.message}`); process.exitCode = 1; }
+  // conductor hook = CODE -> always refreshed so an update ships the new hook.
+  try {
+    const hookDir = path.join(projectStateDir(), 'hooks');
     fs.mkdirSync(hookDir, { recursive: true });
     fs.copyFileSync(conductorSrc, path.join(hookDir, 'coaltipple-conductor.js'));
     console.log(`  refreshed conductor -> ${path.join(hookDir, 'coaltipple-conductor.js')}`);
@@ -115,26 +118,28 @@ function isGlobalInstall(key, dest) {
   return isGlobalFlag || key === 'claude' || isGlobalDest(dest);
 }
 
-// The explicit reset — the ONLY action that overwrites a user's config + ranking.
-// Project-scoped by default (unchanged); --global resets the global config instead.
+// The explicit reset — the ONLY action that overwrites a user's config/ranking.
+// Project-scoped by default (project config); --global resets the global config + shared ranking.
 if (isReset) {
   if (isGlobalFlag) {
-    console.log(`\nCoalTipple --reset --global: restoring the factory global config`);
-    console.log(`  OVERWRITES ${globalConfigPath()}.`);
+    console.log(`\nCoalTipple --reset --global: restoring the factory global config + shared ranking`);
+    console.log(`  OVERWRITES ${globalConfigPath()} and ${path.join(globalStateDir(), 'ranking.json')}.`);
     seedGlobalConfig(true);
+    seedGlobalRanking(true);
   } else {
-    console.log(`\nCoalTipple --reset: restoring factory config + floor ranking in ${process.cwd()}`);
-    console.log('  OVERWRITES .coaltipple.json + .coaltipple/ranking.json. (Skill files untouched — reinstall separately.)');
+    console.log(`\nCoalTipple --reset: restoring the factory project config under ${path.join(process.cwd(), '.claude')}`);
+    console.log('  OVERWRITES .claude/.coaltipple.json. (The shared ranking is global — reset it with --reset --global. Skill files untouched.)');
     seedProjectFiles(true);
   }
   console.log('\nReset done.');
   process.exit(process.exitCode || 0);
 }
 
-// --global with no skill target -> seed only the global config (no skill copy).
+// --global with no skill target -> seed only the global config + ranking (no skill copy).
 if (isGlobalFlag && !targetArg) {
-  console.log(`\nCoalTipple --global: seeding the global default config`);
+  console.log(`\nCoalTipple --global: seeding the global default config + shared ranking`);
   seedGlobalConfig();
+  seedGlobalRanking();
   console.log(`\nDone. Per-project overrides: node scripts/configure.mjs --project ...`);
   process.exit(process.exitCode || 0);
 }
@@ -158,7 +163,8 @@ if (key === 'all') {
   console.log(`\nCoalTipple 'all' — detected: ${present.join(', ')}${absent.length ? `  ·  skipped: ${absent.join(', ')}` : ''}`);
   const seen = new Set();
   for (const a of present) { const d = TARGETS[a]; if (!seen.has(d)) { seen.add(d); installSkill(d); } }
-  console.log('\nSeeding project files...');
+  console.log('\nSeeding shared ranking + project files...');
+  seedGlobalRanking();
   seedProjectFiles();
   console.log(`\nDone: ${present.length} agent(s) -> ${seen.size} dir(s). Verify: node scripts/verify.mjs`);
   process.exit(process.exitCode || 0);
@@ -176,15 +182,17 @@ if (isUninstall) {
 
 console.log(`\nInstalling CoalTipple -> ${dest}`);
 installSkill(dest);
-// GLOBAL install (claude / --global / a ~/.claude dest) seeds the GLOBAL config only —
-// no project .coaltipple.json / ranking / conductor (those are created per-project on
-// demand). A PROJECT/PATH install keeps the existing project-scoped seeding.
+// GLOBAL install (claude / --global / a ~/.claude dest) seeds the GLOBAL config +
+// shared ranking — no project file. A PROJECT/PATH install ensures the shared ranking
+// exists, then seeds the project config + conductor under <cwd>/.claude.
 if (isGlobalInstall(key, dest)) {
-  console.log('\nSeeding global config...');
+  console.log('\nSeeding global config + shared ranking...');
   seedGlobalConfig();
+  seedGlobalRanking();
   console.log(`\nDone. Per-project overrides: node scripts/configure.mjs --project ...   Verify: node scripts/verify.mjs`);
 } else {
-  console.log('\nSeeding project files...');
+  console.log('\nSeeding shared ranking + project files...');
+  seedGlobalRanking();
   seedProjectFiles();
   console.log(`\nDone. Verify: node scripts/verify.mjs`);
 }

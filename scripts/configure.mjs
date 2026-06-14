@@ -12,7 +12,7 @@
 //
 // TWO-LEVEL CASCADE: by default it writes the GLOBAL config (~/.claude/.coaltipple.json)
 // = your defaults for ALL projects. Pass --project to write the per-project override
-// (<gitroot>/.coaltipple.json) instead — that file is created ONLY when you use
+// (<gitroot>/.claude/.coaltipple.json) instead — that file is created ONLY when you use
 // --project (no-clutter; a global install never auto-creates it). Effective precedence
 // is project > global > schema default; `--list` shows that merged effective config.
 //   node scripts/configure.mjs --qualityBar 85 --mode delegation   # edits GLOBAL
@@ -47,7 +47,7 @@ function printHelp() {
     '',
     'Target (default = GLOBAL):',
     '  (none)                                   Write the GLOBAL config ~/.claude/.coaltipple.json (your defaults for ALL projects)',
-    `  ${'--project, -p'.padEnd(40)} Write the per-project override <gitroot>/.coaltipple.json instead (created only when used)`,
+    `  ${'--project, -p'.padEnd(40)} Write the per-project override <gitroot>/.claude/.coaltipple.json instead (created only when used)`,
     '',
     'Options:',
   ];
@@ -130,7 +130,7 @@ function main() {
   // Target selection: GLOBAL by default; --project/-p writes the per-project override.
   const toProject = args.includes('--project') || args.includes('-p');
   const globalPath = globalConfigPath();
-  const projectPath = path.join(findGitRoot(process.cwd()), '.coaltipple.json');
+  const projectPath = path.join(findGitRoot(process.cwd()), '.claude', '.coaltipple.json');
   const configPath = toProject ? projectPath : globalPath;
 
   // Pure --list (no setting flags): show the MERGED effective config and stop.

@@ -1,7 +1,7 @@
 // Unit tests for the 2-level config cascade (scripts/lib/config-load.mjs).
 // Zero-dep (node:test + built-ins), per scripts-quality.md section 2. Each test
 // sandboxes BOTH layers: a throwaway `home` (whose .claude/.coaltipple.json is the
-// GLOBAL file) and a throwaway `cwd` (whose .coaltipple.json is the PROJECT file),
+// GLOBAL file) and a throwaway `cwd` (whose .claude/.coaltipple.json is the PROJECT file),
 // so a real machine config can never leak in.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -18,7 +18,10 @@ function sandbox({ global, project } = {}) {
     fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
     fs.writeFileSync(globalConfigPath(home), global, 'utf8');
   }
-  if (project !== undefined) fs.writeFileSync(projectConfigPath(cwd), project, 'utf8');
+  if (project !== undefined) {
+    fs.mkdirSync(path.dirname(projectConfigPath(cwd)), { recursive: true }); // <cwd>/.claude
+    fs.writeFileSync(projectConfigPath(cwd), project, 'utf8');
+  }
   return { home, cwd };
 }
 const cleanup = ({ home, cwd }) => {

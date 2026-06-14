@@ -7,8 +7,8 @@ The real assurance is **structural**, not a number from a scanner. CoalTipple's 
 - **The conductor hook is Phoenix-pure:** zero external dependencies, **no network** ever, **no child processes**, **fail-silent** (exits 0 on any error, never calls `process.exit`). It reads `.coaltipple.json` and the prompt — locally only — and emits an advisory routing hint. Nothing auto-executes.
 - **Advisory, not auto-executing.** Routing decisions are made by the model reading `SKILL.md`; there is no covert persistence and no data-exfiltration path. A worker is spawned only through the **platform's own native subagent tool**, under the platform's own permission gate — CoalTipple does not bypass it.
 - **The Lock fails safe.** If a valid model-ranking cannot be built, routing turns **OFF** and CoalTipple runs as a normal single agent. There are only two states: route correctly, or route off — it never routes on a broken ranking.
-- **No secrets.** No hardcoded keys or tokens; sensitive data is never read or logged; state is written atomically (temp + rename) under `.coaltipple/` only.
-- **Damage control.** A worker writes its proposal to a `.coaltipple/proposed/` sandbox (or an isolated git worktree) and main merges it deliberately, so a mid-run death never corrupts real files. A side-effect step (a bash mutation, an external call, a commit) is never delegated or retried.
+- **No secrets.** No hardcoded keys or tokens; sensitive data is never read or logged; state is written atomically (temp + rename) under `.claude/.coaltipple/` only.
+- **Damage control.** A worker writes its proposal to a `.claude/.coaltipple/proposed/` sandbox (or an isolated git worktree) and main merges it deliberately, so a mid-run death never corrupts real files. A side-effect step (a bash mutation, an external call, a commit) is never delegated or retried.
 
 ## Commit & tag signatures
 

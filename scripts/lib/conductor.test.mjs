@@ -42,7 +42,8 @@ test('SessionStart honors cfg.language -> directive names the language + keeps t
   const tmp = mk();
   try {
     fs.mkdirSync(path.join(tmp, '.git'));
-    fs.writeFileSync(path.join(tmp, '.coaltipple.json'), JSON.stringify({ language: 'th' }));
+    fs.mkdirSync(path.join(tmp, '.claude'), { recursive: true });
+    fs.writeFileSync(path.join(tmp, '.claude', '.coaltipple.json'), JSON.stringify({ language: 'th' }));
     const r = run({ hook_event_name: 'SessionStart' }, tmp, tmp); // empty home -> no global layer
     assert.equal(r.status, 0);
     assert.match(r.stdout, /Respond to the user in Thai/);
@@ -65,7 +66,8 @@ test('config cascade: project overrides global (project language wins the merge)
   const home = mkHomeGlobal({ language: 'ja' });
   try {
     fs.mkdirSync(path.join(tmp, '.git'));
-    fs.writeFileSync(path.join(tmp, '.coaltipple.json'), JSON.stringify({ language: 'th' }));
+    fs.mkdirSync(path.join(tmp, '.claude'), { recursive: true });
+    fs.writeFileSync(path.join(tmp, '.claude', '.coaltipple.json'), JSON.stringify({ language: 'th' }));
     const r = run({ hook_event_name: 'SessionStart' }, tmp, home);
     assert.equal(r.status, 0);
     assert.match(r.stdout, /Respond to the user in Thai/);
@@ -106,7 +108,8 @@ test('enableRouting:false (project) -> fully silent', () => {
   const tmp = mk();
   try {
     fs.mkdirSync(path.join(tmp, '.git'));
-    fs.writeFileSync(path.join(tmp, '.coaltipple.json'), JSON.stringify({ enableRouting: false }));
+    fs.mkdirSync(path.join(tmp, '.claude'), { recursive: true });
+    fs.writeFileSync(path.join(tmp, '.claude', '.coaltipple.json'), JSON.stringify({ enableRouting: false }));
     const r = run({ hook_event_name: 'SessionStart' }, tmp, tmp); // empty home -> no global layer
     assert.equal(r.status, 0);
     assert.equal(r.stdout, '');

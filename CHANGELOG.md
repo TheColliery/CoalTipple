@@ -2,6 +2,17 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.0.1] — 2026-06-14
+
+A file-layout cleanup: everything CoalTipple writes now lives under `.claude/`, and the model ranking is shared globally instead of rebuilt per project.
+
+### Changed
+- **All runtime files moved under `.claude/`** (mirroring CoalMine), so nothing is left loose at a project root. The per-project config moved from `<project>/.coaltipple.json` to **`<project>/.claude/.coaltipple.json`** (the global config was already `~/.claude/.coaltipple.json`); per-project work-state — the `proposed/` sandbox, the `state.json` journal, and the optional conductor copy — moved to **`<project>/.claude/.coaltipple/`**.
+- **The model ranking is now GLOBAL and shared** at **`~/.claude/.coaltipple/ranking.json`** instead of per-project. The model list is platform-level (it does not vary by project), so the ranking is built once and shared across every project, eliminating redundant per-project rebuilds. A per-project `--reset` no longer touches it; reset the shared ranking with `--reset --global`.
+
+### Note
+- This is a **breaking path change** (no root-path fallback, in keeping with the early/WIP status). Migrate an existing `<project>/.coaltipple.json` to `<project>/.claude/.coaltipple.json`; the old per-project `.coaltipple/ranking.json` can be deleted (the ranking is global now).
+
 ## [1.0.0] — 2026-06-14
 
 The v1 core — Claude Code first, built and dogfooded across its model tiers in a single session ("build it right once").

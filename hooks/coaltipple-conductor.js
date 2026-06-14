@@ -12,7 +12,7 @@ const os = require('os');
 
 // --- config cascade (BOM- and comment-tolerant, cached): GLOBAL then PROJECT ---
 //   GLOBAL  = <home>/.claude/.coaltipple.json   the user's defaults for ALL projects
-//   PROJECT = <gitroot>/.coaltipple.json         optional per-project OVERRIDE
+//   PROJECT = <gitroot>/.claude/.coaltipple.json optional per-project OVERRIDE
 // Shallow per-key merge, PROJECT wins (project > global > schema default). Either
 // file may be missing/corrupt — each is read in isolation and contributes nothing
 // on failure, so the merge always yields the best available config (never throws).
@@ -39,7 +39,7 @@ let _cfg;
 function loadCfg() {
   if (_cfg !== undefined) return _cfg;
   const global = readCfgFile(path.join(os.homedir(), '.claude', '.coaltipple.json'));
-  const project = readCfgFile(path.join(findGitRoot(process.cwd()), '.coaltipple.json'));
+  const project = readCfgFile(path.join(findGitRoot(process.cwd()), '.claude', '.coaltipple.json'));
   // Merge only when something loaded; keep null (= "no config") if neither did, so
   // the existing `if (cfg && ...)` guards in main() behave exactly as before.
   _cfg = global || project ? { ...(global || {}), ...(project || {}) } : null;

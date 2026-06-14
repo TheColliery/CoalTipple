@@ -1,13 +1,17 @@
 // CoalTipple config cascade — the 2-level merge that every config reader uses.
 //
 //   GLOBAL  = <home>/.claude/.coaltipple.json   the user's defaults for ALL projects
-//   PROJECT = <cwd>/.coaltipple.json             optional per-project OVERRIDE
+//   PROJECT = <cwd>/.claude/.coaltipple.json     optional per-project OVERRIDE
 //
 // Precedence (shallow, per-key): PROJECT value > GLOBAL value > schema default.
 // A project file is created ONLY when the user customizes per-project (no-clutter):
 // absent project file = the global defaults (and schema defaults) apply unchanged.
-// The PROJECT-scoped state dir (.coaltipple/) is deliberately NOT part of this — it
-// stays project-local (ranking.json, proposed/, state.json).
+//
+// State dirs (NOT part of the config merge):
+//   GLOBAL  <home>/.claude/.coaltipple/  the model RANKING (platform-level, shared)
+//   PROJECT <cwd>/.claude/.coaltipple/   per-project work-state (proposed/, state.json)
+// Everything CoalTipple writes lives UNDER .claude/, mirroring CoalMine's layout:
+// global under ~/.claude, project under <project>/.claude, nothing loose at the root.
 //
 // Pure + node built-ins only (fs, path, os). Every read is wrapped so a missing or
 // corrupt file NEVER throws — it contributes nothing and the merge proceeds with
@@ -36,12 +40,22 @@ function readJsonc(file) {
   }
 }
 
-// The canonical paths, exported so other readers (configure/install) agree on them.
+// The canonical paths, exported so other readers (configure/install/conductor) agree.
+// Everything lives under .claude/ — global at ~/.claude, project at <cwd>/.claude.
 export function globalConfigPath(home = os.homedir()) {
   return path.join(home, '.claude', '.coaltipple.json');
 }
 export function projectConfigPath(cwd = process.cwd()) {
-  return path.join(cwd, '.coaltipple.json');
+  return path.join(cwd, '.claude', '.coaltipple.json');
+}
+// State dirs — hold the ranking / work-state, NOT config. The GLOBAL state dir holds
+// the shared platform model-ranking; the PROJECT state dir holds per-project
+// work-state (proposed/, state.json) and the optional project conductor copy.
+export function globalStateDir(home = os.homedir()) {
+  return path.join(home, '.claude', '.coaltipple');
+}
+export function projectStateDir(cwd = process.cwd()) {
+  return path.join(cwd, '.claude', '.coaltipple');
 }
 
 // Load + merge the cascade. Shallow per-key: project keys overwrite global keys;
