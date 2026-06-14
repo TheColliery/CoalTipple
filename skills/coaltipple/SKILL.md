@@ -8,7 +8,7 @@ description: >-
 
 You are **main** (depth-0). You decide routing + spawn everything yourself. **worker = leaf: nesting is hard-capped (proven) — a worker cannot spawn. A worker that fails RETURNS its result, and main re-routes.**
 
-> Language: this contract is English so any model/user can read it. ALWAYS produce user-facing output in the user's own language (see "Always" below) — keep technical terms verbatim.
+> This contract is English so any model can read it; user-facing output follows the user's language (translate prose, technical terms verbatim — see **Always**).
 
 ## Step 0 — A valid ranking must exist first (the Lock)
 
@@ -90,7 +90,7 @@ Two knobs: **TIER** (coarse, burns Opus quota) × **EFFORT** (fine, cheap, low�
    - **competence-introspection:** if you *know* from the start that the task exceeds your ceiling (the CT definition: "I cannot do this") → escalate immediately, don't waste an attempt trying first.
 4. **Never let a cheap main QA an expert's work** — if you escalated *up*, let the strong worker own both the hard task and the integration.
 
-## Memory anchor (context handoff · the context-floor mitigation · CoalHearth)
+## Memory anchor (the context-floor mitigation)
 
 A worker starts context-FRESH (the context-floor in Step 2). A **memory anchor** — the project's own memory/conventions file — gives a fresh worker (and a resuming main) context BEYOND the bare task contract, so delegation doesn't drop project knowledge.
 - **Find the anchor:** if `contextFiles` is set, those file(s) ARE the anchor — point the worker contract at them (read for conventions/context). If `contextFiles` is empty, rely on the platform's OWN memory: it auto-loads `CLAUDE.md` / `AGENTS.md` into sessions, so no action is needed.
