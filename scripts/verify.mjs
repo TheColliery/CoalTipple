@@ -85,5 +85,24 @@ try {
   }
 } catch (e) { fail(`shared-region check: ${e.message}`); }
 
+console.log('config-path sync (conductor + configure inline vs config-load SSoT):');
+try {
+  // The project-config path lives under .claude in config-load.mjs (the SSoT). The
+  // conductor and configure inline their OWN copy (the hook must be standalone,
+  // Phoenix #9 — it cannot import config-load), so a future edit to one could silently
+  // drift. Assert all three reference the same path segments — the path analogue of the
+  // hot-keyword sync above. Cheap presence guard, not a full parse.
+  const seg = "'.claude', '.coaltipple.json'";
+  for (const [label, rel] of [
+    ['config-load.mjs', ['scripts', 'lib', 'config-load.mjs']],
+    ['coaltipple-conductor.js', ['hooks', 'coaltipple-conductor.js']],
+    ['configure.mjs', ['scripts', 'configure.mjs']],
+  ]) {
+    const s = fs.readFileSync(path.join(repo, ...rel), 'utf8');
+    if (s.includes(seg)) ok(`${label} references the .claude project-config path`);
+    else fail(`${label} lost ${seg} — project-config path DRIFTED from config-load (the SSoT)`);
+  }
+} catch (e) { fail(`config-path sync: ${e.message}`); }
+
 console.log(fails ? `\nVERIFY: FAIL (${fails})` : '\nVERIFY: PASS');
 process.exit(fails ? 1 : 0);
