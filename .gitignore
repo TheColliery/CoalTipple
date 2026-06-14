@@ -5,9 +5,9 @@ Thumbs.db
 
 # Local-only agent / governance files — machine-local, NEVER pushed
 # (mirrors CoalMine: the public repo ships the product, not the governance)
-MEMORY.md
-AGENTS.md
-CLAUDE.md
+/MEMORY.md
+/AGENTS.md
+/CLAUDE.md
 .agents/
 .claude/
 

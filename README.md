@@ -7,7 +7,7 @@
 ![version](https://img.shields.io/github/v/tag/TheColliery/CoalTipple?label=version&color=blue)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 ![SKILL.md](https://img.shields.io/badge/SKILL.md-open_standard-success)
-![Claude Code](https://img.shields.io/badge/Claude_Code-100%25_dogfooded-success)
+![Claude Code](https://img.shields.io/badge/Claude_Code-validated_live-success)
 ![built for](https://img.shields.io/badge/built_for-Claude_Code_·_subagent--capable_agents-informational)
 ![status](https://img.shields.io/badge/status-WIP_·_v1_core-yellow)
 
@@ -15,7 +15,7 @@
 
 </div>
 
-> 🚧 **Early / WIP — under active development, not production-ready yet.** The v1 core works (built and dogfooded on Claude Code across its model tiers) but is still evolving — config and routing behavior may change. Fine for experimentation and review; not yet something to rely on in production.
+> 🚧 **Early / WIP — under active development, not production-ready yet.** The v1 core works (built and validated on Claude Code in real use across its model tiers) but is still evolving — config and routing behavior may change. Fine for experimentation and review; not yet something to rely on in production.
 
 ---
 
@@ -32,6 +32,24 @@ You are **main**. CoalTipple decides, per task, whether to:
 | **stay (route OFF)** | the task is small, or no valid model-ranking can be built | doing it yourself costs less than the overhead, and the router **never breaks** |
 
 The routing logic lives in the skill itself (`SKILL.md`) — the model reads it and routes. There is no always-on background process making decisions for you.
+
+---
+
+## 📊 Benchmark — routing validated across every model tier
+
+CoalTipple was driven *as* each model tier, and its routing decisions were scored against a fixed rubric: the tier ranking it builds (the Lock), plus four probe tasks — **A** delegate-down · **B** sensitive-never-down · **C** escalate-up · **D** big-context routed by difficulty.
+
+| Probe | What it proves | Pass rate |
+|---|---|---|
+| **B — sensitive is never delegated down** | the safety gate (crypto · auth · secrets) holds | **7 / 7 tiers** |
+| **C — escalate-up beyond competence** | quality is protected | 7 / 7 |
+| **A — delegate-down + high effort** | tokens are actually saved | 6 / 7 |
+| **D — strong tier + right context variant** | capacity is independent of capability | 6 / 7 |
+| **Ranking (the Lock)** | correct tiers · version order · 256k as an orthogonal axis | 5 / 7 |
+
+The **safety-critical gate held on every tier** — including Opus 4.6, which had failed this exact probe *before* the keyword-gate fix, confirming the fix generalized beyond its embedded example. Every miss (on A and D) was isolated to **Haiku as main**: the floor tier mis-handled delegate-down and kept a 180k-token refactor on its own low tier instead of escalating. Routing quality scales with the main model's capability — mid and heavy tiers were clean across every probe, while Haiku-as-main holds the safety gate but is a weaker routing configuration. Held-out runs on novel tasks reproduced the result.
+
+*Method: each model tier drove the router against a fixed ranking + four-probe rubric, scored per model.*
 
 ---
 
@@ -168,7 +186,7 @@ node scripts/test.mjs     # the zero-dependency test suite (fail-loud on a missi
 
 ## 🤖 Compatibility
 
-**Claude Code: first-class and 100% dogfooded.** CoalTipple was built Claude-Code-first and exercised end-to-end on it across *every* model tier (Haiku, Sonnet, Opus, and a reasoning tier) — driving real delegate-down, escalate-up, and limit-hit routing during development.
+**Claude Code: first-class and validated in real use.** CoalTipple was built Claude-Code-first and run end-to-end on it across *every* model tier (Haiku, Sonnet, Opus, and a reasoning tier) — driving real delegate-down, escalate-up, and limit-hit routing during development.
 
 CoalTipple targets **subagent-capable platforms only** — it routes by spawning workers through the platform's *own* native subagent tool (under that platform's own permission gate; CoalTipple does not bypass it). On a platform without a subagent system, the skill **self-degrades to a no-op** — routing simply stays off, and nothing breaks. `SKILL.md` follows the cross-vendor [Agent Skills](https://agentskills.io/specification) convention, so it lands on any agent that reads skills; per-platform model classification and spawn encoding are the parts that get verified as the project is dogfooded on each new agent.
 

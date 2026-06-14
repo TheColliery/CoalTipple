@@ -104,5 +104,13 @@ try {
   }
 } catch (e) { fail(`config-path sync: ${e.message}`); }
 
+console.log('plugin/ dist (the clean CC plugin vs source SSoT):');
+try {
+  const { checkDist } = await import(pathToFileURL(path.join(repo, 'scripts', 'build-dist.mjs')).href);
+  const drift = checkDist();
+  if (!drift.length) ok('plugin/ matches source (skills + hooks + commands + manifest); no scripts/platform-configs leaked');
+  else for (const d of drift) fail(d);
+} catch (e) { fail(`plugin/ dist check: ${e.message}`); }
+
 console.log(fails ? `\nVERIFY: FAIL (${fails})` : '\nVERIFY: PASS');
 process.exit(fails ? 1 : 0);

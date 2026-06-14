@@ -1,5 +1,7 @@
 # Verifying CoalTipple
 
+CoalTipple is one tool in the **TheColliery** mining series, and it is verified the same way as its sibling **[CoalMine](https://github.com/HetCreep/CoalMine/blob/main/SECURITY.md)**: every executable hook obeys the [Phoenix-13 commandments](https://github.com/HetCreep/CoalMine/blob/main/docs/hooks-safety.md), the distribution is reproducible from source, and an independent scanner is run each release. Across the series the **structure** is the assurance — not a scanner's number.
+
 ## Structural safety (not just a scanner score)
 
 The real assurance is **structural**, not a number from a scanner. CoalTipple's only executable hook is the conductor, and it obeys the same Phoenix-13 commandments as the rest of the TheColliery series:
@@ -12,7 +14,7 @@ The real assurance is **structural**, not a number from a scanner. CoalTipple's 
 
 ## Commit & tag signatures
 
-Once the repository is public, all commits and release tags are SSH-signed (`gpg.format=ssh`). On GitHub, signed commits show the **Verified** badge automatically. To verify locally:
+All commits and release tags are SSH-signed (`gpg.format=ssh`). On GitHub, signed commits show the **Verified** badge automatically. To verify locally:
 
 ```bash
 # point git at the maintainer's allowed-signers entry (published with the public repo), then:
@@ -39,16 +41,17 @@ The conductor's hot-keyword list is synced from one source (`scripts/lib/keyword
 <!-- version-transition: re-run SkillSpector each release; update the version + score + finding line-refs in this section. This file is repo-root, outside the scanned skills/coaltipple/ dir, so this HTML comment is not SkillSpector-flagged. -->
 CoalTipple is scanned with [NVIDIA SkillSpector](https://github.com/NVIDIA/skillspector) v2.1.4 — a security scanner for AI agent skills (prompt injection, data exfiltration, excessive agency, session persistence, dangerous code, supply-chain risk).
 
-The scan targets the shipped `skills/coaltipple/SKILL.md` — the exact artifact the installer copies into your agent. Its fast **static** pass scores it **10/100 (LOW · SAFE)**, with a single low-confidence finding:
+The scan targets the shipped `skills/coaltipple/SKILL.md` — the exact artifact the installer copies into your agent. Its fast **static** pass scores it **20/100 (LOW · SAFE)**, with two low-confidence findings — both reviewed and confirmed **false positives**:
 
 | Static finding | What it actually is |
 |---|---|
+| MED · RA2 Session Persistence (`SKILL.md:25`, 60%) | Writing the tier-ranking cache `~/.claude/.coaltipple/ranking.json` — a benign, re-derivable routing cache (the model tiers, rebuilt by introspection; no user data, no cron, no startup script). It exists only to avoid re-enumerating the model list every session; deleting it costs one rebuild and nothing else. |
 | MED · RA2 Session Persistence (`SKILL.md:98`, 60%) | The **Memory anchor** section, which describes the consent-gated `contextFiles` / `.coaltipple/state.json` mechanism. CoalTipple offers it at most once via the platform's question tool and never writes a memory file unless the user chooses **Create**; state lives under `.coaltipple/` in the project, never silently and never in global config. |
 
-(As with the rest of the series, SkillSpector's LLM semantic pass does not complete on the available API tier — it times out — so this is the static-pass number; the structural guarantees above are the real assurance.)
+Both are the same RA2 heuristic flagging a *written file* as "session persistence" — yet neither is covert: one is a re-derivable cache, the other is explicitly consent-gated. SkillSpector's **LLM semantic** pass is what contextualizes such surface matches, and it requires prepaid Anthropic API credits to run; on a free-tier key with a zero credit balance it returns `credit balance too low`, so the score falls back to the static, false-positive result. (On the content v2.1.3 evaluated, that semantic pass returned **0 findings**.) The headline number is not a measure of real risk.
 
 The real assurance is **structural**, as above: every CoalTipple hook obeys the [Phoenix-13 commandments](https://github.com/HetCreep/CoalMine/blob/main/docs/hooks-safety.md) — zero external dependencies, no network ever, no child processes, fail-silent, session state cleaned up — and every routing action is consent-gated through the platform's own subagent tool. There is no data-exfiltration path, no covert persistence, and nothing auto-executes. A scanner's surface-pattern findings are reviewed against that structure rather than taken as a measure of real risk.
 
 ## Reporting an issue
 
-A security issue in the skill, the conductor hook, or the installer: open a GitHub issue once the repository is public (`github.com/TheColliery/CoalTipple`); until then, report to the maintainer directly. Do not put a sensitive proof-of-concept in a public issue — request a private channel first.
+A security issue in the skill, the conductor hook, or the installer: open a GitHub issue at `github.com/TheColliery/CoalTipple`. Do not put a sensitive proof-of-concept in a public issue — request a private channel first.
