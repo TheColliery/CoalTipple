@@ -36,6 +36,7 @@ The conductor's hot-keyword list is synced from one source (`scripts/lib/keyword
 
 ## Independent scanning — NVIDIA SkillSpector
 
+<!-- version-transition: re-run SkillSpector each release; update the version + score + finding line-refs in this section. This file is repo-root, outside the scanned skills/coaltipple/ dir, so this HTML comment is not SkillSpector-flagged. -->
 CoalTipple is scanned with [NVIDIA SkillSpector](https://github.com/NVIDIA/skillspector) v2.1.4 — a security scanner for AI agent skills (prompt injection, data exfiltration, excessive agency, session persistence, dangerous code, supply-chain risk).
 
 The scan targets the shipped `skills/coaltipple/SKILL.md` — the exact artifact the installer copies into your agent. Its fast **static** pass scores it **10/100 (LOW · SAFE)**, with a single low-confidence finding:
