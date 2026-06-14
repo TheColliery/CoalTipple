@@ -1,0 +1,56 @@
+name: "Platform field report"
+description: "Report how CoalTipple routes on your subagent-capable AI agent (works / breaks / no-ops)"
+title: "[platform] <agent name>: <one-line result>"
+labels: ["platform-report"]
+body:
+  - type: dropdown
+    id: agent
+    attributes:
+      label: AI agent
+      options:
+        - Claude Code
+        - Google Antigravity
+        - Cursor
+        - Windsurf
+        - GitHub Copilot
+        - Cline
+        - Gemini CLI
+        - Goose
+        - Amp
+        - Codex CLI
+        - Other (name it below)
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: CoalTipple version + agent version
+      placeholder: "CoalTipple v1.0.0 · Cursor 2.4"
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: What were you testing?
+      options:
+        - Skill discovery (the agent sees the coaltipple skill)
+        - Model ranking / the Lock (introspection builds a valid ranking)
+        - Routing decisions (grade → tier · effort · delegate-down / escalate-up)
+        - Spawning a worker through the platform's subagent tool
+        - Limit-hit / availability fallback
+        - Installer / configurator
+        - No-op self-degrade (a platform without subagents)
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: What happened
+      description: "What worked, what didn't — paste the routing decision and the spawned task chip (model · effort) where possible."
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected (if different)

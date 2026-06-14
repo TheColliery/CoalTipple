@@ -1,0 +1,31 @@
+# OS junk
+.DS_Store
+Thumbs.db
+*.swp
+
+# Local-only agent / governance files — machine-local, NEVER pushed
+# (mirrors CoalMine: the public repo ships the product, not the governance)
+MEMORY.md
+AGENTS.md
+CLAUDE.md
+.agents/
+.claude/
+
+# IP-sensitive design + roadmap — stays local until the series is ready for it
+# (DESIGN = full vision incl. unbuilt 5-tier/Haldane/CoalHearth; SPEC = v1 build contract)
+COALTIPPLE_DESIGN.md
+COALTIPPLE_V1_SPEC.md
+
+# Internal dogfood / validation session artifacts — methodology + raw routing results
+# + an internal fix-queue; NOT part of the shipped product (un-ignore if you later
+# want a polished public eval harness, the way CoalMine ships eval/).
+dogfood/
+
+# Generated SkillSpector scan reports — the result is folded into SECURITY.md;
+# the raw report is not shipped.
+skillspector-*.md
+
+# Runtime routing state + a root machine config (created if CoalTipple runs IN this repo) — never ship
+# (the shipped factory template is platform-configs/.coaltipple.json, which is NOT matched here)
+.coaltipple/
+/.coaltipple.json

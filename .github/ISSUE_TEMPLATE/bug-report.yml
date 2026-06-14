@@ -1,0 +1,39 @@
+name: "Bug report"
+description: "The router, the conductor hook, or a script misbehaves"
+title: "[bug] <component>: <one-line summary>"
+labels: ["bug"]
+body:
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - routing skill (SKILL.md behavior)
+        - the Lock / model ranking (classify.mjs)
+        - grader (grade.mjs)
+        - conductor hook (coaltipple-conductor.js)
+        - installer (install.mjs)
+        - configurator (configure.mjs)
+        - verify gate (verify.mjs)
+        - plugin / packaging
+        - docs
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: CoalTipple version + platform
+      placeholder: "v1.0.0 · Claude Code on Windows 11"
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce + what happened
+      description: "Exact commands/inputs and exact output. For routing behavior, the prompt you used and the task chip (model · effort) it produced."
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior

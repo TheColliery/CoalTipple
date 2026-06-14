@@ -1,0 +1,8 @@
+{
+  "name": "coaltipple",
+  "version": "1.0.0",
+  "description": "CoalTipple — model/effort router for subagent-capable coding agents. Delegates a task you CAN do but is large+cheap DOWN to a lower tier to save tokens; escalates a task beyond the current tier UP for quality. Two-knob routing (tier × effort, effort-before-tier), introspection-first model classification, a validity-gated ranking Lock that never routes on broken state, and git-optional damage control. Advise-only Phoenix-pure hook; the model performs the routing.",
+  "author": { "name": "HetCreep" },
+  "license": "MIT",
+  "keywords": ["model-routing", "effort", "delegation", "escalation", "token-optimization", "subagents", "model-classification", "router", "skills", "hooks"]
+}

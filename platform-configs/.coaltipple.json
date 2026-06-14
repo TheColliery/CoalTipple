@@ -1,0 +1,149 @@
+{
+  // CoalTipple — routing config. Every value is tunable. // and /* */ comments are allowed.
+  // Every key is validated against scripts/lib/config-schema.mjs (verify.mjs checks it — a typo'd key = fail loud).
+
+  // ─── master ───
+
+  // ## The language for conductor prompts, agent interactions, and routing nudges.
+  // # Setting type: String (auto, th, en, ja, zh, es)
+  // # Default value: auto (heuristic detection from the environment + project docs)
+  "language": "auto",
+
+  // ## Master on/off switch for all model/effort routing.
+  // # Setting type: Boolean
+  // # Default value: true
+  "enableRouting": true,
+
+  // ## Routing direction: delegation = push work DOWN to save tokens; escalation = push UP for quality; auto = both.
+  // # Setting type: String (auto, delegation, escalation, off)
+  // # Default value: auto
+  "mode": "auto",
+
+  // ## Acceptable-quality bar: a result must clear it, or routing climbs the model ladder. Grade picks the
+  // ## start tier -> attempt -> verify against the contract done-criteria (domain-appropriate) -> clear = done;
+  // ## below = climb one rung; far below, or out of attempts = jump to the top tier.
+  // # Setting type: Integer 0-100 (0 = anything passes, cheapest tier always; 100 = climb to the best every time)
+  // # Default value: 60 (adequate-to-delegate — low enough that cheap models clear it on ordinary work, so
+  // #   delegate-down actually saves tokens; main integrates/escalates up to final quality when it matters)
+  // # Tune by RISK, not by field: raise toward ~85 for quality-critical / costly-to-rework work,
+  // #   lower toward ~45 for thrifty draft-grade output. Per-TASK difficulty (incl. domain-hard
+  // #   work like proofs or crypto) is handled by the grade, NOT this bar — so a trivial edit in
+  // #   any field (even a 1-line math fix) still starts cheap and saves tokens.
+  "qualityBar": 60,
+
+  // ─── delegate-down economics ───
+
+  // ## Min task size (lines for code, words/chars for text) below which delegate-down is skipped (spawn-overhead floor).
+  // # Setting type: Integer (range 1-100000)
+  // # Default value: 120
+  "delegateMinLines": 120,
+
+  // ─── safety / limits ───
+
+  // ## Escalation STAIRCASE budget — how many rungs the quality-climb may try before jump-to-top / hand-back.
+  // ## Pairs with qualityBar: the bar = WHEN to climb, this = HOW FAR. (Ladder: low < mid < heavy < reasoning = 4 rungs.)
+  // # Setting type: Integer 1-5 (schema hard-caps the range so neither extreme can be set)
+  // # Default value: 2 (balanced — one attempt + one escalation, then jump-to-top or hand back)
+  // # Double-edged, tune with care: TOO LOW (1) = jump to the top tier too fast = over-provision (skips a cheaper
+  // #   rung that might have cleared the bar); TOO HIGH (4-5) = climb rung-by-rung through the whole ladder =
+  // #   death by a thousand cuts (slow, burns tokens on attempts always destined to escalate). 2-3 = sweet spot.
+  "maxTotalAttempts": 2,
+
+  // ## Seconds before a stalled background sub-worker is marked failed.
+  // # Setting type: Integer (range 5-3600)
+  // # Default value: 150
+  "subagentTimeoutSeconds": 150,
+
+  // ## Cap on concurrent sub-workers in a fan-out (they share one rate limit).
+  // # Setting type: Integer (range 1-16, the platform concurrency ceiling)
+  // # Default value: 4
+  "maxConcurrentSubagents": 4,
+
+  // ## Require a compact task contract (goal + constraints + interface + done-criteria) on every delegation.
+  // # Setting type: Boolean
+  // # Default value: true
+  "requireTaskContract": true,
+
+  // ## Verify a sub-worker's output before accepting it on merge (the "looks right but is wrong" guard).
+  // # Setting type: String (strict, standard, off)
+  // # Default value: standard
+  "qaOnMerge": "standard",
+
+  // ## Never delegate the final user-facing answer/prose to a cheaper model.
+  // # Setting type: Boolean
+  // # Default value: true
+  "preserveVoiceForUserFacing": true,
+
+  // ─── levers ───
+
+  // ## Allow the ultracode top rung (xhigh + multi-agent fan-out) for genuinely broad, independent work.
+  // # Setting type: Boolean
+  // # Default value: true
+  "ultracodeEnabled": true,
+
+  // ## Allow attaching fast-mode only on an explicit human latency request — never as a routing rung.
+  // # Setting type: Boolean
+  // # Default value: true
+  "fastModeOnLatencyRequest": true,
+
+  // ─── model ranking ───
+
+  // ## Who builds the model tier ranking. auto = the AGENT introspects its own model list and builds it
+  // ## (overlaying any modelTiers pins below) — the auto path must be maximally accurate + correct. manual = the
+  // ## HUMAN owns it via modelTiers (+ the alias floor haiku<sonnet<opus for any tier left unpinned); no introspection.
+  // # Setting type: String (auto, manual)
+  // # Default value: auto
+  "rankingMode": "auto",
+
+  // ## Optional pins that override auto-classification — e.g. when introspection is unclear (a renamed flagship).
+  // # Setting type: Object { low | mid | heavy | reasoning | local : "model" | ["priority", "chain"] }
+  // # Default value: unset (auto-classify by introspection; the heuristic floor is the last resort)
+  // "modelTiers": { "low": "haiku", "mid": "sonnet", "heavy": "opus", "reasoning": ["Fable 5", "opus"] },
+
+  // ## Cadence backstop (days) to re-classify the model tier map even when the model list is unchanged.
+  // # Setting type: Integer (range 1-365; min 1 — 0 would force a per-session enumerate = token burn)
+  // # Default value: 30
+  "rankingRefreshDays": 30,
+
+  // ─── grading scope ───
+
+  // ## Path fragments that force the High/Reasoning tier even at a single file.
+  // # Setting type: String[] (array of fragments)
+  // # Default value: [] (built-in: auth, crypto, payment, billing, migration, secret, token, password, session, security)
+  "sensitivePaths": [],
+
+  // ## Dirs skipped when grading breadth.
+  // # Setting type: String[]
+  // # Default value: [] (built-in: node_modules, .git, dist, vendor, build, .next, coverage)
+  "excludePaths": [],
+
+  // ## Extra keywords that force a high grade (added to the built-in hot list).
+  // # Setting type: String[]
+  // # Default value: []
+  "hotKeywords": [],
+
+  // ## Task domains never routed (always done in-session), or "all" to disable routing entirely.
+  // # Setting type: String[] (coding, text, math, research, all)
+  // # Default value: []
+  "disableRouting": [],
+
+  // ─── memory / context handoff (CoalHearth) ───
+
+  // ## Memory-anchor file(s) a fresh worker reads for project context + conventions (beyond the bare task contract) —
+  // ## any filename(s). Empty = rely on the platform's own memory (CLAUDE.md / AGENTS.md auto-loaded).
+  // # Setting type: String[] (comma-separated paths)
+  // # Default value: [] (follow the platform memory)
+  "contextFiles": [],
+
+  // ## When no memory anchor exists, whether to lazily offer (once, on a context-dependent delegation) to set one up.
+  // # Setting type: String (auto, off)
+  // # Default value: auto  (off = disabled/skipped; re-enable via /coaltipple memory)
+  "memoryOffer": "auto",
+
+  // ─── recovery ───
+
+  // ## Use a git commit as an extra recovery boundary when inside a git repo.
+  // # Setting type: String (auto, on, off)
+  // # Default value: auto
+  "gitRecoveryBoundary": "auto"
+}
