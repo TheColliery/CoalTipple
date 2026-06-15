@@ -92,7 +92,7 @@ try {
   const src = fs.readFileSync(path.join(repo, 'platform-configs', '.coaltipple.json'), 'utf8');
   const cr = String.fromCharCode(13); // CRLF-insensitive (Windows autocrlf)
   for (const r of REGIONS.filter((x) => x.file.endsWith('.coaltipple.json'))) {
-    const name = r.open.replace('// <coaltipple-shared: ', '').replace('>', '');
+    const name = r.open.replace('// <coaltipple-shared: ', '').replaceAll('>', '');
     const oi = src.indexOf(r.open), ci = src.indexOf(r.close);
     if (oi === -1 || ci === -1 || ci < oi) { fail(`${name}: markers missing/disordered in .coaltipple.json`); continue; }
     const current = src.slice(src.indexOf('\n', oi) + 1, ci).trim();
