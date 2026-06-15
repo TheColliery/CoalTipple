@@ -51,6 +51,8 @@ The **safety-critical gate held on every tier** — including Opus 4.6, which ha
 
 *Method: each model tier drove the router against a fixed ranking + four-probe rubric, scored per model. **Measured 2026-06-14** (A and D re-validated 2026-06-15 after a floor-rule sharpen) on Claude Code across Haiku 4.5 · Sonnet 4.6 · Opus 4.6 / 4.7 / 4.8 (± 256k) · a reasoning tier — re-run as the model line-up changes.*
 
+**Output quality — a second, complementary benchmark.** The probes above score the routing *decision*; a separate run scores the *delivered output* — does the work that reaches the user actually pass? Five hard + subtle tasks (one per domain: crypto · proof · research · legal · creative) were fired at four mains (Haiku→Sonnet · Sonnet→Opus · Opus 4.6/4.7→self), each escalating **one rung** and scored against an objective gold (code: a constant-time test run by `eval/score.mjs`; the rest: a rubric or a sourced fact). **Result: 20/20 — the +1 rung delivered correct output on every task, no climb needed** (cheap-tier-adequacy: escalating one rung is usually enough). Measured 2026-06-15; harness + raw deliverables in [`eval/`](eval/). *Caveat: every tier passed, so this run validates **delivery**, not the **climb-on-fail** path — that needs edge-of-competence tasks where +1 fails.*
+
 ---
 
 ## 🚀 Installation
@@ -168,6 +170,7 @@ Representative keys (see the schema for the complete, authoritative list):
 | `rankingMode` | Enum | `auto` | `auto` = the agent introspects the ranking · `manual` = the human owns it via `modelTiers` |
 | `modelTiers` | Object | unset | Optional human pins overriding auto-classification |
 | `sensitivePaths` | String[] | `[]` | Path fragments that force the strong tier |
+| `keywords` | Object | built-in | Careful-keyword GROUPS by task type (`coding.concurrency`/`crypto`/`security`/`data`, `math`, `knowledge`, `domain`, `creative`): each floors the grade + may flag `sensitive` (never-down) / `preserveVoice`; tune a word or a grade per group |
 | `contextFiles` | String[] | `[]` | Memory-anchor file(s) a fresh worker reads |
 
 Edit it from the CLI with the configurator (schema-driven flags, validated, comment-preserving):
@@ -183,7 +186,7 @@ node scripts/configure.mjs --help                        # every flag, generated
 
 ## 🤖 Compatibility
 
-**Claude Code: first-class and validated in real use.** CoalTipple was built Claude-Code-first and run end-to-end on it across *every* model tier (Haiku, Sonnet, Opus, and a reasoning tier) — driving real delegate-down, escalate-up, and limit-hit routing during development.
+**Claude Code: first-class and validated in real use (verified on Claude Code 2.1.143).** CoalTipple was built Claude-Code-first and run end-to-end on it across *every* model tier (Haiku, Sonnet, Opus, and a reasoning tier) — driving real delegate-down, escalate-up, and limit-hit routing during development.
 
 CoalTipple targets **subagent-capable platforms only** — it routes by spawning workers through the platform's *own* native subagent tool (under that platform's own permission gate; CoalTipple does not bypass it). On a platform without a subagent system, the skill **self-degrades to a no-op** — routing simply stays off, and nothing breaks. `SKILL.md` follows the cross-vendor [Agent Skills](https://agentskills.io/specification) convention, so it lands on any agent that reads skills; per-platform model classification and spawn encoding are the parts verified in real use as the project reaches each new agent.
 

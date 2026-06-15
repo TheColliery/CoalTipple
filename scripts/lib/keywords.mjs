@@ -1,34 +1,44 @@
-// Single source of truth for routing keyword lists. grade.mjs imports these
-// directly; the conductor's `<coaltipple-shared: hot-keywords>` region is SYNCED
-// from here by build-plugin.mjs (the conductor is standalone-portable and cannot
-// import). Edit HERE — never edit the conductor's block by hand (verify.mjs
-// fails if they drift).
+// Single source of truth for routing keyword GROUPS, organized by major task type.
+// grade.mjs reads KEYWORD_GROUPS directly (each group floors the task grade and may
+// flag sensitive / preserveVoice); the .coaltipple.json `keywords` key overrides or
+// extends these PER GROUP (add/remove a word, change a grade); the conductor's
+// hot-keyword region is SYNCED from the derived HOT5/HOT4 flats below by
+// build-plugin.mjs (edit HERE, never the conductor block — verify.mjs fails on drift).
+//
+// Each group: { grade (1-5 floor), sensitive? (never-delegate-down), preserveVoice?
+// (never delegate the user-facing deliverable), words: [...] }. Use specific phrases
+// ('mathematical proof' not 'proof', 'legal contract' not 'contract') so substrings
+// like 'proofread' / 'smart contract' never false-trigger the word-START-boundary match.
+export const KEYWORD_GROUPS = {
+  // Coding — split by what forces the grade: concurrency/crypto are reasoning-hard
+  // (5); security/data are sensitive (4). crypto/security/data also never-down.
+  'coding.concurrency': { grade: 5, words: ['concurrency', 'mutex', 'race condition', 'deadlock', 'thread-saf', 'atomic'] },
+  'coding.crypto':      { grade: 5, sensitive: true, words: ['crypto', 'timing attack', 'timing-attack', 'constant-time', 'constant time', 'timing-safe', 'side-channel', 'encrypt', 'decrypt'] },
+  'coding.security':    { grade: 4, sensitive: true, words: ['oauth', 'authenticat', 'authoriz', 'auth bypass', 'sql injection', 'access control', 'permission', 'secret', 'token', 'password', 'session'] },
+  'coding.data':        { grade: 4, sensitive: true, words: ['migration', 'schema change', 'payment', 'billing', 'rate limit', 'optimize query'] },
 
-// grade-5 = reasoning-hard (concurrency / crypto-logic / proof). Use specific
-// phrases ('mathematical proof' not 'proof') so substrings like 'proofread' or
-// 'bulletproof' never false-trigger. The crypto/timing family was added 2026-06
-// after a dogfood gap: 'constantTimeEqual timing-attack-safe' matched NONE of the
-// old terms ('cryptograph'/'encrypt' miss it), so the deterministic floor graded
-// it trivial and a weak main delegated hand-rolled crypto DOWN to save tokens.
-// Match crypto-by-description so the sensitive floor fires on the keyword, not the grade.
-export const HOT5 = [
-  'concurrency', 'mutex', 'race condition', 'deadlock', 'thread-saf', 'atomic',
-  'encrypt', 'decrypt', 'mathematical proof', 'formal proof', 'derive equation',
-  // 'crypto' (word-start) subsumes the old 'cryptograph' (matches cryptography/-ic too), so that is dropped.
-  'crypto', 'timing attack', 'timing-attack', 'constant-time', 'constant time', 'timing-safe', 'side-channel',
-];
+  // Math — reasoning-hard proof / derivation.
+  'math':      { grade: 5, words: ['mathematical proof', 'formal proof', 'derive equation', 'complexity bound'] },
 
-// grade-4 = sensitive but not pure-logic. Stems ('authenticat', 'authoriz') so the
-// grader's word-start match catches the whole family (authenticate/-tion, authorize/-ation);
-// these also cover a pure-PROMPT security task that lists no files yet (path-only SENSITIVE
-// would miss it). The conductor's loose substring match over the same list is intentional —
-// a 0-token hint may over-fire; the grader is the precise authority.
-export const HOT4 = [
-  'oauth', 'authenticat', 'authoriz', 'auth bypass', 'sql injection', 'migration', 'schema change',
-  'access control', 'permission', 'payment', 'rate limit', 'optimize query',
-];
+  // Knowledge / research — verify-heavy, mid-tier (the care is rigorous SOURCING, not a high tier).
+  'knowledge': { grade: 3, words: ['systematic review', 'literature review', 'citation', 'claim verification'] },
 
-// Path fragments that force the High/Reasoning tier even on a 1-file change.
+  // Regulated / high-stakes non-code domains — costly errors, never-delegate-down.
+  'domain':    { grade: 4, sensitive: true, words: ['legal contract', 'compliance', 'license terms', 'financial audit', 'tax filing', 'valuation', 'diagnosis', 'dosage', 'clinical', 'gdpr', 'hipaa', 'pii'] },
+
+  // Creative — low difficulty, but the prose IS the deliverable: protect the voice.
+  'creative':  { grade: 2, preserveVoice: true, words: ['brand voice', 'tone of voice', 'style guide'] },
+};
+
+// Derived flat lists for the standalone conductor's 0-token hint (it only needs to
+// flag "a high-grade keyword is present" -> grade 5 or 4; the grade-3/2 groups carry
+// no hint). build-plugin.mjs syncs these into the conductor; verify.mjs gates drift.
+const wordsAtGrade = (n) => Object.values(KEYWORD_GROUPS).filter((g) => g.grade === n).flatMap((g) => g.words);
+export const HOT5 = wordsAtGrade(5);
+export const HOT4 = wordsAtGrade(4);
+
+// Path fragments that force a sensitive (High/Reasoning, never-down) classification
+// even on a 1-file change — the FILE-PATH signal (the keyword groups are the PROMPT signal).
 export const SENSITIVE = ['auth', 'crypto', 'payment', 'billing', 'migration', 'secret', 'token', 'password', 'session', 'security'];
 
 // Dirs never counted toward grading breadth.

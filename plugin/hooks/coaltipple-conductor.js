@@ -50,8 +50,8 @@ function loadCfg() {
 //     fuller file-aware grade). Only fires on strong signals — stays quiet
 //     otherwise so the model grades with real file scope. ---
 // <coaltipple-shared: hot-keywords> — synced from scripts/lib/keywords.mjs by build-plugin.mjs; edit keywords.mjs, NOT this block
-const HOT5 = ['concurrency', 'mutex', 'race condition', 'deadlock', 'thread-saf', 'atomic', 'encrypt', 'decrypt', 'mathematical proof', 'formal proof', 'derive equation', 'crypto', 'timing attack', 'timing-attack', 'constant-time', 'constant time', 'timing-safe', 'side-channel'];
-const HOT4 = ['oauth', 'authenticat', 'authoriz', 'auth bypass', 'sql injection', 'migration', 'schema change', 'access control', 'permission', 'payment', 'rate limit', 'optimize query'];
+const HOT5 = ['concurrency', 'mutex', 'race condition', 'deadlock', 'thread-saf', 'atomic', 'crypto', 'timing attack', 'timing-attack', 'constant-time', 'constant time', 'timing-safe', 'side-channel', 'encrypt', 'decrypt', 'mathematical proof', 'formal proof', 'derive equation', 'complexity bound'];
+const HOT4 = ['oauth', 'authenticat', 'authoriz', 'auth bypass', 'sql injection', 'access control', 'permission', 'secret', 'token', 'password', 'session', 'migration', 'schema change', 'payment', 'billing', 'rate limit', 'optimize query', 'legal contract', 'compliance', 'license terms', 'financial audit', 'tax filing', 'valuation', 'diagnosis', 'dosage', 'clinical', 'gdpr', 'hipaa', 'pii'];
 // </coaltipple-shared: hot-keywords>
 function hintFor(prompt) {
   const t = String(prompt || '').toLowerCase();
@@ -74,8 +74,8 @@ function contract(cfg) {
   return [
     '[CoalTipple] Model/effort routing active. Before delegating, ensure a valid model-tier ranking exists (self-heal via the coaltipple skill if missing/stale). Then:',
     '- DELEGATE-DOWN a task you can do but is large + cheap, to a lower tier — ONLY with a compact task-contract (goal+constraints+interface+done) AND verify the returned output on merge. Skip it for small tasks (spawn overhead beats the saving).',
-    '- ESCALATE-UP a task beyond the current tier for quality. Workers are leaves (nesting is hard-capped): a worker that fails RETURNS its result and the MAIN re-routes — workers never spawn.',
-    '- Grade by the deterministic rubric, not a model self-assessment. Opus is scarce: prefer raising effort on Sonnet before escalating the tier.',
+    '- ESCALATE-UP a task beyond the current tier for quality. Workers are leaves (a worker has no spawn tool in this CC build; never grant one the Agent tool): a worker that fails RETURNS its result and the MAIN re-routes — workers never spawn.',
+    '- Grade by the deterministic rubric, not a model self-assessment. Opus is scarce: cheapest lever first - raise effort, then a stronger same-tier version (e.g. Opus 4.6 -> 4.8), before escalating the tier.',
     '- Honor qualityBar (.coaltipple.json, 0-100, default 60): a result must clear it or climb the model ladder — start at the grade floor, verify vs the contract done-criteria by domain-appropriate means (code: tests/build; text: completeness; research: sourced claims), climb one rung if short, jump to the top tier if far below or out of attempts. 0 = anything passes (cheapest); 100 = climb until best.',
     langLine(cfg),
     '- Consent + token spend: honor .coaltipple.json; never silently fan out costly work.',

@@ -32,7 +32,8 @@ export const CONFIG_SCHEMA = [
   { key: 'rankingRefreshDays', type: 'int', min: 1, max: 365, flags: ['-R'], help: 'Cadence backstop (days) to re-enumerate + re-classify the model tier map even when the list seems unchanged. Range 1-365 (min 1 — 0 would force a per-session enumerate = token burn), default 30' },
   { key: 'sensitivePaths', type: 'strArr', flags: ['--sensitive'], help: 'Comma-separated path fragments that force the High/Reasoning tier (e.g. auth, crypto, payments, migrations)' },
   { key: 'excludePaths', type: 'strArr', lower: true, flags: ['-X', '--exclude'], help: 'Comma-separated dirs skipped when grading (default: node_modules, .git, dist, vendor, build)' },
-  { key: 'hotKeywords', type: 'strArr', lower: true, flags: ['--keywords'], help: 'Comma-separated keywords that force a high grade (concurrency, mutex, race, crypto, oauth, migration, ...)' },
+  { key: 'hotKeywords', type: 'strArr', lower: true, flags: ['--keywords'], help: 'LEGACY flat keyword list (prefer the structured `keywords` groups). Still merges as a grade-4 sensitive group. Comma-separated' },
+  { key: 'keywords', type: 'obj', noFlag: true, validate: validateKeywordGroups, help: 'Routing keyword GROUPS by task type — each { grade (1-5 floor), sensitive? (never-delegate-down), preserveVoice? (keep the user-facing deliverable), words: [...] }. Overrides/extends the factory groups (coding.concurrency/crypto/security/data, math, knowledge, domain, creative): add/remove a word or change a grade per group' },
   { key: 'disableRouting', type: 'strArr', lower: true, flags: ['-x', '--disable'], help: 'Comma-separated task domains to never route (coding, text, math, research) or "all"' },
   { key: 'contextFiles', type: 'strArr', flags: ['-C', '--context'], help: 'Memory-anchor file(s) a fresh worker reads for project context/conventions beyond the task contract (any name). Empty = rely on platform memory (CLAUDE.md/AGENTS.md). Comma-separated paths' },
   { key: 'memoryOffer', type: 'enum', values: ['auto', 'off'], flags: ['--memory'], help: 'When no memory anchor exists, offer (lazily, once) to set one up: auto (default) or off (disabled/skipped; re-enable via /coaltipple memory)' },
@@ -60,10 +61,24 @@ export function validateValue(spec, v) {
         ? null
         : 'must be an array of strings';
     case 'obj':
-      return v && typeof v === 'object' && !Array.isArray(v)
-        ? null
-        : 'must be an object';
+      if (!(v && typeof v === 'object' && !Array.isArray(v))) return 'must be an object';
+      return spec.validate ? spec.validate(v) : null;
     default:
       return `has an unknown spec type '${spec.type}'`;
   }
+}
+
+// Deep validator for the `keywords` groups (validateValue calls it for that key; verify.mjs +
+// configure.mjs surface its message). A malformed group fails loud rather than silently grading wrong:
+// an out-of-range grade is the input-boundary the grader would otherwise turn into an undefined tier.
+function validateKeywordGroups(groups) {
+  for (const name of Object.keys(groups)) {
+    const g = groups[name];
+    if (!g || typeof g !== 'object' || Array.isArray(g)) return `group '${name}' must be an object`;
+    if (!Array.isArray(g.words) || !g.words.every((w) => typeof w === 'string')) return `group '${name}'.words must be an array of strings`;
+    if (g.grade != null && !(Number.isInteger(g.grade) && g.grade >= 1 && g.grade <= 5)) return `group '${name}'.grade must be an integer 1-5`;
+    if (g.sensitive != null && typeof g.sensitive !== 'boolean') return `group '${name}'.sensitive must be a boolean`;
+    if (g.preserveVoice != null && typeof g.preserveVoice !== 'boolean') return `group '${name}'.preserveVoice must be a boolean`;
+  }
+  return null;
 }

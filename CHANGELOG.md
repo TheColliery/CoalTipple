@@ -2,6 +2,21 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.0.4] — 2026-06-15
+
+Topic-aware keyword config, a three-level escalation hierarchy, and an output-quality benchmark. Validated on Claude Code 2.1.143.
+
+### Added
+
+- **Keyword GROUPS in the config (`keywords`).** Routing keywords are grouped by task type (`coding.concurrency`/`crypto`/`security`/`data`, `math`, `knowledge`, `domain`, `creative`), each with a grade floor and optional `sensitive` (never-delegate-down) / `preserveVoice` flags. The factory config lists every group inline; override a word, a grade, or a whole group via `.coaltipple.json` (built-ins stay live by default). The deterministic grader returns `sensitive`/`preserveVoice` keyed on the matched group, not the grade. The legacy `hotKeywords` list still merges as a grade-4 group.
+- **Output-quality benchmark (`eval/`).** A harness measuring the *delivered output* (the complement to the routing-decision dogfood): five hard, subtle tasks (one per domain) with objective golds, an auto-scorer (`eval/score.mjs`) for the crypto and fact-checklist tasks, and rubrics for the judgment tasks.
+- **Effort rubric** — a deterministic effort-by-output-size table (low/medium/high/max), plus the "always-on lever" framing (effort optimizes even at a pinned or single tier).
+
+### Changed
+
+- **Escalation is now a three-level hierarchy: effort → version → tier** (was "effort before tier"). Raise effort (same model), then a stronger same-tier version (e.g. Opus 4.6 → 4.8, cheaper than a tier jump), then the next tier — never skipping to a higher tier while a stronger same-tier version is untried.
+- **`worker = leaf` is enforced, not assumed permanent.** The contract no longer claims a permanent "hard-capped" platform cap. On the verified build (Claude Code 2.1.143) a subagent has no spawn tool, so workers are leaves; newer builds can expose nested subagents, so the rule is now "never grant a worker the Agent tool, and re-verify on Claude Code updates."
+
 ## [1.0.3] — 2026-06-15
 
 A routing-quality fix (the floor tier now self-routes size-driven bulk) plus a security + CI cleanup.

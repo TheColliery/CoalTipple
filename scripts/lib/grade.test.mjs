@@ -71,3 +71,50 @@ test('crypto/timing keyword forces grade 5 by description, no files (the constan
   assert.equal(grade({ prompt: 'a constant-time comparison for tokens' }).grade, 5);
   assert.equal(grade({ prompt: 'small crypto helper, ~10 lines' }).grade, 5);
 });
+
+test('keyword GROUPS set the sensitive flag (never-down), keyed on the group not the grade', () => {
+  const crypto = grade({ prompt: 'add a constant-time compare' });
+  assert.equal(crypto.grade, 5);
+  assert.equal(crypto.sensitive, true);   // coding.crypto is a sensitive group
+  const conc = grade({ prompt: 'fix the race condition' });
+  assert.equal(conc.grade, 5);
+  assert.equal(conc.sensitive, false);    // concurrency is grade-5 but NOT sensitive (reasoning-hard, not security)
+  const path = grade({ prompt: 'tweak', files: [{ path: 'src/payment/charge.js', lines: 20 }] });
+  assert.equal(path.sensitive, true);     // a sensitive PATH also flags it
+});
+
+test('non-code domains grade per the built-in groups (math / knowledge / domain / creative)', () => {
+  assert.equal(grade({ prompt: 'write a formal proof of termination' }).grade, 5);       // math
+  assert.equal(grade({ prompt: 'do a systematic review of the sources' }).grade, 3);     // knowledge
+  const dom = grade({ prompt: 'translate this legal contract clause' });
+  assert.equal(dom.grade, 4);
+  assert.equal(dom.sensitive, true);                                                     // domain (sensitive)
+  const cre = grade({ prompt: 'rewrite this in our brand voice' });
+  assert.equal(cre.grade, 2);
+  assert.equal(cre.preserveVoice, true);                                                 // creative (preserveVoice)
+});
+
+test('config.keywords overrides/extends the factory groups (the user-tunable layer)', () => {
+  // a brand-new group the user adds
+  const added = grade({ prompt: 'frobnicate the reactor', config: { keywords: { 'custom.frob': { grade: 5, sensitive: true, words: ['frobnicate'] } } } });
+  assert.equal(added.grade, 5);
+  assert.equal(added.sensitive, true);
+  // overriding an existing group replaces its words: the new word fires
+  const over = grade({ prompt: 'add a nonce', config: { keywords: { 'coding.crypto': { grade: 5, sensitive: true, words: ['nonce'] } } } });
+  assert.equal(over.grade, 5);
+  assert.equal(over.sensitive, true);
+});
+
+test('legacy hotKeywords still merges as a grade-4 sensitive group (backward-compat)', () => {
+  const r = grade({ prompt: 'handle the frobwidget specially', config: { hotKeywords: ['frobwidget'] } });
+  assert.equal(r.grade, 4);
+  assert.equal(r.sensitive, true);
+});
+
+test('a config.keywords grade is clamped to 1-5 — the grader never emits an undefined tier', () => {
+  const hi = grade({ prompt: 'frobnicate', config: { keywords: { x: { grade: 9, words: ['frobnicate'] } } } });
+  assert.equal(hi.grade, 5);          // 9 -> clamped to 5
+  assert.equal(hi.tier, 'reasoning'); // never undefined
+  const lo = grade({ prompt: 'frobnicate', config: { keywords: { x: { grade: 0, words: ['frobnicate'] } } } });
+  assert.ok(lo.tier);                 // 0 -> clamped to 1 -> a valid tier
+});
