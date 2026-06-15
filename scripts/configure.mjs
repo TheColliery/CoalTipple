@@ -22,7 +22,6 @@
 //   node scripts/configure.mjs --help
 import fs from 'node:fs';
 import path from 'node:path';
-import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { CONFIG_SCHEMA, validateValue } from './lib/config-schema.mjs';
 import { loadMergedConfig, globalConfigPath } from './lib/config-load.mjs';
@@ -177,10 +176,11 @@ function main() {
   // Load the existing JSONC text, or seed from the factory (preserving its comments).
   let text;
   try {
-    if (fs.existsSync(configPath)) {
+    try {
       text = fs.readFileSync(configPath, 'utf8');
       parseConfig(text); // validate it parses before we touch it
-    } else {
+    } catch (readErr) {
+      if (readErr.code !== 'ENOENT') throw readErr; // real read/parse failure -> fail loud below
       text = fs.readFileSync(factoryCfg, 'utf8');
       console.log(`No ${toProject ? 'project' : 'global'} config at ${configPath} — seeding from factory then applying your edits.`);
     }

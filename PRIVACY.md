@@ -9,4 +9,4 @@
 - **Error reports are manual.** When a component misbehaves, your agent may *offer* to open a pre-filled GitHub issue; nothing is ever submitted automatically, and you see and edit the full contents before sending.
 - **Local files only.** All state lives in files you can read: the config (`~/.claude/.coaltipple.json` and an optional per-project `.coaltipple.json`) and the project-scoped `.coaltipple/` directory (the model ranking, the `proposed/` sandbox, and the `state.json` resume journal).
 
-Questions: open an issue at https://github.com/TheColliery/CoalTipple/issues.
+Questions: open an issue at <https://github.com/TheColliery/CoalTipple/issues>.
