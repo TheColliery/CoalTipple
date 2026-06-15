@@ -1,6 +1,6 @@
 # Verifying CoalTipple
 
-CoalTipple is one tool in the **TheColliery** mining series, and it is verified the same way as its sibling **[CoalMine](https://github.com/HetCreep/CoalMine/blob/main/SECURITY.md)**: every executable hook obeys the [Phoenix-13 commandments](https://github.com/HetCreep/CoalMine/blob/main/docs/hooks-safety.md), the distribution is reproducible from source, and an independent scanner is run each release. Across the series the **structure** is the assurance — not a scanner's number.
+CoalTipple is one tool in the **TheColliery** mining series, and it is verified the same way as its sibling **[CoalMine](https://github.com/HetCreep/CoalMine/blob/main/SECURITY.md)**: every executable hook obeys the [Phoenix-13 commandments](https://github.com/TheColliery/.github/blob/main/hooks-safety.md), the distribution is reproducible from source, and an independent scanner is run each release. Across the series the **structure** is the assurance — not a scanner's number.
 
 ## Structural safety (not just a scanner score)
 
@@ -50,7 +50,7 @@ The scan targets the shipped `skills/coaltipple/SKILL.md` — the exact artifact
 
 Both are the same RA2 heuristic flagging a *written file* as "session persistence" — yet neither is covert: one is a re-derivable cache, the other is explicitly consent-gated. SkillSpector's **LLM semantic** pass is what contextualizes such surface matches, and it requires prepaid Anthropic API credits to run; on a free-tier key with a zero credit balance it returns `credit balance too low`, so the score falls back to the static, false-positive result. (On the content v2.1.3 evaluated, that semantic pass returned **0 findings**.) The headline number is not a measure of real risk.
 
-The real assurance is **structural**, as above: every CoalTipple hook obeys the [Phoenix-13 commandments](https://github.com/HetCreep/CoalMine/blob/main/docs/hooks-safety.md) — zero external dependencies, no network ever, no child processes, fail-silent, session state cleaned up — and every routing action is consent-gated through the platform's own subagent tool. There is no data-exfiltration path, no covert persistence, and nothing auto-executes. A scanner's surface-pattern findings are reviewed against that structure rather than taken as a measure of real risk.
+The real assurance is **structural**, as above: every CoalTipple hook obeys the [Phoenix-13 commandments](https://github.com/TheColliery/.github/blob/main/hooks-safety.md) — zero external dependencies, no network ever, no child processes, fail-silent, session state cleaned up — and every routing action is consent-gated through the platform's own subagent tool. There is no data-exfiltration path, no covert persistence, and nothing auto-executes. A scanner's surface-pattern findings are reviewed against that structure rather than taken as a measure of real risk.
 
 ## Reporting an issue
 
