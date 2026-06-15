@@ -2,6 +2,26 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.0.5] - 2026-06-16
+
+The topic-keyword config is now fully editable, the factory config ships its built-ins populated, and the benchmark moved to the series umbrella. Validated on Claude Code 2.1.143.
+
+### Changed
+
+- **BREAKING (config): keyword groups now use flat, top-level names.** `coding.concurrency` -> `concurrency`, `coding.crypto` -> `crypto`, `coding.security` -> `security`, `coding.data` -> `coding` (the `coding.` prefix is dropped). *Migration:* a `.coaltipple.json` `keywords` override pinning a dotted name (e.g. `coding.crypto`) must rename to the flat form (`crypto`), and `coding.data` -> `coding`.
+- **The factory `.coaltipple.json` ships its built-ins POPULATED.** The `keywords` groups, `sensitivePaths`, and `excludePaths` are written out in full (visible, editable; add or delete entries directly) instead of an empty `{}` / `[]`. They are generated from the `keywords.mjs` single source of truth by `build-plugin.mjs` and gated by `verify.mjs` (the shipped config can never drift); the installer strips the build markers so an installed config stays clean. Set a value back to `{}` / `[]` to fall back to the built-ins.
+- **The `eval/` output-quality benchmark moved to the series umbrella** (`TheColliery/.github/benchmarks/CoalTipple/`) so the skill repo stays lean - a clone carries only the skill and its docs; the README links to the new location.
+- **`worker = leaf` reworded as enforced-but-not-permanent:** on the verified build a subagent has no spawn tool, so workers are leaves; a newer build could expose nesting, so the rule is "never grant a worker the spawn tool, re-verify on updates."
+
+### Added
+
+- **`CONTRIBUTING.md`** - the support policy (Claude Code + Antigravity are the validated platforms; others best-effort) and the contributor rule that `SKILL.md` is the load-bearing, behavioral surface that must be dogfooded, not just unit-tested.
+
+### Fixed
+
+- **`CONTRIBUTING.md` build command:** a keyword change re-syncs through `build-plugin.mjs` (the conductor hook and the factory config), then `build-dist.mjs` rebuilds the dist; the earlier text named `build-dist.mjs` for the keyword sync, which left `verify.mjs` failing.
+- **Stale `config-schema.mjs` header comment:** the `configure` CLI is built (`scripts/configure.mjs`), no longer "deferred / not built yet".
+
 ## [1.0.4] — 2026-06-15
 
 Topic-aware keyword config, a three-level escalation hierarchy, and an output-quality benchmark. Validated on Claude Code 2.1.143.

@@ -75,7 +75,7 @@ test('crypto/timing keyword forces grade 5 by description, no files (the constan
 test('keyword GROUPS set the sensitive flag (never-down), keyed on the group not the grade', () => {
   const crypto = grade({ prompt: 'add a constant-time compare' });
   assert.equal(crypto.grade, 5);
-  assert.equal(crypto.sensitive, true);   // coding.crypto is a sensitive group
+  assert.equal(crypto.sensitive, true);   // crypto is a sensitive group
   const conc = grade({ prompt: 'fix the race condition' });
   assert.equal(conc.grade, 5);
   assert.equal(conc.sensitive, false);    // concurrency is grade-5 but NOT sensitive (reasoning-hard, not security)
@@ -100,7 +100,7 @@ test('config.keywords overrides/extends the factory groups (the user-tunable lay
   assert.equal(added.grade, 5);
   assert.equal(added.sensitive, true);
   // overriding an existing group replaces its words: the new word fires
-  const over = grade({ prompt: 'add a nonce', config: { keywords: { 'coding.crypto': { grade: 5, sensitive: true, words: ['nonce'] } } } });
+  const over = grade({ prompt: 'add a nonce', config: { keywords: { 'crypto': { grade: 5, sensitive: true, words: ['nonce'] } } } });
   assert.equal(over.grade, 5);
   assert.equal(over.sensitive, true);
 });

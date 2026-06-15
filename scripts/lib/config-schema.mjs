@@ -1,7 +1,7 @@
 // Single source of truth for every .coaltipple.json key.
 // verify.mjs validates the factory config against it — a key added here is
 // automatically validated and documented. The `flags`/`help` fields keep the
-// schema CLI-ready for a future `configure` command (deferred in v1, not built yet).
+// schema CLI-ready for the `configure` command (`scripts/configure.mjs`).
 // (Mirrors CoalMine's config-schema.mjs pattern for series parity.)
 //
 // Spec fields:
@@ -33,7 +33,7 @@ export const CONFIG_SCHEMA = [
   { key: 'sensitivePaths', type: 'strArr', flags: ['--sensitive'], help: 'Comma-separated path fragments that force the High/Reasoning tier (e.g. auth, crypto, payments, migrations)' },
   { key: 'excludePaths', type: 'strArr', lower: true, flags: ['-X', '--exclude'], help: 'Comma-separated dirs skipped when grading (default: node_modules, .git, dist, vendor, build)' },
   { key: 'hotKeywords', type: 'strArr', lower: true, flags: ['--keywords'], help: 'LEGACY flat keyword list (prefer the structured `keywords` groups). Still merges as a grade-4 sensitive group. Comma-separated' },
-  { key: 'keywords', type: 'obj', noFlag: true, validate: validateKeywordGroups, help: 'Routing keyword GROUPS by task type — each { grade (1-5 floor), sensitive? (never-delegate-down), preserveVoice? (keep the user-facing deliverable), words: [...] }. Overrides/extends the factory groups (coding.concurrency/crypto/security/data, math, knowledge, domain, creative): add/remove a word or change a grade per group' },
+  { key: 'keywords', type: 'obj', noFlag: true, validate: validateKeywordGroups, help: 'Routing keyword GROUPS by task type — each { grade (1-5 floor), sensitive? (never-delegate-down), preserveVoice? (keep the user-facing deliverable), words: [...] }. Overrides/extends the factory groups (concurrency, crypto, security, coding, math, knowledge, domain, creative): add/remove a word or change a grade per group' },
   { key: 'disableRouting', type: 'strArr', lower: true, flags: ['-x', '--disable'], help: 'Comma-separated task domains to never route (coding, text, math, research) or "all"' },
   { key: 'contextFiles', type: 'strArr', flags: ['-C', '--context'], help: 'Memory-anchor file(s) a fresh worker reads for project context/conventions beyond the task contract (any name). Empty = rely on platform memory (CLAUDE.md/AGENTS.md). Comma-separated paths' },
   { key: 'memoryOffer', type: 'enum', values: ['auto', 'off'], flags: ['--memory'], help: 'When no memory anchor exists, offer (lazily, once) to set one up: auto (default) or off (disabled/skipped; re-enable via /coaltipple memory)' },

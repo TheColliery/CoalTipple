@@ -31,6 +31,11 @@ test('install to a PATH: copies skill, seeds project config + conductor + the sh
     assert.equal(r.status, 0, `install must pass:\n${r.stdout}${r.stderr}`);
     assert.ok(fs.existsSync(path.join(dest, 'coaltipple', 'SKILL.md')), 'SKILL.md installed');
     assert.ok(fs.existsSync(projCfg(tmp)), 'project config seeded under <cwd>/.claude');
+    // Seeds the POPULATED factory keywords (visible + editable), with repo-build markers/comment stripped.
+    const seeded = fs.readFileSync(projCfg(tmp), 'utf8');
+    assert.match(seeded, /"concurrency":/, 'seeded config ships the populated keyword groups');
+    assert.doesNotMatch(seeded, /coaltipple-shared:/, 'no repo-build markers leak into a user config');
+    assert.doesNotMatch(seeded, /GENERATED from keywords\.mjs/, 'no build-machinery comment leaks into a user config');
     // The ranking is GLOBAL (platform-level, shared) — any install seeds it under ~/.claude.
     const ranking = JSON.parse(fs.readFileSync(globalRanking(home), 'utf8'));
     assert.equal(ranking.complete, true, 'ranking is complete');

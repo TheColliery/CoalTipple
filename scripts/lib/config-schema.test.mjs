@@ -72,7 +72,7 @@ test('keywords groups are deep-validated (a bad group fails loud, not a silent b
   const spec = specOf('keywords');
   assert.ok(spec, 'keywords spec exists');
   assert.equal(validateValue(spec, {}), null);                                                            // empty = use the built-in groups
-  assert.equal(validateValue(spec, { 'coding.crypto': { grade: 5, sensitive: true, words: ['nonce'] } }), null); // a valid override
+  assert.equal(validateValue(spec, { 'crypto': { grade: 5, sensitive: true, words: ['nonce'] } }), null); // a valid override
   assert.match(validateValue(spec, 'nope'), /must be an object/);                                         // not an object
   assert.match(validateValue(spec, { x: { grade: 9, words: ['a'] } }), /grade must be an integer 1-5/);   // out-of-range grade (the undefined-tier boundary)
   assert.match(validateValue(spec, { x: { grade: 3, words: 'a' } }), /words must be an array/);            // words not an array

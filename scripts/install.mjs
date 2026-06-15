@@ -42,6 +42,19 @@ function installSkill(dest) {
   console.log(`  installed skill -> ${to}`);
 }
 
+// The factory template carries repo-build machinery in its keywords section (the keyword-sync
+// markers + a "GENERATED from keywords.mjs ... by build-plugin.mjs" note) that is meaningless in
+// an installed copy (a user, especially a plugin install, has no scripts/). Strip those lines so
+// the installed config is clean populated factory defaults with no dev-machine references
+// (generalize-shipped); the populated keyword VALUE itself stays.
+function writeFactoryConfig(dest) {
+  const cleaned = fs.readFileSync(factoryCfg, 'utf8')
+    .split('\n')
+    .filter((l) => !l.includes('coaltipple-shared:') && !l.includes('GENERATED from keywords.mjs'))
+    .join('\n');
+  fs.writeFileSync(dest, cleaned);
+}
+
 // GLOBAL config seeding — ~/.claude/.coaltipple.json (the user's defaults for ALL
 // projects), create-if-absent; --reset forces it back to factory. Never creates a
 // project file (no-clutter) — per-project overrides come from configure.mjs --project.
@@ -50,7 +63,7 @@ function seedGlobalConfig(force = false) {
     const dest = globalConfigPath();
     fs.mkdirSync(path.dirname(dest), { recursive: true }); // ensure ~/.claude exists
     if (force || !fs.existsSync(dest)) {
-      fs.copyFileSync(factoryCfg, dest);
+      writeFactoryConfig(dest);
       console.log(`  ${force ? 'RESET global settings to factory' : 'created global default settings'} -> ${dest}`);
     } else console.log(`  global settings PRESERVED (yours, untouched) -> ${dest}`);
   } catch (e) { console.warn(`  [warn] global settings: ${e.message}`); process.exitCode = 1; }
@@ -83,7 +96,7 @@ function seedProjectFiles(force = false) {
     const dest = projectConfigPath();
     fs.mkdirSync(path.dirname(dest), { recursive: true }); // ensure <cwd>/.claude exists
     if (force || !fs.existsSync(dest)) {
-      fs.copyFileSync(factoryCfg, dest);
+      writeFactoryConfig(dest);
       console.log(`  ${force ? 'RESET settings to factory' : 'created default settings'} -> ${dest}`);
     } else console.log(`  settings PRESERVED (yours, untouched) -> ${dest}`);
   } catch (e) { console.warn(`  [warn] settings: ${e.message}`); process.exitCode = 1; }

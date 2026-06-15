@@ -47,7 +47,7 @@ node scripts/test.mjs     # the zero-dep test suite (node --test; fail-loud on a
 
 House rules (most are gate-enforced):
 
-- **`keywords.mjs` is the single source of truth** for routing keywords. Edit it there and rebuild the dist (`node scripts/build-dist.mjs`); `verify.mjs` fails if the conductor's derived lists drift -- never hand-edit those lists.
+- **`keywords.mjs` is the single source of truth** for routing keywords. Edit it there, re-sync the conductor (`node scripts/build-plugin.mjs`), then rebuild the dist (`node scripts/build-dist.mjs`); `verify.mjs` fails if the conductor's derived lists drift -- never hand-edit those lists.
 - **The `plugin/` dist must stay in sync** with source. Rebuild after touching the skill, hooks, or manifest; the gate checks both directions (nothing stale, nothing shipped without a source).
 - **Every shared helper has a `*.test.mjs`** runnable with `node --test`. Add or update the test with the logic -- the runner fails loud on a missing file.
 - **Hooks stay Phoenix-pure**: zero-dep, fail-silent (wrap in try/catch, never a non-zero exit, never `process.exit()`), no network, no side effects.

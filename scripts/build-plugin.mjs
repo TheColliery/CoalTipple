@@ -17,12 +17,57 @@ export async function genHotKeywords() {
   return `const HOT5 = ${fmtArray(kw.HOT5)};\nconst HOT4 = ${fmtArray(kw.HOT4)};`;
 }
 
+// Body BETWEEN the keywords markers in the factory .coaltipple.json: the populated keyword
+// GROUPS serialized from keywords.mjs, so the shipped config shows the real list (users edit
+// it directly) yet can never drift from the SSoT. verify.mjs fails if the config != this output.
+export async function genKeywordsConfig() {
+  const kw = await import(pathToFileURL(path.join(repo, 'scripts', 'lib', 'keywords.mjs')).href);
+  const rows = Object.entries(kw.KEYWORD_GROUPS).map(([name, g]) => {
+    const f = [`"grade": ${g.grade}`];
+    if (g.sensitive) f.push('"sensitive": true');
+    if (g.preserveVoice) f.push('"preserveVoice": true');
+    f.push(`"words": [${g.words.map((w) => JSON.stringify(w)).join(', ')}]`);
+    return `    ${JSON.stringify(name)}: { ${f.join(', ')} }`;
+  });
+  return `  "keywords": {\n${rows.join(',\n')}\n  },`;
+}
+
+// The factory config also ships the SENSITIVE / EXCLUDE built-in path lists POPULATED (visible +
+// editable), generated from keywords.mjs the same way -- verify.mjs gates drift, install strips the markers.
+const fmtStrArray = (arr) => `[${arr.map((s) => JSON.stringify(s)).join(', ')}]`;
+export async function genSensitivePaths() {
+  const kw = await import(pathToFileURL(path.join(repo, 'scripts', 'lib', 'keywords.mjs')).href);
+  return `  "sensitivePaths": ${fmtStrArray(kw.SENSITIVE)},`;
+}
+export async function genExcludePaths() {
+  const kw = await import(pathToFileURL(path.join(repo, 'scripts', 'lib', 'keywords.mjs')).href);
+  return `  "excludePaths": ${fmtStrArray(kw.EXCLUDE)},`;
+}
+
 export const REGIONS = [
   {
     file: path.join(repo, 'hooks', 'coaltipple-conductor.js'),
     open: '// <coaltipple-shared: hot-keywords>',
     close: '// </coaltipple-shared: hot-keywords>',
     gen: genHotKeywords,
+  },
+  {
+    file: path.join(repo, 'platform-configs', '.coaltipple.json'),
+    open: '// <coaltipple-shared: keywords>',
+    close: '// </coaltipple-shared: keywords>',
+    gen: genKeywordsConfig,
+  },
+  {
+    file: path.join(repo, 'platform-configs', '.coaltipple.json'),
+    open: '// <coaltipple-shared: sensitivePaths>',
+    close: '// </coaltipple-shared: sensitivePaths>',
+    gen: genSensitivePaths,
+  },
+  {
+    file: path.join(repo, 'platform-configs', '.coaltipple.json'),
+    open: '// <coaltipple-shared: excludePaths>',
+    close: '// </coaltipple-shared: excludePaths>',
+    gen: genExcludePaths,
   },
 ];
 

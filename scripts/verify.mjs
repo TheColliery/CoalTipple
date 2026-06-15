@@ -86,6 +86,22 @@ try {
   }
 } catch (e) { fail(`shared-region check: ${e.message}`); }
 
+console.log('factory config regions (.coaltipple.json vs keywords.mjs SSoT):');
+try {
+  const { REGIONS } = await import(pathToFileURL(path.join(repo, 'scripts', 'build-plugin.mjs')).href);
+  const src = fs.readFileSync(path.join(repo, 'platform-configs', '.coaltipple.json'), 'utf8');
+  const cr = String.fromCharCode(13); // CRLF-insensitive (Windows autocrlf)
+  for (const r of REGIONS.filter((x) => x.file.endsWith('.coaltipple.json'))) {
+    const name = r.open.replace('// <coaltipple-shared: ', '').replace('>', '');
+    const oi = src.indexOf(r.open), ci = src.indexOf(r.close);
+    if (oi === -1 || ci === -1 || ci < oi) { fail(`${name}: markers missing/disordered in .coaltipple.json`); continue; }
+    const current = src.slice(src.indexOf('\n', oi) + 1, ci).trim();
+    const expected = (await r.gen()).trim();
+    if (current.split(cr).join('') === expected.split(cr).join('')) ok(`${name} config in sync with keywords.mjs`);
+    else fail(`${name} config DRIFTED from keywords.mjs -- run \`node scripts/build-plugin.mjs\``);
+  }
+} catch (e) { fail(`config-region check: ${e.message}`); }
+
 console.log('config-path sync (conductor + configure inline vs config-load SSoT):');
 try {
   // The project-config path lives under .claude in config-load.mjs (the SSoT). The

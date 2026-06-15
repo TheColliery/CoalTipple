@@ -107,15 +107,18 @@
 
   // ─── grading scope ───
 
-  // ## Path fragments that force the High/Reasoning tier even at a single file.
+  // ## Path fragments that force the High/Reasoning tier even at a single file. Shipped POPULATED
+  // ## (edit/add/delete directly); set to [] to fall back to the built-ins. Generated from keywords.mjs SENSITIVE.
   // # Setting type: String[] (array of fragments)
-  // # Default value: [] (built-in: auth, crypto, payment, billing, migration, secret, token, password, session, security)
-  "sensitivePaths": [],
+// <coaltipple-shared: sensitivePaths>
+  "sensitivePaths": ["auth", "crypto", "payment", "billing", "migration", "secret", "token", "password", "session", "security"],
+// </coaltipple-shared: sensitivePaths>
 
-  // ## Dirs skipped when grading breadth.
+  // ## Dirs skipped when grading breadth. Shipped POPULATED (edit directly); [] = the built-ins. Generated from keywords.mjs EXCLUDE.
   // # Setting type: String[]
-  // # Default value: [] (built-in: node_modules, .git, dist, vendor, build, .next, coverage)
-  "excludePaths": [],
+// <coaltipple-shared: excludePaths>
+  "excludePaths": ["node_modules", ".git", "dist", "vendor", "build", ".next", "coverage"],
+// </coaltipple-shared: excludePaths>
 
   // ## LEGACY flat keyword list (prefer the structured `keywords` groups below). Still honored — merges as a grade-4 sensitive group.
   // # Setting type: String[]
@@ -126,20 +129,25 @@
   // ## `sensitive` = NEVER delegate-down, or `preserveVoice` = keep the deliverable on a strong model). The
   // ## deterministic grader scans the prompt for these; difficulty always overrides size. This is the heart of
   // ## topic-aware routing — add/remove a word or change a grade to tune how cautious CoalTipple is per domain.
-  // ## Built-in defaults (leave `keywords` = {} to use them as-is — they then receive skill updates):
-  // ##   coding.concurrency  grade 5             concurrency, mutex, race condition, deadlock, thread-saf, atomic
-  // ##   coding.crypto       grade 5  sensitive  crypto, timing attack, constant-time, timing-safe, side-channel, encrypt, decrypt
-  // ##   coding.security     grade 4  sensitive  oauth, authenticat, authoriz, auth bypass, sql injection, access control, permission, secret, token, password, session
-  // ##   coding.data         grade 4  sensitive  migration, schema change, payment, billing, rate limit, optimize query
-  // ##   math                grade 5             mathematical proof, formal proof, derive equation, complexity bound
-  // ##   knowledge           grade 3             systematic review, literature review, citation, claim verification
-  // ##   domain              grade 4  sensitive  legal contract, compliance, license terms, financial audit, tax filing, valuation, diagnosis, dosage, clinical, gdpr, hipaa, pii
-  // ##   creative            grade 2  voice      brand voice, tone of voice, style guide
-  // ## To OVERRIDE one group, add it here (your entry replaces that group's grade/words); groups you omit keep the built-in.
-  // ##   e.g.  "keywords": { "coding.crypto": { "grade": 5, "sensitive": true, "words": ["crypto", "nonce", "kdf", "key derivation"] } }
+  // ## Ships POPULATED below (edit directly); set `keywords`: {} instead to fall back to the built-ins — which then track skill updates).
+  // ## Groups: concurrency · crypto · security · coding · math · knowledge · domain · creative.
+  // ## To OVERRIDE one: your entry replaces that group's grade/words; omit a group to keep its shipped default.
+  // ## KEEP `crypto` at grade 5 + sensitive: that is the never-down safety gate.
+  // ##   e.g.  "keywords": { "crypto": { "grade": 5, "sensitive": true, "words": ["crypto", "nonce", "kdf"] } }
   // # Setting type: Object { "<group>": { "grade": 1-5, "sensitive"?: bool, "preserveVoice"?: bool, "words": string[] } }
-  // # Default value: {} (use the built-in groups listed above)
-  "keywords": {},
+  // # The value below is GENERATED from keywords.mjs (the SSoT) by build-plugin.mjs; verify.mjs fails on drift.
+// <coaltipple-shared: keywords>
+  "keywords": {
+    "concurrency": { "grade": 5, "words": ["concurrency", "mutex", "race condition", "deadlock", "thread-saf", "atomic"] },
+    "crypto": { "grade": 5, "sensitive": true, "words": ["crypto", "timing attack", "timing-attack", "constant-time", "constant time", "timing-safe", "side-channel", "encrypt", "decrypt"] },
+    "security": { "grade": 4, "sensitive": true, "words": ["oauth", "authenticat", "authoriz", "auth bypass", "sql injection", "access control", "permission", "secret", "token", "password", "session"] },
+    "coding": { "grade": 4, "sensitive": true, "words": ["migration", "schema change", "payment", "billing", "rate limit", "optimize query"] },
+    "math": { "grade": 5, "words": ["mathematical proof", "formal proof", "derive equation", "complexity bound"] },
+    "knowledge": { "grade": 3, "words": ["systematic review", "literature review", "citation", "claim verification"] },
+    "domain": { "grade": 4, "sensitive": true, "words": ["legal contract", "compliance", "license terms", "financial audit", "tax filing", "valuation", "diagnosis", "dosage", "clinical", "gdpr", "hipaa", "pii"] },
+    "creative": { "grade": 2, "preserveVoice": true, "words": ["brand voice", "tone of voice", "style guide"] }
+  },
+// </coaltipple-shared: keywords>
 
   // ## Task domains never routed (always done in-session), or "all" to disable routing entirely.
   // # Setting type: String[] (coding, text, math, research, all)
