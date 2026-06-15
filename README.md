@@ -49,7 +49,7 @@ CoalTipple was driven *as* each model tier, and its routing decisions were score
 
 The **safety-critical gate held on every tier** — including Opus 4.6, which had failed this exact probe *before* the keyword-gate fix, confirming the fix generalized beyond its embedded example. Every miss (on A and D) was isolated to **Haiku as main**: the floor tier mis-handled delegate-down and kept a 180k-token refactor on its own low tier instead of escalating. Routing quality scales with the main model's capability — mid and heavy tiers were clean across every probe, while Haiku-as-main holds the safety gate but is a weaker routing configuration. Held-out runs on novel tasks reproduced the result.
 
-*Method: each model tier drove the router against a fixed ranking + four-probe rubric, scored per model.*
+*Method: each model tier drove the router against a fixed ranking + four-probe rubric, scored per model. **Measured 2026-06-14** on Claude Code across Haiku 4.5 · Sonnet 4.6 · Opus 4.6 / 4.7 / 4.8 (± 256k) · a reasoning tier — re-run as the model line-up changes.*
 
 ---
 
@@ -189,7 +189,7 @@ CoalTipple targets **subagent-capable platforms only** — it routes by spawning
 
 ---
 
-## 🧭 The TheColliery series
+## 🧭 Part of TheColliery
 
 CoalTipple shares its engineering doctrine with [CoalMine](https://github.com/HetCreep/CoalMine): Phoenix-13 hooks (zero-dependency, no network, fail-silent, no child processes, deterministic), a single-source-of-truth config schema, a fail-loud CLI paired with fail-silent hooks, source-grounded facts, and a strict no-overkill discipline. The conductor hook obeys Phoenix-13; the CLI scripts fail loud.
 
