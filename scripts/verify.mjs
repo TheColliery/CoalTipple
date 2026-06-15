@@ -80,7 +80,8 @@ try {
   else {
     const current = src.slice(src.indexOf('\n', oi) + 1, ci).trim();
     const expected = (await genHotKeywords()).trim();
-    if (current === expected) ok('hot-keywords in sync with keywords.mjs');
+    const cr = String.fromCharCode(13); // CRLF-insensitive: a Windows checkout (autocrlf) yields \r\n; genHotKeywords emits \n
+    if (current.split(cr).join('') === expected.split(cr).join('')) ok('hot-keywords in sync with keywords.mjs');
     else fail('hot-keywords DRIFTED from keywords.mjs — run `node scripts/build-plugin.mjs`');
   }
 } catch (e) { fail(`shared-region check: ${e.message}`); }

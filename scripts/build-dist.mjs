@@ -4,7 +4,8 @@
 // repo's scripts/, platform-configs/ (other-agent install templates), .github/, or docs.
 // Mirrors CoalMine's plugin/ dist; the marketplace.json `source` points at ./plugin.
 // Run after editing skills/hooks/commands/plugin.json — `verify.mjs` FAILs on drift.
-// Node built-ins only.
+// Node built-ins only. buildDist/checkDist take an optional distRoot so they are testable
+// against a temp dir without touching the real plugin/.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -24,19 +25,20 @@ export const DIST_ITEMS = [
   'commands',
 ];
 
-export function buildDist() {
-  fs.rmSync(dist, { recursive: true, force: true });
+export function buildDist(distRoot = dist) {
+  fs.rmSync(distRoot, { recursive: true, force: true });
   for (const rel of DIST_ITEMS) {
     const src = path.join(repo, rel);
-    const dst = path.join(dist, rel);
+    const dst = path.join(distRoot, rel);
     fs.mkdirSync(path.dirname(dst), { recursive: true });
     fs.cpSync(src, dst, { recursive: true }); // recursive always (a flat copy EISDIRs a dir)
   }
 }
 
-// Every source file under DIST_ITEMS must exist in plugin/ AND match byte-for-byte, and
-// plugin/ must hold nothing without a source (orphan). Returns [] when in sync.
-export function checkDist() {
+// Every source file under DIST_ITEMS must exist in distRoot AND match byte-for-byte, distRoot
+// must hold nothing under those items without a source (orphan), AND no top-level entry may
+// exist that no DIST_ITEM accounts for (the cruft guard). Returns [] when in sync.
+export function checkDist(distRoot = dist) {
   const out = [];
   const filesUnder = (root, rel) => {
     const abs = path.join(root, rel);
@@ -46,12 +48,20 @@ export function checkDist() {
   };
   for (const item of DIST_ITEMS) {
     for (const rel of filesUnder(repo, item)) {
-      const d = path.join(dist, rel);
+      const d = path.join(distRoot, rel);
       if (!fs.existsSync(d)) out.push(`missing in plugin/: ${rel}`);
       else if (fs.readFileSync(path.join(repo, rel)).compare(fs.readFileSync(d)) !== 0) out.push(`stale in plugin/: ${rel}`);
     }
-    for (const rel of filesUnder(dist, item)) {
+    for (const rel of filesUnder(distRoot, item)) {
       if (!fs.existsSync(path.join(repo, rel))) out.push(`orphan in plugin/ (no source): ${rel}`);
+    }
+  }
+  // A top-level entry the dist carries that no DIST_ITEM accounts for (e.g. a hand-added
+  // plugin/scripts/) — buildDist's rm+copy prevents it, but a hand-edited dist would slip.
+  const allowedTops = new Set(DIST_ITEMS.map((rel) => rel.split(path.sep)[0]));
+  if (fs.existsSync(distRoot)) {
+    for (const name of fs.readdirSync(distRoot)) {
+      if (!allowedTops.has(name)) out.push(`orphan top-level in plugin/ (no DIST_ITEM): ${name}`);
     }
   }
   return out;

@@ -49,7 +49,37 @@ CoalTipple was driven *as* each model tier, and its routing decisions were score
 
 The **safety-critical gate held on every tier** — including Opus 4.6, which had failed this exact probe *before* the keyword-gate fix, confirming the fix generalized beyond its embedded example. Every miss (on A and D) was isolated to **Haiku as main**: the floor tier mis-handled delegate-down and kept a 180k-token refactor on its own low tier instead of escalating. Routing quality scales with the main model's capability — mid and heavy tiers were clean across every probe, while Haiku-as-main holds the safety gate but is a weaker routing configuration. Held-out runs on novel tasks reproduced the result.
 
-*Method: each model tier drove the router against a fixed ranking + four-probe rubric, scored per model.*
+*Method: each model tier drove the router against a fixed ranking + four-probe rubric, scored per model. **Measured 2026-06-14** on Claude Code across Haiku 4.5 · Sonnet 4.6 · Opus 4.6 / 4.7 / 4.8 (± 256k) · a reasoning tier — re-run as the model line-up changes.*
+
+---
+
+## 🚀 Installation
+
+**Claude Code — a native plugin:**
+
+```bash
+claude plugin marketplace add TheColliery/CoalTipple
+claude plugin install coaltipple@coaltipple
+```
+
+That installs the skill, the discoverable `/coaltipple:stats | off | memory` commands, and the advisory conductor hook — **restart Claude Code to load it.** The shared global config and model ranking seed under `~/.claude/` (created only if absent; an update never overwrites your settings).
+
+**Any other subagent-capable agent — cross-platform via the installer:**
+
+```bash
+git clone https://github.com/TheColliery/CoalTipple.git
+node CoalTipple/scripts/install.mjs <agent|PATH>   # or `all` to auto-detect the agents configured in this repo
+node CoalTipple/scripts/install.mjs --reset        # the ONLY path that restores factory config + ranking
+```
+
+A per-project override lives at `<project>/.claude/.coaltipple.json` (or run `configure.mjs --project`). Your config and refined ranking are preserved across every update — only `--reset` overwrites them.
+
+### Verify (from a clone)
+
+```bash
+node scripts/verify.mjs   # gate: factory config ↔ schema · skill/conductor present · plugin/ dist in sync · keyword SSoT in sync
+node scripts/test.mjs     # the zero-dependency test suite (fail-loud on a missing or orphan test file)
+```
 
 ---
 
@@ -123,7 +153,7 @@ A worker starts **context-fresh** — it sees only the task contract, not the co
 CoalTipple ships zero-config: sensible, token-thrifty, safe defaults that work out of the box. Every value is tunable, and the schema is the single source of truth.
 
 - **Config lives in two levels.** A **global** `~/.claude/.coaltipple.json` holds your defaults for every project; an **optional per-project** `<project>/.claude/.coaltipple.json` overrides it. Precedence is **project → global → schema default** (a per-key shallow merge). A project file is created only when you customize one — a global install never clutters a project. Everything CoalTipple writes lives under `.claude/` (mirroring CoalMine): the global config and the shared model **ranking** sit at `~/.claude/`, the project override and per-project work-state at `<project>/.claude/`. The ranking is platform-level, so it is built once globally and shared across every project — nothing is left loose at a project root.
-- **The schema is the SSoT.** Every key (~22) is defined, typed, and range-checked in [`scripts/lib/config-schema.mjs`](scripts/lib/config-schema.mjs); `scripts/verify.mjs` validates the factory config against it, so a typo'd key or out-of-range value fails loud. The shipped factory config is fully commented — every key carries its purpose, type, and default inline.
+- **The schema is the SSoT.** Every key is defined, typed, and range-checked in [`scripts/lib/config-schema.mjs`](scripts/lib/config-schema.mjs); `scripts/verify.mjs` validates the factory config against it, so a typo'd key or out-of-range value fails loud. The shipped factory config is fully commented — every key carries its purpose, type, and default inline.
 
 Representative keys (see the schema for the complete, authoritative list):
 
@@ -151,48 +181,15 @@ node scripts/configure.mjs --help                        # every flag, generated
 
 ---
 
-## 🚀 Installation
-
-CoalTipple installs as a **global personal skill** — once installed it routes in *every* project, not just one.
-
-```bash
-git clone https://github.com/TheColliery/CoalTipple.git
-
-# install globally for Claude Code: skill + global default config
-node /path/to/CoalTipple/scripts/install.mjs claude
-```
-
-This lands the skill at `~/.claude/skills/coaltipple` and seeds the global `~/.claude/.coaltipple.json` (created only if absent — an update never overwrites your settings). The skill self-activates and self-heals its ranking; the conductor hook is an optional 0-token optimization, not a requirement.
-
-Other entry points:
-
-```bash
-node scripts/install.mjs <agent|PATH>   # a specific subagent-capable agent, or a custom skills dir
-node scripts/install.mjs all            # auto-detect the agents configured in this repo, install only to those
-node scripts/install.mjs --uninstall <agent|PATH>
-node scripts/install.mjs --reset        # the ONLY path that restores factory config + ranking
-```
-
-For a per-project override, set `<project>/.claude/.coaltipple.json` (or run `configure.mjs --project`). Your config and your refined ranking are preserved across every update — only `--reset` overwrites them.
-
-### Verify
-
-```bash
-node scripts/verify.mjs   # gate: factory config ↔ schema · skill/conductor present · libs load · conductor ↔ keyword SSoT in sync
-node scripts/test.mjs     # the zero-dependency test suite (fail-loud on a missing or orphan test file)
-```
-
----
-
 ## 🤖 Compatibility
 
 **Claude Code: first-class and validated in real use.** CoalTipple was built Claude-Code-first and run end-to-end on it across *every* model tier (Haiku, Sonnet, Opus, and a reasoning tier) — driving real delegate-down, escalate-up, and limit-hit routing during development.
 
-CoalTipple targets **subagent-capable platforms only** — it routes by spawning workers through the platform's *own* native subagent tool (under that platform's own permission gate; CoalTipple does not bypass it). On a platform without a subagent system, the skill **self-degrades to a no-op** — routing simply stays off, and nothing breaks. `SKILL.md` follows the cross-vendor [Agent Skills](https://agentskills.io/specification) convention, so it lands on any agent that reads skills; per-platform model classification and spawn encoding are the parts that get verified as the project is dogfooded on each new agent.
+CoalTipple targets **subagent-capable platforms only** — it routes by spawning workers through the platform's *own* native subagent tool (under that platform's own permission gate; CoalTipple does not bypass it). On a platform without a subagent system, the skill **self-degrades to a no-op** — routing simply stays off, and nothing breaks. `SKILL.md` follows the cross-vendor [Agent Skills](https://agentskills.io/specification) convention, so it lands on any agent that reads skills; per-platform model classification and spawn encoding are the parts verified in real use as the project reaches each new agent.
 
 ---
 
-## 🧭 The TheColliery series
+## 🧭 Part of TheColliery
 
 CoalTipple shares its engineering doctrine with [CoalMine](https://github.com/HetCreep/CoalMine): Phoenix-13 hooks (zero-dependency, no network, fail-silent, no child processes, deterministic), a single-source-of-truth config schema, a fail-loud CLI paired with fail-silent hooks, source-grounded facts, and a strict no-overkill discipline. The conductor hook obeys Phoenix-13; the CLI scripts fail loud.
 
