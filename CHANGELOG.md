@@ -2,6 +2,21 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.0.2] — 2026-06-15
+
+Now distributed as a native Claude Code plugin, with a routing benchmark, discoverable commands, and CI on every push.
+
+### Added
+
+- **Native Claude Code plugin distribution.** A `.claude-plugin/marketplace.json` lets you `claude plugin marketplace add TheColliery/CoalTipple` then `claude plugin install coaltipple@coaltipple` — the auto-wired plugin path CoalMine uses — alongside the cross-platform `install.mjs` for other agents. A clean `plugin/` dist (built by `scripts/build-dist.mjs`, gated by `verify.mjs`) ships ONLY the skill, hooks, commands, and manifest — never the repo's `scripts/` or other-agent install templates.
+- **Discoverable slash commands.** `/coaltipple:stats`, `/coaltipple:off`, and `/coaltipple:memory` now appear in the command menu as their own entries (previously reachable only as arguments to the skill).
+- **Routing benchmark in the README.** The dogfood harness scored routing across model tiers; the safety-critical sensitive-never-down gate held on every tier.
+- **GitHub CI.** A cross-platform gate (verify + tests on an os × node matrix), CodeQL `security-and-quality`, OpenSSF Scorecard, Dependabot, and markdownlint run on every push.
+
+### Fixed
+
+- The `plugin/` dist gate now also rejects a stray top-level entry that no dist-item accounts for (the cruft guard), and is CRLF-insensitive on a Windows checkout.
+
 ## [1.0.1] — 2026-06-14
 
 A file-layout cleanup: everything CoalTipple writes now lives under `.claude/`, and the model ranking is shared globally instead of rebuilt per project.
