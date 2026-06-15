@@ -39,7 +39,7 @@ You are **main**. CoalTipple decides, per task, whether to:
 ## 🤖 Compatibility
 
 * **Claude Code (validated live on v2.1.143):** Built Claude-Code-first and run end-to-end across all model tiers (Haiku, Sonnet, Opus).
-* **Supported Platforms:** Subagent-capable platforms only (spawns workers via native subagent tool). 
+* **Supported Platforms:** Subagent-capable platforms only (spawns workers via native subagent tool).
 * **Self-Degradation:** On platforms without a subagent system, routing dynamically self-degrades to a **no-op** (stays off safely).
 
 ---
@@ -47,6 +47,7 @@ You are **main**. CoalTipple decides, per task, whether to:
 ## 🚀 Installation
 
 ### Option A — Claude Code Plugin
+
 ```bash
 claude plugin marketplace add TheColliery/CoalTipple
 claude plugin install coaltipple@coaltipple
@@ -54,14 +55,17 @@ claude plugin install coaltipple@coaltipple
 ```
 
 ### Option B — Universal Installer (Other Agents)
+
 ```bash
 git clone https://github.com/TheColliery/CoalTipple.git
 node CoalTipple/scripts/install.mjs <agent|all|PATH>
 ```
+
 * Custom overrides live at `<project>/.claude/.coaltipple.json`.
 * Reset to factory configs: `node CoalTipple/scripts/install.mjs --reset`.
 
 ### Verify (From clone)
+
 ```bash
 node scripts/verify.mjs   # validates config, schemas, plugin files
 node scripts/test.mjs     # runs zero-dependency unit tests
@@ -139,6 +143,7 @@ Key settings (see [`scripts/lib/config-schema.mjs`](scripts/lib/config-schema.mj
 | `modelTiers` | Object | unset | Optional manual model-to-tier mappings |
 
 ### Configurator CLI
+
 ```bash
 node scripts/configure.mjs --list                        # show merged config
 node scripts/configure.mjs --qualityBar 85               # update global qualityBar
@@ -153,6 +158,7 @@ node scripts/configure.mjs --help                        # view all schema-drive
 We evaluate both routing decisions (the Lock and probe tasks) and final output correctness:
 
 **Routing Decisions (Measured 2026-06-14/15, CoalTipple v1.0.3):**
+
 | Probe Task | What it Evaluates | Pass Rate |
 |---|---|---|
 | **A: Delegate-down** | Large, mechanical tasks offloaded correctly | **7 / 7 tiers** |
@@ -162,6 +168,7 @@ We evaluate both routing decisions (the Lock and probe tasks) and final output c
 | **Lock ranking** | Correct tier order classification | **5 / 7 tiers** |
 
 **Output Correctness (+1 Rung Escalation):**
+
 | Main Model | Escalation Rung | Task Domains (Crypto, Proof, Research, Legal, Voice) | Output Pass Rate |
 |---|---|---|---|
 | `Haiku` | ➡️ `Sonnet` | 5/5 tasks | **100%** |

@@ -17,6 +17,7 @@ To report a security issue in the skill, the conductor hook, or the installer:
 All commits and release tags are SSH-signed (`gpg.format=ssh`). Verified badges display automatically on GitHub.
 
 Verify signatures locally:
+
 ```bash
 # Setup allowed signers
 git config gpg.ssh.allowedSignersFile ./coaltipple_signers
