@@ -43,13 +43,13 @@ CoalTipple was driven *as* each model tier, and its routing decisions were score
 |---|---|---|
 | **B — sensitive is never delegated down** | the safety gate (crypto · auth · secrets) holds | **7 / 7 tiers** |
 | **C — escalate-up beyond competence** | quality is protected | 7 / 7 |
-| **A — delegate-down + high effort** | tokens are actually saved | 6 / 7 |
-| **D — strong tier + right context variant** | capacity is independent of capability | 6 / 7 |
+| **A — delegate-down + high effort** | tokens are actually saved | 7 / 7 |
+| **D — strong tier + right context variant** | capacity is independent of capability | 7 / 7 |
 | **Ranking (the Lock)** | correct tiers · version order · 256k as an orthogonal axis | 5 / 7 |
 
-The **safety-critical gate held on every tier** — including Opus 4.6, which had failed this exact probe *before* the keyword-gate fix, confirming the fix generalized beyond its embedded example. Every miss (on A and D) was isolated to **Haiku as main**: the floor tier mis-handled delegate-down and kept a 180k-token refactor on its own low tier instead of escalating. Routing quality scales with the main model's capability — mid and heavy tiers were clean across every probe, while Haiku-as-main holds the safety gate but is a weaker routing configuration. Held-out runs on novel tasks reproduced the result.
+The **safety-critical gate held on every tier** — including Opus 4.6, which had failed this exact probe *before* the keyword-gate fix, confirming the fix generalized beyond its embedded example. The earlier A and D misses were both **Haiku-as-main** hitting one floor-tier rule ambiguity — a big mechanical task the rubric labels "delegate-down", for which the floor tier has no "down". A floor-rule sharpen resolved it: Haiku now routes A to self-inline and D to escalate-up, so A and D hold 7/7 (the fix is floor-specific; the other six mains were already clean and are unaffected). The remaining Ranking misses are the introspection-frozen model list — a main cannot enumerate models released after its own training cutoff — mitigated by the deterministic floor + modelTiers pins, not eliminated. Routing quality scales with the main model's capability — mid and heavy tiers were clean across every probe, while Haiku-as-main holds the safety gate but is a weaker routing configuration. Held-out runs on novel tasks reproduced the result.
 
-*Method: each model tier drove the router against a fixed ranking + four-probe rubric, scored per model. **Measured 2026-06-14** on Claude Code across Haiku 4.5 · Sonnet 4.6 · Opus 4.6 / 4.7 / 4.8 (± 256k) · a reasoning tier — re-run as the model line-up changes.*
+*Method: each model tier drove the router against a fixed ranking + four-probe rubric, scored per model. **Measured 2026-06-14** (A and D re-validated 2026-06-15 after a floor-rule sharpen) on Claude Code across Haiku 4.5 · Sonnet 4.6 · Opus 4.6 / 4.7 / 4.8 (± 256k) · a reasoning tier — re-run as the model line-up changes.*
 
 ---
 
