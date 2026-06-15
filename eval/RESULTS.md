@@ -3,7 +3,8 @@
 > Run per [README.md](README.md): one task per fresh session per model, the main escalates **one rung up**,
 > score the deliverable against the objective gold in [TASKS.md](TASKS.md) — never the main's eyeball.
 
-**Measured:** 2026-06-15 · CoalTipple v1.0.3 · raw deliverables in `dogfood/output/` (local)
+**Measured:** 2026-06-15 · CoalTipple v1.0.3 (the version under test) · raw deliverables in `dogfood/output/` (local)
+<!-- version-frozen: 'CoalTipple v1.0.3' = the version UNDER TEST when measured (the pre-1.0.4 SKILL -- the 3-level escalation noted in finding #2 was added AFTER this run). A benchmark is pinned to the version measured: do NOT bump on release; update ONLY when the benchmark is re-run (re-measured). -->
 **Available ladder:** low (Haiku) < mid (Sonnet) < heavy (Opus 4.6 / 4.7) — Fable (reasoning) DISABLED, so Opus is the top.
 **Scoring:** T1 = objective gold (`node eval/score.mjs T1`: constant-time via `timingSafeEqual`) · T2/T4 = judged (bound+conservation+boundary / terms+proportional-scope) · T3 = correct + sourced (`concurrency: false`, in-file opt-in, nodejs.org) · T5 = 4 facts exact + terse.
 

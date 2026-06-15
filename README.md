@@ -129,7 +129,7 @@ Because every staleness mode degrades **safe** (unknown → `heavy`, listed-but-
 - **Delegate-down has a floor.** Spawning a worker costs tens of thousands of tokens of fixed overhead. Delegate down only when doing the task yourself would cost far more than that (`delegateMinLines`, default 120) — small-to-medium tasks stay on main, because offloading them loses tokens.
 - **The deliverable's voice stays on main.** A final user-facing translation, summary, or write-up is never delegated to a cheaper model, even when it is bulky — reviewing prose to protect voice and terminology costs about as much as redoing it. Bulk *mechanical* work (renames, codegen, formatting) is still delegate-able.
 - **Verify, do not eyeball.** A worker's output may look right but be wrong. The merge-verify *runs* the objective check — it does not read the code and reason about whether it looks correct. (`qaOnMerge`: strict / standard / off.)
-- **Workers are leaves.** Nesting is hard-capped: a worker cannot spawn its own worker (verified on Claude Code). Main spawns; a worker that fails returns its result and main re-routes.
+- **Workers are leaves (for now).** On the verified build a worker has no subagent-spawn tool, so it cannot nest; main spawns, and a worker that fails returns its result for main to re-route. The cap is enforced but **not assumed permanent**: a newer Claude Code build could expose nested subagents, so it is treated as temporary and re-verified on each update. <!-- version-transition: worker=leaf is Claude-Code-build-coupled; re-verify the no-spawn-tool cap on each CC update (1.0.4 reworded this from a permanent 'hard-capped' claim to 'enforced, not assumed permanent'). -->
 
 ### Damage control — control the damage, not the limit
 

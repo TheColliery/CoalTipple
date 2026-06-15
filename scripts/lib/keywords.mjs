@@ -12,10 +12,10 @@
 export const KEYWORD_GROUPS = {
   // Coding — split by what forces the grade: concurrency/crypto are reasoning-hard
   // (5); security/data are sensitive (4). crypto/security/data also never-down.
-  'coding.concurrency': { grade: 5, words: ['concurrency', 'mutex', 'race condition', 'deadlock', 'thread-saf', 'atomic'] },
-  'coding.crypto':      { grade: 5, sensitive: true, words: ['crypto', 'timing attack', 'timing-attack', 'constant-time', 'constant time', 'timing-safe', 'side-channel', 'encrypt', 'decrypt'] },
-  'coding.security':    { grade: 4, sensitive: true, words: ['oauth', 'authenticat', 'authoriz', 'auth bypass', 'sql injection', 'access control', 'permission', 'secret', 'token', 'password', 'session'] },
-  'coding.data':        { grade: 4, sensitive: true, words: ['migration', 'schema change', 'payment', 'billing', 'rate limit', 'optimize query'] },
+  'concurrency': { grade: 5, words: ['concurrency', 'mutex', 'race condition', 'deadlock', 'thread-saf', 'atomic'] },
+  'crypto':      { grade: 5, sensitive: true, words: ['crypto', 'timing attack', 'timing-attack', 'constant-time', 'constant time', 'timing-safe', 'side-channel', 'encrypt', 'decrypt'] },
+  'security':    { grade: 4, sensitive: true, words: ['oauth', 'authenticat', 'authoriz', 'auth bypass', 'sql injection', 'access control', 'permission', 'secret', 'token', 'password', 'session'] },
+  'coding':      { grade: 4, sensitive: true, words: ['migration', 'schema change', 'payment', 'billing', 'rate limit', 'optimize query'] },
 
   // Math — reasoning-hard proof / derivation.
   'math':      { grade: 5, words: ['mathematical proof', 'formal proof', 'derive equation', 'complexity bound'] },
