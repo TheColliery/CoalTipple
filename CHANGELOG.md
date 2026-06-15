@@ -2,6 +2,24 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.0.3] — 2026-06-15
+
+A routing-quality fix (the floor tier now self-routes size-driven bulk) plus a security + CI cleanup.
+
+### Changed
+
+- **Floor-rule sharpen — a cheap main self-routes size-driven mechanical bulk.** The grade table routes a big size-driven mechanical task "delegate-down"; at the floor tier there is no "down", and a main could resolve that half-way (label it delegate-down, then slip the work UP to a costlier tier). The contract now states the override at both the grade table and the floor rule: a size-driven delegate-down collapses to SELF at the floor. Re-validated on Haiku-as-main; the benchmark's A (scaffold) and D (refactor) probes now hold 7/7.
+
+### Fixed
+
+- **CodeQL `security-and-quality` (`configure.mjs`).** Dropped an unused `os` import and removed an `existsSync`-then-read TOCTOU (read once via try/catch).
+- **markdownlint MD060.** markdownlint-cli2-action v23 ships markdownlint v0.40.0, which added the MD060 table-column-style rule; disabled it (compact tables are valid GFM and are used deliberately in the SKILL contract).
+- **`SECURITY.md` Phoenix-13 link** repointed to the org canonical — the series doctrine moved to the org and the CoalMine `docs/` copy was removed.
+
+### Security
+
+- **Workflow actions pinned to commit SHAs** (with a `# vX` comment), superseding the floating major tags; closes the OpenSSF Scorecard PinnedDependencies findings. Dependabot still tracks them.
+
 ## [1.0.2] — 2026-06-15
 
 Now distributed as a native Claude Code plugin, with a routing benchmark, discoverable commands, and CI on every push.
