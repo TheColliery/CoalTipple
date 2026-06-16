@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 // CoalTipple conductor — ADVISE-ONLY routing hook (Phoenix-pure: no network, no
 // child process, no LLM, fail-silent, ~0ms). On SessionStart it injects the
-// routing contract; on UserPromptSubmit it injects a 0-token complexity hint.
+// routing contract; on EVERY UserPromptSubmit it injects a short routing forcer so
+// the model trips over that contract (SKILL.md) before acting, plus a 0-token
+// complexity hint on a hot keyword.
 // The MODEL performs the actual spawn/route (a hook cannot) and self-heals the
 // model ranking via the coaltipple skill. This file only advises.
 // Self-contained / standalone-portable (Phoenix #9): no imports from scripts/.
@@ -47,8 +49,8 @@ function loadCfg() {
 }
 
 // --- lean 0-token prompt grader (hook sees only the prompt; the skill does the
-//     fuller file-aware grade). Only fires on strong signals — stays quiet
-//     otherwise so the model grades with real file scope. ---
+//     fuller file-aware grade). The grader/hint below fires ONLY on a hot
+//     keyword; the always-on routing forcer in main() fires on every prompt. ---
 // <coaltipple-shared: hot-keywords> — synced from scripts/lib/keywords.mjs by build-plugin.mjs; edit keywords.mjs, NOT this block
 const HOT5 = ['concurrency', 'mutex', 'race condition', 'deadlock', 'thread-saf', 'atomic', 'crypto', 'timing attack', 'timing-attack', 'constant-time', 'constant time', 'timing-safe', 'side-channel', 'encrypt', 'decrypt', 'mathematical proof', 'formal proof', 'derive equation', 'complexity bound'];
 const HOT4 = ['oauth', 'authenticat', 'authoriz', 'auth bypass', 'sql injection', 'access control', 'permission', 'secret', 'token', 'password', 'session', 'migration', 'schema change', 'payment', 'billing', 'rate limit', 'optimize query', 'legal contract', 'compliance', 'license terms', 'financial audit', 'tax filing', 'valuation', 'diagnosis', 'dosage', 'clinical', 'gdpr', 'hipaa', 'pii'];
@@ -98,7 +100,8 @@ function main() {
 
   if (event === 'UserPromptSubmit') {
     const h = hintFor(input.prompt || input.user_prompt || '');
-    if (h) process.stdout.write(`[CoalTipple] complexity hint: grade ${h.grade} (${h.why}) -> suggests starting tier "${h.tier}". Fold into the grade; the result must then clear qualityBar or routing climbs the ladder.`);
+    const hint = h ? ` Complexity hint: grade ${h.grade} (${h.why}) -> start tier "${h.tier}"; fold into the grade, then the result must clear qualityBar or routing climbs the ladder.` : '';
+    process.stdout.write(`[CoalTipple] Route BEFORE acting on this prompt: apply the coaltipple routing contract (SKILL.md) -- grade the task, then delegate-down (large + cheap), escalate-up (beyond this tier), or keep-on-self, per the rubric. Routing actuates on Claude Code only.${hint}`);
     return;
   }
   // SessionStart (and any non-prompt event) -> inject the routing contract.

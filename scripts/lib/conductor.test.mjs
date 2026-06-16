@@ -95,10 +95,24 @@ test('UserPromptSubmit with a hot keyword -> grade-5 hint that feeds grade + qua
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 });
 
-test('UserPromptSubmit trivial prompt -> silent (lets the model grade with file scope)', () => {
+test('UserPromptSubmit always injects the routing forcer (trivial prompt: directive, no complexity hint)', () => {
   const tmp = mk();
   try {
     const r = run({ hook_event_name: 'UserPromptSubmit', prompt: 'list the readme files' }, tmp, tmp);
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /Route BEFORE acting/);
+    assert.match(r.stdout, /SKILL\.md/);
+    assert.doesNotMatch(r.stdout, /Complexity hint/);
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
+test('UserPromptSubmit honors enableRouting:false -> fully silent (the always-on forcer respects the off switch)', () => {
+  const tmp = mk();
+  try {
+    fs.mkdirSync(path.join(tmp, '.git'));
+    fs.mkdirSync(path.join(tmp, '.claude'), { recursive: true });
+    fs.writeFileSync(path.join(tmp, '.claude', '.coaltipple.json'), JSON.stringify({ enableRouting: false }));
+    const r = run({ hook_event_name: 'UserPromptSubmit', prompt: 'fix the race condition in the mutex' }, tmp, tmp);
     assert.equal(r.status, 0);
     assert.equal(r.stdout, '');
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }

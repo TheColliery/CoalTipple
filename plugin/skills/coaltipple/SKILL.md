@@ -1,10 +1,13 @@
 ---
 name: coaltipple
 description: >-
-  Model/effort router — delegate a task you CAN do but that is large+cheap DOWN to a cheaper tier to save tokens (delegate-down), and hand a task beyond your competence UP to a stronger tier for quality (escalate-up). Use when a task has a large cheap subtask worth offloading, or when it exceeds the current model's competence. Subagent-capable platforms only.
+  Model/effort router — delegate a task you CAN do but that is large+cheap DOWN to a cheaper tier to save tokens (delegate-down), and hand a task beyond your competence UP to a stronger tier for quality (escalate-up). Use when a task has a large cheap subtask worth offloading, or when it exceeds the current model's competence. Claude Code only -- the platform's spawn tool must accept a worker model parameter (Antigravity etc. cannot actuate this); support reviewed monthly.
 ---
 
 # CoalTipple — routing contract
+
+> [!WARNING]
+> **PLATFORM GATE -- actuates on Claude Code ONLY.** CoalTipple routes by spawning a worker at a CHOSEN model + effort, which needs a platform whose spawn tool accepts a worker **model** parameter. **Confirmed working: Claude Code** (the `Agent`/`Task` tool takes `model`). **Confirmed BROKEN: Antigravity** -- `invoke_subagent`/`define_subagent` expose **no model parameter**, and AG has **no separate effort knob** (low/mid/high are baked into model *names*), so a spawned worker silently runs the **parent's** model. On any platform without an agent-selectable worker model, **do NOT pretend to delegate-down or escalate-up** -- the spawn cannot change tier and routing is a silent no-op. Not on Claude Code -> this skill does not apply. (Platform support reviewed monthly.)
 
 You are **main** (depth-0). You decide routing + spawn everything yourself. **worker = leaf: a worker has no spawn tool here (verified: not in its default set nor loadable via ToolSearch). The platform's nesting framework exists (docs: newer CC) but is gated OFF for subagents in this build, so treat the cap as TEMPORARY: never grant a worker the Agent tool (so worker=leaf holds even when the switch flips), and re-verify on CC updates — a worker cannot spawn. A worker that fails RETURNS its result, and main re-routes.**
 

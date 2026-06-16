@@ -121,6 +121,16 @@ try {
   }
 } catch (e) { fail(`config-path sync: ${e.message}`); }
 
+console.log('cross-platform SKILL transform engine (PARKED -- no active platform; add one only after verifying its spawn tool takes a worker model param):');
+try {
+  const bs = await import(pathToFileURL(path.join(repo, 'scripts', 'build-skill.mjs')).href);
+  for (const p of bs.PLATFORMS) {
+    const problems = await bs.buildPlatform(p, { check: true });
+    if (problems.length) for (const x of problems) fail(x);
+    else ok(`${p}: SKILL.md in sync with CC source (no CC-ism residual, no TODOs)`);
+  }
+} catch (e) { fail(`cross-platform SKILL check: ${e.message}`); }
+
 console.log('plugin/ dist (the clean CC plugin vs source SSoT):');
 try {
   const { checkDist } = await import(pathToFileURL(path.join(repo, 'scripts', 'build-dist.mjs')).href);

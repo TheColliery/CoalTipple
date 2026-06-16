@@ -2,6 +2,25 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.0.6] - 2026-06-16
+
+CoalTipple is now **Claude Code only** and out of WIP -- routing actuates only where an agent can pick a spawned worker's model, which today is Claude Code. The conductor now nudges routing on every prompt. Validated on Claude Code 2.1.143.
+
+### Changed
+
+- **Status: WIP -> LIVE.** The v1 core is validated and in real use on Claude Code; the README status badge and banner reflect that.
+- **The conductor hook nudges routing on EVERY prompt.** On every `UserPromptSubmit` it now injects a short routing forcer ("apply the routing contract before acting"); a hot keyword still adds the complexity hint on top. `enableRouting: false` still silences it entirely.
+- **`SKILL.md` and `README.md` re-scoped to Claude Code only**, with a prominent platform-gate warning: routing actuates only where an agent can choose a spawned worker's model + effort (Claude Code's `Agent`/`Task` `model` param). Other platforms are under review.
+
+### Removed
+
+- **Antigravity (and the cross-platform routing target).** Confirmed that Antigravity cannot actuate routing -- a spawned subagent inherits the parent's model (`invoke_subagent`/`define_subagent` expose no model parameter) and there is no separate effort knob. The Antigravity adapter was removed; the transform engine is parked until a platform passes the spawn-model-param check.
+
+### Fixed
+
+- **`README.md` Compatibility section** no longer claims routing "self-degrades to a no-op" on an unsupported platform -- a platform that spawns but cannot pick the worker's model makes a weak main *hallucinate* a delegation it cannot perform, which is exactly why CoalTipple is gated to Claude Code.
+- **`scripts/lib/targets.mjs`** header comment corrected (it implied installing broadly was safe via self-degradation).
+
 ## [1.0.5] - 2026-06-16
 
 The topic-keyword config is now fully editable, the factory config ships its built-ins populated, and the benchmark moved to the series umbrella. Validated on Claude Code 2.1.143.
