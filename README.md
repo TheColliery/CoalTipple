@@ -59,7 +59,7 @@ claude plugin install coaltipple@coaltipple
 
 Optional per-project config override: `<project>/.claude/.coaltipple.json`.
 
-### Verify (From clone)
+### Verify (from clone)
 
 ```bash
 node scripts/verify.mjs   # validates config, schemas, plugin files
@@ -172,6 +172,8 @@ We evaluate both routing decisions (the Lock and probe tasks) and final output c
 | `Opus 4.7` | ➡️ Self-inline | 5/5 tasks | **100%** |
 
 *Total: 20/20 PASS deliverables generated correctly.*
+
+The full output-quality harness (tasks, scorer, results) lives in the series umbrella at [`TheColliery/.github/benchmarks/CoalTipple`](https://github.com/TheColliery/.github/tree/main/benchmarks/CoalTipple).
 
 ---
 

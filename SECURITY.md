@@ -40,11 +40,12 @@ CoalTipple is distributed as source (human-auditable skill Markdown). The plugin
 
 ## 🔬 Independent Scanning — NVIDIA SkillSpector
 
+<!-- version-transition: re-run SkillSpector on any SKILL.md edit; re-sync the scanner version + score below. Findings reference the SKILL.md section by NAME (not a line number) so they do not drift on a skill edit. Authoritative scan report: skillspector-2.1.4.md. -->
+
 CoalTipple is scanned using [NVIDIA SkillSpector](https://github.com/NVIDIA/skillspector) v2.1.4.
 
-* **Static Scan (20/100 - LOW · SAFE):** Raises 2 low-confidence false positives typical of local caching and memory mapping features:
-  * `MED · RA2 Session Persistence` (`SKILL.md:25`) - Writing the local tier-ranking cache `~/.claude/.coaltipple/ranking.json` (re-derivable, no user data).
-  * `MED · RA2 Session Persistence` (`SKILL.md:98`) - The consent-gated **Memory anchor** configuration.
+* **Static Scan (10/100 - LOW · SAFE):** Raises 1 low-confidence false positive typical of a local state-file feature:
+  * `MED · RA2 Session Persistence` (`SKILL.md`, the Memory anchor section) - The consent-gated **Memory anchor** configuration (a local file the user opts into; no telemetry, no user data exfiltrated).
 * **LLM Semantic Scan (0 findings):** Confirming zero actual risks when context is analyzed.
 
 ---

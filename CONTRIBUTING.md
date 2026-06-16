@@ -8,7 +8,7 @@ CoalTipple is the model/effort router of the [TheColliery](https://github.com/Th
 
 1. **Open an issue first** describing the problem, routing gap, or proposed feature (especially for changes to `SKILL.md`).
 2. Make your code changes and ensure the verification gates remain green.
-3. For routing or `SKILL.md` changes, **dogfood it live** on a supported platform (e.g. Claude Code) and document the routing behavior in your PR description.
+3. For routing or `SKILL.md` changes, **dogfood it live** on Claude Code and document the routing behavior in your PR description.
 
 ---
 
@@ -34,14 +34,13 @@ node scripts/test.mjs     # runs the zero-dependency test runner (node --test)
 
 ## 🖥️ Supported Platforms
 
+CoalTipple is **Claude Code only**. Routing actuates only where an agent can pick a spawned worker's model and effort — Claude Code's `Agent`/`Task` `model` parameter. Antigravity is confirmed unable to actuate it (a spawned subagent inherits the parent model — no model parameter, no effort knob), so it is not supported. Cursor, Codex, Gemini CLI, Cline, and Windsurf are unverified and under monthly review.
+
 | Platform | Support Status |
 |---|---|
 | **Claude Code** | **Validated Live** - Hardened across every model tier (Haiku, Sonnet, Opus). |
-| **Antigravity** | **Supported Target** - Actively developed and tested against. |
 
-Other subagent-capable agents (Codex, Cursor, Copilot, Gemini) are supported on a best-effort basis. The core logic (`SKILL.md`) is platform-agnostic, while per-platform model classifications are mapped via `scripts/lib/targets.mjs`.
-
-*Note: `skills/coaltipple/SKILL.md` is the highest-risk file. Prompts cannot be easily validated via unit tests; changes must be verified through actual live agent dogfooding.*
+*Note: `skills/coaltipple/SKILL.md` is the highest-risk file. Prompts cannot be validated via unit tests; changes must be verified through actual live agent dogfooding.*
 
 ---
 
@@ -49,10 +48,10 @@ Other subagent-capable agents (Codex, Cursor, Copilot, Gemini) are supported on 
 
 | Path | Purpose |
 |---|---|
-| `skills/coaltipple/SKILL.md` | The core routing contract (platform-agnostic prompt). |
+| `skills/coaltipple/SKILL.md` | The core routing contract (the load-bearing prompt). |
 | `scripts/lib/` | Core logic modules: `grade`, `classify` (Lock ranking), `keywords` (SSoT), `config-schema`. |
 | `scripts/` | Tool scripts: `install.mjs`, `configure.mjs`, `verify.mjs`, `test.mjs`. |
-| `hooks/coaltipple-conductor.js` | Phoenix-pure SessionStart hook. Auto-synced by build scripts. |
+| `hooks/coaltipple-conductor.js` | Phoenix-pure conductor hook (SessionStart + UserPromptSubmit). Auto-synced by build scripts. |
 | `plugin/` | Generated Claude Code plugin distribution. |
 | `platform-configs/.coaltipple.json` | Commented factory default configuration. |
 
