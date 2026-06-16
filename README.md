@@ -2,7 +2,7 @@
 
 # 🚂 CoalTipple
 
-**A model/effort router for subagent-capable AI coding agents** — delegate a task you *can* do but that is large and cheap *down* to a cheaper tier to save tokens, and hand a task beyond your reach *up* to a stronger tier for quality.
+**A model/effort router for Claude Code** — delegate a task you *can* do but that is large and cheap *down* to a cheaper tier to save tokens, and hand a task beyond your reach *up* to a stronger tier for quality.
 
 ![version](https://img.shields.io/github/v/tag/TheColliery/CoalTipple?label=version&color=blue)
 ![license](https://img.shields.io/badge/license-MIT-blue)
@@ -16,7 +16,7 @@
 
 </div>
 
-> ✅ **Live -- in real use on Claude Code.** The v1 core is validated and active; the conductor hook fires a routing forcer on every prompt.
+✅ **Live -- in real use on Claude Code.** The v1 core is validated and active; the conductor hook fires a routing forcer on every prompt.
 
 > [!CAUTION]
 > **Claude Code only.** CoalTipple's routing only actuates where an agent can pick a spawned worker's model + effort. Today that is **Claude Code**. **Antigravity does NOT work** -- its subagents inherit the parent's model (no per-spawn model parameter, no separate effort knob), so routing cannot actuate there. Other platforms (Codex, Cursor, ...) are under monthly review.
@@ -49,23 +49,15 @@ You are **main**. CoalTipple decides, per task, whether to:
 
 ## 🚀 Installation
 
-### Option A — Claude Code Plugin
+### Claude Code plugin
 
 ```bash
 claude plugin marketplace add TheColliery/CoalTipple
 claude plugin install coaltipple@coaltipple
-# Restart Claude Code to load commands (/coaltipple:stats | off | memory)
+# Restart Claude Code to load the /coaltipple commands (stats | off | memory)
 ```
 
-### Option B — Universal Installer (Other Agents)
-
-```bash
-git clone https://github.com/TheColliery/CoalTipple.git
-node CoalTipple/scripts/install.mjs <agent|all|PATH>
-```
-
-* Custom overrides live at `<project>/.claude/.coaltipple.json`.
-* Reset to factory configs: `node CoalTipple/scripts/install.mjs --reset`.
+Optional per-project config override: `<project>/.claude/.coaltipple.json`.
 
 ### Verify (From clone)
 
