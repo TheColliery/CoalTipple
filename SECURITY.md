@@ -46,7 +46,7 @@ CoalTipple is scanned using [NVIDIA SkillSpector](https://github.com/NVIDIA/skil
 
 * **Static Scan (10/100 - LOW · SAFE):** Raises 1 low-confidence false positive typical of a local state-file feature:
   * `MED · RA2 Session Persistence` (`SKILL.md`, the Memory anchor section) - The consent-gated **Memory anchor** configuration (a local file the user opts into; no telemetry, no user data exfiltrated).
-* **LLM Semantic Scan (0 findings):** Confirming zero actual risks when context is analyzed.
+* **LLM Semantic Scan:** requires prepaid Anthropic API credits, so it did not run on this setup -- it falls back to the static scan above. (A v2.1.3 semantic pass returned 0 findings on the content it evaluated.)
 
 ---
 
