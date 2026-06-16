@@ -40,12 +40,13 @@ CoalTipple is distributed as source (human-auditable skill Markdown). The plugin
 
 ## 🔬 Independent Scanning — NVIDIA SkillSpector
 
-<!-- version-transition: re-run SkillSpector on any SKILL.md edit; re-sync the scanner version + score below. Findings reference the SKILL.md section by NAME (not a line number) so they do not drift on a skill edit. Authoritative scan report: skillspector-2.1.4.md. -->
+<!-- version-transition: re-run SkillSpector on any SKILL.md edit; re-sync the scanner version + score below. Findings reference the SKILL.md section by NAME (not a line number) so they do not drift on a skill edit. Reviewed against SkillSpector v2.1.5; its static analyzers are byte-identical to v2.1.4 (each carries one 2026-05-11 initial-release commit) so the v2.1.4 result stands: 10/100 (LOW, SAFE) · 1 finding (false positive). Authoritative scan report: skillspector-2.1.4.md. -->
 
-CoalTipple is scanned using [NVIDIA SkillSpector](https://github.com/NVIDIA/skillspector) v2.1.4.
+CoalTipple is evaluated against [NVIDIA SkillSpector](https://github.com/NVIDIA/skillspector) v2.1.5's static analyzer ruleset, whose static rules are unchanged from v2.1.4, so the v2.1.4 result stands.
 
 * **Static Scan (10/100 - LOW · SAFE):** Raises 1 low-confidence false positive typical of a local state-file feature:
-  * `MED · RA2 Session Persistence` (`SKILL.md`, the Memory anchor section) - The consent-gated **Memory anchor** configuration (a local file the user opts into; no telemetry, no user data exfiltrated).
+  * `MED · RA2 Session Persistence` (`SKILL.md`, the Memory anchor section) - The consent-gated **Memory anchor** configuration (a local file the user opts into; no telemetry, no user data exfiltrated). RA2 keys on OS-persistence mechanisms (crontab, shell-rc, systemd/launchd, registry); an opt-in on-disk project-memory file is none of these.
+* **Method:** SkillSpector's static analyzer rules and 0-100 scoring were reviewed from source -- they are byte-identical between v2.1.4 and v2.1.5 (each static analyzer carries a single 2026-05-11 initial-release commit; only the MCP rules changed in 2.1.5), so the v2.1.4 static result carries forward. The binary itself was not executed (it needs a Python 3.12 environment not on this setup).
 * **LLM Semantic Scan:** requires prepaid Anthropic API credits, so it did not run on this setup -- it falls back to the static scan above. (A v2.1.3 semantic pass returned 0 findings on the content it evaluated.)
 
 ---
