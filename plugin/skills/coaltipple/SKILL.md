@@ -124,6 +124,6 @@ Honor the MERGED config (every value is tunable): the global `~/.claude/.coaltip
 
 ## Self error-report
 
-If CoalTipple itself misbehaves — a contradictory instruction, a procedure that loops or dead-ends, a routing decision that is clearly wrong, the Lock refusing a valid ranking, or a config key that does not behave as documented — STOP and surface it: give the user a one-paragraph summary of what went wrong and where. OFFER to file it (once the repo exists: `github.com/TheColliery/CoalTipple/issues`; until then, the user relays). Never auto-submit; never include unapproved code or paths. A skill that hides its own failures cannot be fixed.
+If CoalTipple itself misbehaves — a contradictory instruction, a procedure that loops or dead-ends, a routing decision that is clearly wrong, the Lock refusing a valid ranking, or a config key that does not behave as documented — STOP and surface it: give the user a one-paragraph summary of what went wrong and where. OFFER to file it at `github.com/TheColliery/CoalTipple/issues`. Never auto-submit; never include unapproved code or paths. A skill that hides its own failures cannot be fixed.
 
 Honest blind spot: this report is MODEL-driven, so it fires ONLY for misbehavior the model NOTICES. It cannot see a fail-silent hook death (Phoenix hooks exit 0 on error by design), a plausible-but-wrong worker output that slipped past a weak check, or a missed delegation. A clean run means "nothing noticed", not "nothing wrong".
