@@ -2,6 +2,14 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.0.13] - 2026-06-18
+
+Self-Updating (kind-1) — an opt-in, consent-gated update-check, ported from CoalMine v3.7.5.
+
+### Added
+- **Self-Updating, silent by default.** New config `updateMode` (`ask`|`auto`|`remind`|`off`, factory `ask`) + `updateCheckDays` (factory `14`). The conductor (SessionStart) stays silent until `updateCheckDays` elapse since the last check (a crash-safe `~/.claude/.coaltipple-update-check` stamp, throttled once per window), then: `ask` prompts once how to handle updates (auto/remind/off, saved via `configure --update-mode`); `auto` has the agent compare the latest tag to the installed version and offer `claude plugin update coaltipple@coaltipple` (standing consent — the only token-spending path); `remind` is a free reminder; `off` is silent. **The hook itself never networks or spends** — the version-check lives only in the new `/coaltipple:update` agent procedure (graceful offline fallback). The per-prompt routing forcer is unchanged. (CoalMine's kind-2 gold-rule freshness scan is N/A — CoalTipple has no gold-standard rules.)
+- `/coaltipple:update` command + 12 hermetic conductor tests + 2 config tests (124 total).
+
 ## [1.0.12] - 2026-06-18
 
 Version gate lifted — routing is stated as version-agnostic (degrades safe on any CC version), verified across the 2.1.x line.

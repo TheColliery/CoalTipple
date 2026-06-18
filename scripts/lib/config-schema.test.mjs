@@ -60,6 +60,24 @@ test('rankingMode enum + swept int ranges are enforced', () => {
   assert.match(validateValue(specOf('delegateMinLines'), 100001), /<= 100000/);
 });
 
+test('self-update keys validate (updateMode enum + updateCheckDays min 1, max 365)', () => {
+  const mode = specOf('updateMode');
+  assert.ok(mode, 'updateMode spec exists');
+  assert.equal(validateValue(mode, 'ask'), null);     // factory default
+  assert.equal(validateValue(mode, 'auto'), null);
+  assert.equal(validateValue(mode, 'remind'), null);
+  assert.equal(validateValue(mode, 'off'), null);
+  assert.match(validateValue(mode, 'sometimes'), /one of/); // rejected -> not a valid mode
+
+  const days = specOf('updateCheckDays');
+  assert.ok(days, 'updateCheckDays spec exists');
+  assert.equal(validateValue(days, 14), null);        // factory default
+  assert.equal(validateValue(days, 1), null);         // floor
+  assert.match(validateValue(days, 0), />= 1/);        // 0 -> nag every session, rejected
+  assert.match(validateValue(days, 366), /<= 365/);    // over a year, rejected
+  assert.match(validateValue(days, 2.5), /integer/);   // an int must be an int
+});
+
 test('memory-anchor keys validate (contextFiles strArr + memoryOffer enum)', () => {
   assert.equal(validateValue(specOf('contextFiles'), ['MEMORY.md', 'docs/conventions.md']), null);
   assert.match(validateValue(specOf('contextFiles'), 'MEMORY.md'), /array/);   // a bare string, not an array

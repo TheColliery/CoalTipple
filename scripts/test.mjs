@@ -21,6 +21,7 @@ const TESTS = [
   'scripts/lib/config-load.test.mjs',
   'scripts/lib/configure.test.mjs',
   'scripts/lib/conductor.test.mjs',
+  'scripts/lib/conductor-update.test.mjs',
   'scripts/lib/install.test.mjs',
   'scripts/lib/jsonc.test.mjs',
   'scripts/build-plugin.test.mjs',

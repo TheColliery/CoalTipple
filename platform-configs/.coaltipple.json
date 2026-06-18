@@ -168,6 +168,24 @@
   // # Default value: auto  (off = disabled/skipped; re-enable via /coaltipple memory)
   "memoryOffer": "auto",
 
+  // ─── self-update (orthogonal to routing — its own off-switch) ───
+
+  // ## How CoalTipple keeps itself current. Silent by default until a check is due (every updateCheckDays).
+  // ## ask = on the first due session, ask ONCE how to handle updates (then save auto/remind/off); auto = the
+  // ## agent web-checks the latest CT tag vs the installed version and offers `claude plugin update` (standing
+  // ## consent — the only token spend, ~1-2K/check); remind = a free periodic reminder, you run the update;
+  // ## off = silent (no checks, no reminders). The HOOK never networks/spends — the version check lives only in
+  // ## the /coaltipple:update agent procedure. Independent of routing (enableRouting/mode); off here = the off-switch.
+  // # Setting type: String (ask, auto, remind, off)
+  // # Default value: ask
+  "updateMode": "ask",
+
+  // ## Days between self-update checks/reminders — the throttle window (a persistent stamp fires the nudge at
+  // ## most once per window, no re-nag). Pairs with updateMode (off = no checks regardless of this value).
+  // # Setting type: Integer (range 1-365)
+  // # Default value: 14
+  "updateCheckDays": 14,
+
   // ─── recovery ───
 
   // ## Use a git commit as an extra recovery boundary when inside a git repo.

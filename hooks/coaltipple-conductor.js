@@ -47,14 +47,87 @@ let _cfg;
 function loadCfg() {
   if (_cfg !== undefined) return _cfg;
   // CLAUDE_CONFIG_DIR (#6) redirects ~/.claude (portable / multi-account / CI); first entry if a comma-list.
-  const cfgEnv = process.env.CLAUDE_CONFIG_DIR;
-  const cfgDir = (cfgEnv && cfgEnv.split(',')[0].trim()) || path.join(os.homedir(), '.claude');
+  const cfgDir = claudeBaseDir();
   const global = readCfgFile(path.join(cfgDir, '.coaltipple.json'));
   const project = readCfgFile(path.join(findGitRoot(process.cwd()), '.claude', '.coaltipple.json'));
   // Merge only when something loaded; keep null (= "no config") if neither did, so
   // the existing `if (cfg && ...)` guards in main() behave exactly as before.
   _cfg = global || project ? { ...(global || {}), ...(project || {}) } : null;
   return _cfg;
+}
+
+// --- Self-update (KIND 1 — skill version): persistent once-per-window throttle ---
+// Ported from CoalMine's conductor (CM v3.7.5). The hook only SCHEDULES the nudge;
+// the version CHECK lives in the /coaltipple:update agent procedure (a fail-silent
+// offline hook cannot verify a published version — Phoenix #7). The stamp is an ISO
+// date at <CLAUDE_CONFIG_DIR or ~>/.claude/.coaltipple-update-check; the conductor
+// reads it to decide if a nudge is due, then rewrites it to today so the nudge fires
+// at most once per updateCheckDays (no re-nag). Sandbox-compliant (Phoenix #10): only
+// the global .claude dir is touched. CT has no gold-standard rules, so there is no
+// KIND 2 (rule-freshness) scan — KIND 1 only.
+const UPDATE_STAMP = '.coaltipple-update-check';
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+// CLAUDE_CONFIG_DIR (#6 / #10) redirects the global .claude dir; first entry if a
+// comma-list; a degenerate (empty / whitespace) value falls back to ~/.claude.
+function claudeBaseDir() {
+  const c = process.env.CLAUDE_CONFIG_DIR;
+  return (c && c.split(',')[0].trim()) || path.join(os.homedir(), '.claude');
+}
+
+// Today as YYYY-MM-DD in UTC — deterministic for a calendar day, no TZ drift between
+// the write and the next read (Phoenix #8: the date is the only sanctioned time input).
+function todayISO(now) {
+  return new Date(now).toISOString().slice(0, 10);
+}
+// Whole-day delta between two YYYY-MM-DD strings (b - a), or null if either is
+// unparseable. Date.parse on a date-only string is UTC, matching todayISO.
+function dayDiff(a, b) {
+  const ta = Date.parse(a);
+  const tb = Date.parse(b);
+  if (isNaN(ta) || isNaN(tb)) return null;
+  return Math.floor((tb - ta) / MS_PER_DAY);
+}
+function updateStampPath() {
+  return path.join(claudeBaseDir(), UPDATE_STAMP);
+}
+function readUpdateStamp() {
+  try { return fs.readFileSync(updateStampPath(), 'utf8').trim(); } catch { return null; }
+}
+// Due when there is no stamp, a corrupt stamp, or the window has elapsed.
+function updateDue(stamp, today, days) {
+  if (!stamp) return true;
+  const d = dayDiff(stamp, today);
+  if (d === null) return true; // unparseable stamp -> self-heal by treating as due
+  return d >= days;
+}
+// Crash-safe write: temp sibling then atomic rename, so a kill mid-write can never
+// leave a half-written (unparseable) stamp.
+function writeUpdateStamp(today) {
+  try {
+    const dir = claudeBaseDir();
+    try { fs.mkdirSync(dir, { recursive: true }); } catch {}
+    const final = path.join(dir, UPDATE_STAMP);
+    const tmp = final + '.tmp';
+    fs.writeFileSync(tmp, today, 'utf8');
+    fs.renameSync(tmp, final);
+  } catch {}
+}
+
+// The KIND-1 directive per updateMode. English (the agent localizes for the user,
+// same convention as the routing contract's langLine). Returns the line to inject,
+// or null for a mode that emits nothing (off / unknown).
+function updateDirective(mode, days) {
+  switch (mode) {
+    case 'ask':
+      return `- CoalTipple self-update (ask the user ONCE via your question tool, in their language): "How should CoalTipple keep itself current?" Offer 3 — **auto** (I check for a newer version about every ${days} days and apply updates when you approve; ~1-2K tokens per check), **remind** (a free periodic reminder; you run \`claude plugin update coaltipple@coaltipple\` yourself), **off** (no reminders). Save the choice: \`node scripts/configure.mjs --updateMode <auto|remind|off>\` (from the CoalTipple repo, or wherever .coaltipple.json lives). Do not check now — the saved mode drives future sessions.`;
+    case 'auto':
+      return '- CoalTipple self-update (standing consent — do this now): follow /coaltipple:update to web-check the latest CoalTipple tag vs the installed plugin.json version. If newer, OFFER `claude plugin update coaltipple@coaltipple` + `/reload-plugins`; if current, say "up to date"; if git/network is unavailable, say so and suggest updating manually later (never assume).';
+    case 'remind':
+      return `- CoalTipple self-update reminder (relay to the user in their language, no action needed): it has been ~${days}d since the last CoalTipple update-check — consider \`claude plugin update coaltipple@coaltipple\` to refresh, or switch to auto (\`node scripts/configure.mjs --updateMode auto\`).`;
+    default:
+      return null; // 'off' (or unknown) -> nothing
+  }
 }
 
 // --- lean 0-token prompt grader (hook sees only the prompt; the skill does the
@@ -161,8 +234,34 @@ function main() {
     process.stdout.write(`[CoalTipple] Route BEFORE acting on this prompt: apply the coaltipple routing contract (SKILL.md) -- grade the task, then delegate-down (large + cheap), escalate-up (beyond this tier), or keep-on-self, per the rubric. Routing actuates on Claude Code only.${hint}${nonEnglish}`);
     return;
   }
-  // SessionStart (and any non-prompt event) -> inject the routing contract.
-  process.stdout.write(contract(cfg));
+  // SessionStart (and any non-prompt event) -> inject the routing contract, plus the
+  // KIND-1 self-update directive when due. Self-update is ORTHOGONAL to routing but
+  // shares the SessionStart channel; it never fires here when the conductor is wholly
+  // disabled (routingOff / disableRouting:all both returned above). Its own off-switch
+  // is updateMode:"off". The per-prompt forcer (UserPromptSubmit, above) is untouched.
+  let out = contract(cfg);
+  let updateMode = 'ask';
+  let updateCheckDays = 14;
+  if (cfg && typeof cfg.updateMode === 'string') {
+    const v = cfg.updateMode.toLowerCase();
+    if (v === 'ask' || v === 'auto' || v === 'remind' || v === 'off') updateMode = v;
+  }
+  if (cfg && typeof cfg.updateCheckDays === 'number' && cfg.updateCheckDays >= 1) {
+    updateCheckDays = cfg.updateCheckDays;
+  }
+  // Throttled by the persistent stamp: fires at most once per updateCheckDays.
+  // 'off' emits nothing and skips the stamp entirely (no disk touch).
+  if (updateMode !== 'off') {
+    try {
+      const today = todayISO(Date.now());
+      if (updateDue(readUpdateStamp(), today, updateCheckDays)) {
+        const directive = updateDirective(updateMode, updateCheckDays);
+        if (directive) out += '\n' + directive;
+        writeUpdateStamp(today); // throttle -> no re-nag until the window elapses
+      }
+    } catch {}
+  }
+  process.stdout.write(out);
 }
 
 try { main(); } catch {}

@@ -83,6 +83,26 @@ test('an out-of-range int is rejected with the schema message and writes nothing
   } finally { cleanup(p); }
 });
 
+test('self-update flags wire through configure: --updateMode writes, a bad enum / sub-min day is rejected', () => {
+  const p = freshProject();
+  try {
+    // valid: --updateMode auto persists to the global config
+    const ok = run(p, '--updateMode', 'auto');
+    assert.equal(ok.status, 0, ok.stderr);
+    assert.equal(stripJsonc(fs.readFileSync(globalPath(p.home), 'utf8')).updateMode, 'auto');
+
+    // reject: a bad enum value (schema message), writes nothing new
+    const badMode = run(p, '--updateMode', 'sometimes');
+    assert.notEqual(badMode.status, 0);
+    assert.match(badMode.stderr, /updateMode.*one of/);
+
+    // reject: updateCheckDays below the min (1)
+    const badDays = run(p, '--updateCheckDays', '0');
+    assert.notEqual(badDays.status, 0);
+    assert.match(badDays.stderr, /updateCheckDays.*>= 1/);
+  } finally { cleanup(p); }
+});
+
 test('--help lists every schema key + documents the global/--project targets', () => {
   const p = freshProject();
   try {
