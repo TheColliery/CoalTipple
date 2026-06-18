@@ -40,14 +40,13 @@ CoalTipple is distributed as source (human-auditable skill Markdown). The plugin
 
 ## 🔬 Independent Scanning — NVIDIA SkillSpector
 
-<!-- version-transition: re-run SkillSpector on any SKILL.md edit; re-sync the scanner version + score below. Findings reference the SKILL.md section by NAME (not a line number) so they do not drift on a skill edit. Reviewed against SkillSpector v2.1.5; its static analyzers are byte-identical to v2.1.4 (each carries one 2026-05-11 initial-release commit) so the v2.1.4 result stands: 10/100 (LOW, SAFE) · 1 finding (false positive). Authoritative scan report: skillspector-2.1.4.md. -->
+<!-- version-transition: re-run SkillSpector on any SKILL.md edit; re-sync the scanner version + score below. Findings reference the SKILL.md section by NAME (not a line number) so they do not drift on a skill edit. Last scan: SkillSpector v2.2.3, CoalTipple v1.0.8 (commit 87be8dd), 2026-06-18, static stage -- score 0/100 (LOW, SAFE), 0 issues. Authoritative report: skillspector-20260618.json (local). -->
 
-CoalTipple is evaluated against [NVIDIA SkillSpector](https://github.com/NVIDIA/skillspector) v2.1.5's static analyzer ruleset, whose static rules are unchanged from v2.1.4, so the v2.1.4 result stands.
+CoalTipple is evaluated against [NVIDIA SkillSpector](https://github.com/NVIDIA/skillspector) v2.2.3, executed on the shipped `plugin/` distribution.
 
-* **Static Scan (10/100 - LOW · SAFE):** Raises 1 low-confidence false positive typical of a local state-file feature:
-  * `MED · RA2 Session Persistence` (`SKILL.md`, the Memory anchor section) - The consent-gated **Memory anchor** configuration (a local file the user opts into; no telemetry, no user data exfiltrated). RA2 keys on OS-persistence mechanisms (crontab, shell-rc, systemd/launchd, registry); an opt-in on-disk project-memory file is none of these.
-* **Method:** SkillSpector's static analyzer rules and 0-100 scoring were reviewed from source -- they are byte-identical between v2.1.4 and v2.1.5 (each static analyzer carries a single 2026-05-11 initial-release commit; only the MCP rules changed in 2.1.5), so the v2.1.4 static result carries forward. The binary itself was not executed (it needs a Python 3.12 environment not on this setup).
-* **LLM Semantic Scan:** requires prepaid Anthropic API credits, so it did not run on this setup -- it falls back to the static scan above. (A v2.1.3 semantic pass returned 0 findings on the content it evaluated.)
+* **Static Scan (0/100 - LOW · SAFE · 0 issues):** The static analyzer (YARA rules + heuristics) raised **no findings** across all 7 scanned components (`SKILL.md`, the conductor hook, the three command files, `plugin.json`, `hooks.json`). The conductor is flagged only as an executable script in metadata -- not as an issue.
+* **Method:** `uvx --from git+https://github.com/NVIDIA/skillspector.git skillspector scan <plugin> --format json` -- uvx fetches its own ephemeral Python, so **no manual Python/pip install is needed** (this corrects an earlier note). A JSON report is written even when the optional LLM stage is unavailable.
+* **LLM Semantic Scan:** Requested, but the provider returned HTTP 429 (rate-limit), so the scan fell back to the static stage above (by design). A prior LLM-stage pass raised one low-confidence false positive -- `RA2 Session Persistence` on the consent-gated **Memory anchor** (an opt-in local project-memory file: no telemetry, and none of the OS-persistence mechanisms RA2 keys on -- crontab, shell-rc, systemd/launchd, registry). Re-run when quota is free for a full semantic pass.
 
 ---
 

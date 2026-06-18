@@ -5,7 +5,7 @@ Thumbs.db
 
 # Local-only agent / governance files — machine-local, NEVER pushed
 # (mirrors CoalMine: the public repo ships the product, not the governance)
-/MEMORY.md
+/MEMORY*.md
 /AGENTS.md
 /CLAUDE.md
 .agents/
@@ -24,7 +24,7 @@ dogfood/
 
 # Generated SkillSpector scan reports — the result is folded into SECURITY.md;
 # the raw report is not shipped.
-skillspector-*.md
+skillspector-*
 
 # Runtime routing state + a root machine config (created if CoalTipple runs IN this repo) — never ship
 # (the shipped factory template is platform-configs/.coaltipple.json, which is NOT matched here)
