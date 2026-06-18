@@ -116,7 +116,7 @@ function langLine(cfg) {
 function contract(cfg) {
   return [
     '[CoalTipple] Model/effort routing active. Before delegating, ensure a valid model-tier ranking exists (self-heal via the coaltipple skill if missing/stale). Then:',
-    '- VALIDATED on Claude Code 2.1.143: on a different CC version, rebuild the ranking on first route and verify routing before relying on it (it degrades safe - unknown model -> strong tier, failed spawn -> fall - but the self-heal is unverified outside 2.1.143).',
+    '- Routing degrades safe on any Claude Code version: an unfamiliar model classifies as a strong tier, a failed spawn falls to the next available, and the ranking self-heals on first route (verified across the 2.1.x line).',
     '- DELEGATE-DOWN a task you can do but is large + cheap, to a lower tier — ONLY with a compact task-contract (goal+constraints+interface+done) AND verify the returned output on merge. Skip it for small tasks (spawn overhead beats the saving).',
     '- ESCALATE-UP a task beyond the current tier for quality. Workers are leaves by policy (routing stays depth-0): give each a bounded task-contract so it RETURNS rather than spawning its own workers; a worker that fails RETURNS its result and the MAIN re-routes.',
     '- Grade by the deterministic rubric, not a model self-assessment. Opus is scarce: cheapest lever first - raise effort, then a stronger same-tier version (e.g. Opus 4.6 -> 4.8), before escalating the tier.',

@@ -7,7 +7,7 @@
 ![version](https://img.shields.io/github/v/tag/TheColliery/CoalTipple?label=version&color=blue)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 ![SKILL.md](https://img.shields.io/badge/SKILL.md-open_standard-success)
-![Claude Code](https://img.shields.io/badge/Claude_Code-validated_2.1.143-success)
+![Claude Code](https://img.shields.io/badge/Claude_Code-validated-success)
 ![status](https://img.shields.io/badge/status-live-brightgreen)
 
 [Changelog](CHANGELOG.md) · [Security](SECURITY.md) · [Privacy](PRIVACY.md) · [Releases](https://github.com/TheColliery/CoalTipple/releases)
@@ -16,7 +16,7 @@
 
 </div>
 
-✅ **Live -- in real use on Claude Code.** The v1 core is validated on **Claude Code 2.1.143** and active; the conductor hook fires a routing forcer on every prompt.
+✅ **Live -- in real use on Claude Code.** The v1 core is validated on **Claude Code** (across the 2.1.x line) and active; the conductor hook fires a routing forcer on every prompt.
 
 > [!CAUTION]
 > **Claude Code only.** CoalTipple's routing only actuates where an agent can pick a spawned worker's model + effort. Today that is **Claude Code**. **Antigravity does NOT work** -- its subagents inherit the parent's model (no per-spawn model parameter, no separate effort knob), so routing cannot actuate there. Other platforms (Codex, Cursor, ...) are under monthly review.
@@ -41,7 +41,7 @@ You are **main**. CoalTipple decides, per task, whether to:
 
 ## 🤖 Compatibility
 
-* **Claude Code (validated live on v2.1.143):** Built Claude-Code-first and run end-to-end across all model tiers (Haiku, Sonnet, Opus). **Re-verification on newer CC (2.1.18x) is in progress — the validated baseline stays 2.1.143 until confirmed the skill does not break.**
+* **Claude Code (validated live across the 2.1.x line):** Built Claude-Code-first and run end-to-end across all model tiers (Haiku, Sonnet, Opus). Routing degrades safe on any CC version — an unfamiliar model classifies strong, a failed spawn falls, and the ranking self-heals on first route.
 * **Routing actuates on Claude Code only:** CT needs a platform where an *agent* can pick a spawned worker's model + effort. CC's Agent/Task tool takes a `model` param -- that is the requirement.
 * **Subagent-capable != qualifies:** a platform can spawn workers yet give the agent no model choice (e.g. **Antigravity**, where the worker inherits the parent's model). There CT does **not** cleanly self-degrade -- a weak main hallucinates a delegate-down it cannot perform -- so CT is gated to CC. Other platforms (Cursor, Codex) are under monthly review.
 

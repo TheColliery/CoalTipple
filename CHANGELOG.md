@@ -2,6 +2,14 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.0.12] - 2026-06-18
+
+Version gate lifted — routing is stated as version-agnostic (degrades safe on any CC version), verified across the 2.1.x line.
+
+### Changed
+
+- **Dropped the "validated on Claude Code 2.1.143" version gate** (SKILL contract, conductor, README badge + claims, CONTRIBUTING). The contract no longer tells the model to "rebuild + verify before relying" on a non-2.1.143 CC; it now states routing degrades safe on ANY Claude Code version — an unfamiliar model classifies as a strong tier, a failed spawn falls to the next available, and the ranking self-heals on first route. Verified live across the 2.1.x line (2.1.143 + 2.1.177: self-heal, escalate-up, cross-tier spawn, and a non-English/Thai sensitive prompt all routed correctly via relay-verify). The stale "baseline stays 2.1.143 / re-verification in progress" hedging is removed.
+
 ## [1.0.11] - 2026-06-18
 
 A comprehensive vulnerability hunt (4 parallel scanners + an adversarial work-review pass) — safety-gate, routing-correctness, config-honesty, and worldwide-language fixes.
