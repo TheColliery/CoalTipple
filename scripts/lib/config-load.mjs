@@ -41,7 +41,7 @@ function readJsonc(file) {
 // it may be a comma-list (multi-account) — use the first entry. Project paths are NOT affected.
 export function claudeBaseDir(home = os.homedir()) {
   const c = process.env.CLAUDE_CONFIG_DIR;
-  return c ? c.split(',')[0].trim() : path.join(home, '.claude');
+  return (c && c.split(',')[0].trim()) || path.join(home, '.claude');
 }
 export function globalConfigPath(home = os.homedir()) {
   return path.join(claudeBaseDir(home), '.coaltipple.json');

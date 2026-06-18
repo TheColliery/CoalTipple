@@ -28,7 +28,7 @@ export const KEYWORD_GROUPS = {
   'knowledge': { grade: 3, words: ['systematic review', 'literature review', 'citation', 'claim verification'] },
 
   // Regulated / high-stakes non-code domains — costly errors, never-delegate-down.
-  'domain':    { grade: 4, sensitive: true, words: ['legal contract', 'compliance', 'license terms', 'financial audit', 'tax filing', 'valuation', 'diagnosis', 'dosage', 'clinical', 'gdpr', 'hipaa', 'pii'] },
+  'domain':    { grade: 4, sensitive: true, words: ['legal contract', 'compliance', 'license terms', 'financial audit', 'tax filing', 'valuation', 'medical diagnosis', 'clinical diagnosis', 'dosage', 'clinical trial', 'gdpr', 'hipaa', 'pii'] },
 
   // Creative — low difficulty, but the prose IS the deliverable: protect the voice.
   'creative':  { grade: 2, preserveVoice: true, words: ['brand voice', 'tone of voice', 'style guide'] },

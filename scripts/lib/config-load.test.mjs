@@ -101,6 +101,8 @@ test('CLAUDE_CONFIG_DIR redirects the GLOBAL paths (#6); comma-list -> first ent
     assert.equal(claudeBaseDir(), custom);
     process.env.CLAUDE_CONFIG_DIR = `${custom},${path.join(os.tmpdir(), 'other')}`; // multi-account comma-list
     assert.equal(claudeBaseDir(), custom, 'first entry of a comma-list');
+    process.env.CLAUDE_CONFIG_DIR = ','; // degenerate: first entry is empty after trim -> fall back to default
+    assert.equal(claudeBaseDir('/h'), path.join('/h', '.claude'), 'degenerate comma-only value falls back to default');
     delete process.env.CLAUDE_CONFIG_DIR; // unset -> home/.claude (unchanged default)
     assert.equal(globalConfigPath('/h'), path.join('/h', '.claude', '.coaltipple.json'));
     process.env.CLAUDE_CONFIG_DIR = custom; // project path NEVER uses it

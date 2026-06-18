@@ -120,6 +120,17 @@ test('legacy hotKeywords still merges as a grade-4 sensitive group (backward-com
   assert.equal(r.sensitive, true);
 });
 
+test('diagnosis keyword narrowed: bare word no longer fires, specific phrases still do', () => {
+  // 'diagnosis' alone used to false-match "bug diagnosis", "root-cause diagnosis", etc.
+  // It was replaced with 'medical diagnosis' + 'clinical diagnosis' (specific-phrase convention).
+  assert.notEqual(grade({ prompt: 'fix the bug diagnosis in the report' }).grade, 4, 'bare diagnosis must NOT fire the domain group');
+  assert.equal(grade({ prompt: 'review the medical diagnosis workflow' }).grade, 4, 'medical diagnosis still fires the domain group');
+  assert.equal(grade({ prompt: 'flag any clinical diagnosis errors' }).grade, 4, 'clinical diagnosis still fires the domain group');
+  // bare 'clinical' was over-broad (matched "clinical analysis of code"); narrowed to 'clinical trial'.
+  assert.notEqual(grade({ prompt: 'a clinical analysis of the codebase' }).grade, 4, 'bare clinical (non-medical adjective) must NOT fire the domain group');
+  assert.equal(grade({ prompt: 'review the clinical trial protocol' }).grade, 4, 'clinical trial still fires the domain group');
+});
+
 test('a config.keywords grade is clamped to 1-5 — the grader never emits an undefined tier', () => {
   const hi = grade({ prompt: 'frobnicate', config: { keywords: { x: { grade: 9, words: ['frobnicate'] } } } });
   assert.equal(hi.grade, 5);          // 9 -> clamped to 5

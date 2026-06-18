@@ -2,6 +2,19 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.0.10] - 2026-06-18
+
+Keyword/config-precision hardenings, caught by the 3-sub review pass.
+
+### Fixed
+
+- **A degenerate `CLAUDE_CONFIG_DIR` (`,` / whitespace) no longer yields a relative config path.** `claudeBaseDir` (config-load.mjs) and the conductor's inline resolver fall back to `~/.claude` when the first comma-list entry is empty: `(c && c.split(',')[0].trim()) || <home>/.claude`.
+- **Over-broad domain keywords narrowed (false grade-4 on non-medical prompts).** `diagnosis` → `medical diagnosis` + `clinical diagnosis`; bare `clinical` → `clinical trial`. "a clinical analysis of the codebase" and "fix the bug diagnosis" no longer wrongly grade as a high-stakes regulated-domain task (the specific-phrase convention: 'mathematical proof' not 'proof').
+
+### Added
+
+- Regression tests for both — the degenerate-`CLAUDE_CONFIG_DIR` fallback and the narrowed domain keywords (bare words no longer fire; specific phrases still do). 98 tests.
+
 ## [1.0.9] - 2026-06-18
 
 Routing now treats a whole-repo audit/bug-scan as a capability task, plus two field-reported fixes (#6, #7).

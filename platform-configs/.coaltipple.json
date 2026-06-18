@@ -145,7 +145,7 @@
     "audit": { "grade": 4, "words": ["bug scan", "scan for bugs", "find bugs", "find all bugs", "security audit", "security review", "vulnerability scan", "audit the codebase", "code audit"] },
     "math": { "grade": 5, "words": ["mathematical proof", "formal proof", "derive equation", "complexity bound"] },
     "knowledge": { "grade": 3, "words": ["systematic review", "literature review", "citation", "claim verification"] },
-    "domain": { "grade": 4, "sensitive": true, "words": ["legal contract", "compliance", "license terms", "financial audit", "tax filing", "valuation", "diagnosis", "dosage", "clinical", "gdpr", "hipaa", "pii"] },
+    "domain": { "grade": 4, "sensitive": true, "words": ["legal contract", "compliance", "license terms", "financial audit", "tax filing", "valuation", "medical diagnosis", "clinical diagnosis", "dosage", "clinical trial", "gdpr", "hipaa", "pii"] },
     "creative": { "grade": 2, "preserveVoice": true, "words": ["brand voice", "tone of voice", "style guide"] }
   },
 // </coaltipple-shared: keywords>
