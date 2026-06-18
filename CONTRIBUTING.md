@@ -38,7 +38,7 @@ CoalTipple is **Claude Code only**. Routing actuates only where an agent can pic
 
 | Platform | Support Status |
 |---|---|
-| **Claude Code** | **Validated Live** - Hardened across every model tier (Haiku, Sonnet, Opus). |
+| **Claude Code** | **Validated on 2.1.143** - Hardened across every model tier (Haiku, Sonnet, Opus); re-verifying on newer CC. |
 
 *Note: `skills/coaltipple/SKILL.md` is the highest-risk file. Prompts cannot be validated via unit tests; changes must be verified through actual live agent dogfooding.*
 

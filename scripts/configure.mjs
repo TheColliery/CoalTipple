@@ -25,6 +25,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CONFIG_SCHEMA, validateValue } from './lib/config-schema.mjs';
 import { loadMergedConfig, globalConfigPath } from './lib/config-load.mjs';
+import { stripJsonc } from './lib/jsonc.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const factoryCfg = path.join(repo, 'platform-configs', '.coaltipple.json');
@@ -64,15 +65,10 @@ function printHelp() {
   console.log(lines.join('\n'));
 }
 
-// Strip // and /* */ comments (string-aware) so the value JSON can be parsed.
-function stripComments(content) {
-  return content.replace(/\\"|"(?:\\"|[^"])*"|(\/\/.*|\/\*[\s\S]*?\*\/)/g, (m, g) => (g ? '' : m));
-}
-
 function parseConfig(content) {
   let c = content;
   if (c.charCodeAt(0) === 0xFEFF) c = c.slice(1); // BOM-safe
-  return JSON.parse(stripComments(c)) || {};
+  return JSON.parse(stripJsonc(c)) || {};
 }
 
 // Parse one raw CLI value against a spec. Returns { value } or { error }.

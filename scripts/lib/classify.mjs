@@ -189,3 +189,25 @@ export function buildFloorRanking(models = [], modelTiers = {}) {
   const pinned = applyPins(tiers, modelTiers);
   return { schemaVer: SCHEMA_VER, listHash: modelListHash(models), complete: true, source: 'heuristic-floor', tiers: pinned };
 }
+
+// The listHash of an EMPTY model list — the fingerprint of a ranking seeded
+// WITHOUT enumerating the live list (install / bootstrap). sha256('').slice(0,16).
+export const EMPTY_LIST_HASH = modelListHash([]);
+const BOOTSTRAP_SOURCES = ['install-floor', 'heuristic-floor'];
+
+// Is this ranking a never-introspected BOOTSTRAP seed (not a real enumeration)?
+// The installer/conductor seed the floor over an EMPTY list when no introspection
+// has run yet: `source` is a floor source AND `listHash` is the empty-list hash.
+// Its `complete:true` only attests "the floor is seeded", NOT "the live list was
+// enumerated" — so on the first route by a capable main, Step 0 UPGRADES it via
+// introspection (writes source:"introspection" + a real listHash). A cheap signal:
+// the `source`/`listHash` fields alone decide it — no live enumeration needed, so
+// the token-floor holds (a non-bootstrap cached ranking is trusted as-is). The
+// validity gate still treats a bootstrap as VALID (routing never stalls waiting to
+// upgrade); this is the "should refresh when convenient" signal, layered on top.
+// Pure (Phoenix #8): same input, same output.
+export function isBootstrapRanking(ranking) {
+  return !!ranking
+    && BOOTSTRAP_SOURCES.includes(ranking.source)
+    && ranking.listHash === EMPTY_LIST_HASH;
+}

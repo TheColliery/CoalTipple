@@ -2,6 +2,27 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.0.7] - 2026-06-18
+
+Routing is hardened to be never-fail across Claude Code updates and model-availability changes: an unavailable model can never strand a route, and a freshly-installed floor ranking upgrades itself on first use.
+
+### Changed
+
+- **The spawn-fail-fall is now an explicit driver in `SKILL.md` Step 3.** A spawn that errors because the model is unavailable / disabled / out of quota / gone (an instant, 0-token "X is currently unavailable") adds that model to a `blocked` set, resolves the next available worker via `resolveWorker(ranking, desiredTier, {blocked, floorTier})`, spawns it, and repeats — until a working model is reached or `resolveWorker` returns `null` (everything blocked down to the floor) and routing hands back. The guarantee is stated plainly: routing reaches a working model or hands back cleanly; it never gets stuck on an unavailable model, and never falls a sensitive task below its safe-minimum floor to escape a block. The same loop is cross-referenced from Damage control (the mid-route case).
+- **`SKILL.md` Step 0 — availability is now sharply distinguished from the catalog.** Introspection / the model catalog determines only the tier *structure* (which models exist and their capability order); availability is discovered only at spawn-time. A model is never treated as reachable just because the catalog lists it — a plan may disable it (proven live: a `fable` spawn returned unavailable instantly). The ranking lists the best-known model per tier; the spawn-fail-fall corrects reachability at runtime.
+- **Workers must be bounded (`SKILL.md` Step 3).** A delegated worker must have clear done-criteria in its task contract so it terminates; an open-ended / "keep improving" worker can loop and burn the budget. `subagentTimeoutSeconds` catches a stall; the done-criteria prevents the loop.
+- **The worker-leaf rule is reframed from a version FACT to a version-agnostic POLICY (`SKILL.md` + conductor).** The old text claimed "a worker has no spawn tool / nesting is gated off" — true on older Claude Code but false since 2.1.172 (nesting is on). It now reads: workers are leaves *by policy* (routing stays depth-0); bounded task-contracts + the spawn-fail-fall keep routing robust whether or not the platform caps nesting.
+- **CI matrix trimmed to the supported Node LTS** (`.github/workflows/ci.yml`: `node: [22, 24]`, dropping EOL Node 18 and 20).
+
+### Added
+
+- **Bootstrap-upgrade (`SKILL.md` Step 0 + `scripts/lib/classify.mjs`).** A ranking seeded without ever enumerating the live model list — `source: "install-floor"` or `"heuristic-floor"` with the empty-list `listHash` — is a never-introspected bootstrap whose `complete: true` only attests that the floor was seeded. On the first route by a capable main it is upgraded via introspection (rewritten to `source: "introspection"` with a real `listHash`). The detection is a cheap field check, `isBootstrapRanking()` (plus the exported `EMPTY_LIST_HASH`), so it needs no live enumeration and fires once — the token-floor is preserved, and a bootstrap ranking stays valid so routing never stalls waiting to upgrade.
+
+### Fixed
+
+- **`.coaltipple.json` no longer silently reverts to defaults (the CoalMine #12 class).** The JSONC comment-stripper desynced on a config value ending in an escaped backslash right before a later `//` — `JSON.parse` threw and the catch fell back to defaults. Replaced with a shared string-aware `scripts/lib/jsonc.mjs` (used by `config-load.mjs` and `configure.mjs`; inlined in the conductor per Phoenix #9), plus a regression test.
+- **Context-variant CAPACITY-axis fallback (`SKILL.md` Step 0).** The fall logic covered only the tier (capability) axis; when the largest context variant retires (e.g. Opus 4.8 1M), an input exceeding the remaining ceiling had no safe route — the fall went to a smaller-context cheaper tier (wrong axis) or overflowed. Added a capacity-ceiling rule: the largest *available* variant is the ceiling (discovered at spawn-time); an input over it is chunked or handed back, never dropped to a cheaper tier.
+
 ## [1.0.6] - 2026-06-16
 
 CoalTipple is now **Claude Code only** and out of WIP -- routing actuates only where an agent can pick a spawned worker's model, which today is Claude Code. The conductor now nudges routing on every prompt. Validated on Claude Code 2.1.143.

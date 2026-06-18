@@ -20,12 +20,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-
-// Strip // and /* */ comments without eating them inside string literals.
-// (Same string-aware regex the conductor + configure + verify already use.)
-function stripComments(content) {
-  return content.replace(/\\"|"(?:\\"|[^"])*"|(\/\/.*|\/\*[\s\S]*?\*\/)/g, (m, g) => (g ? '' : m));
-}
+import { stripJsonc } from './jsonc.mjs';
 
 // Read one JSONC file into an object. Returns {} for any failure mode
 // (missing file, unreadable, malformed JSON, non-object top-level) — never throws.
@@ -33,7 +28,7 @@ function readJsonc(file) {
   try {
     let content = fs.readFileSync(file, 'utf8');
     if (content.charCodeAt(0) === 0xfeff) content = content.slice(1); // BOM-safe
-    const parsed = JSON.parse(stripComments(content));
+    const parsed = JSON.parse(stripJsonc(content));
     return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
   } catch {
     return {};

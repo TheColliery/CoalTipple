@@ -32,7 +32,11 @@ function readCfgFile(file) {
   try {
     let content = fs.readFileSync(file, 'utf8');
     if (content.charCodeAt(0) === 0xFEFF) content = content.slice(1); // BOM-safe, no literal BOM
-    const cleanJson = content.replace(/\\"|"(?:\\"|[^"])*"|(\/\/.*|\/\*[\s\S]*?\*\/)/g, (m, g) => (g ? '' : m));
+    // String-aware JSONC stripper (CM #12 fix): the string alternative consumes
+    // an escaped char (\\.) or any non-quote/non-backslash char, so a value
+    // ending in a literal backslash terminates the string correctly instead of
+    // leaking escape state into the next token and mis-stripping a later comment.
+    const cleanJson = content.replace(/"(?:\\.|[^"\\])*"|\/\/.*|\/\*[\s\S]*?\*\//g, (m) => (m[0] === '"' ? m : ''));
     const parsed = JSON.parse(cleanJson);
     return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
   } catch { return null; }
@@ -76,7 +80,7 @@ function contract(cfg) {
   return [
     '[CoalTipple] Model/effort routing active. Before delegating, ensure a valid model-tier ranking exists (self-heal via the coaltipple skill if missing/stale). Then:',
     '- DELEGATE-DOWN a task you can do but is large + cheap, to a lower tier — ONLY with a compact task-contract (goal+constraints+interface+done) AND verify the returned output on merge. Skip it for small tasks (spawn overhead beats the saving).',
-    '- ESCALATE-UP a task beyond the current tier for quality. Workers are leaves (a worker has no spawn tool in this CC build; never grant one the Agent tool): a worker that fails RETURNS its result and the MAIN re-routes — workers never spawn.',
+    '- ESCALATE-UP a task beyond the current tier for quality. Workers are leaves by policy (routing stays depth-0): give each a bounded task-contract so it RETURNS rather than spawning its own workers; a worker that fails RETURNS its result and the MAIN re-routes.',
     '- Grade by the deterministic rubric, not a model self-assessment. Opus is scarce: cheapest lever first - raise effort, then a stronger same-tier version (e.g. Opus 4.6 -> 4.8), before escalating the tier.',
     '- Honor qualityBar (.coaltipple.json, 0-100, default 60): a result must clear it or climb the model ladder — start at the grade floor, verify vs the contract done-criteria by domain-appropriate means (code: tests/build; text: completeness; research: sourced claims), climb one rung if short, jump to the top tier if far below or out of attempts. 0 = anything passes (cheapest); 100 = climb until best.',
     langLine(cfg),

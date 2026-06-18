@@ -7,6 +7,7 @@ import path from 'node:path';
 import {
   classifyModel, modelListHash, validateRanking, parseModel, buildHeuristicFloor,
   loadRanking, writeRankingAtomic, buildFloorRanking, SCHEMA_VER, escalationStep, applyPins, resolveWorker,
+  isBootstrapRanking, EMPTY_LIST_HASH,
 } from './classify.mjs';
 
 test('parseModel: strips 256k/1m context suffix, extracts version, flags long-context', () => {
@@ -141,4 +142,46 @@ test('resolveWorker: SENSITIVE floor never breached on a limit-hit (never-down h
 test('resolveWorker: everything blocked -> null (hand back / do it yourself)', () => {
   const ranking = { tiers: { low: ['haiku'], mid: ['sonnet'], heavy: ['opus'], reasoning: ['fable'] } };
   assert.equal(resolveWorker(ranking, 'heavy', { blocked: ['haiku', 'sonnet', 'opus', 'fable'] }), null);
+});
+
+test('resolveWorker DRIVES the spawn-fail-fall loop: each unavailable model accrues, fall reaches a working one then null', () => {
+  // The Step-3 driver: spawn errors "unavailable" -> add to blocked -> resolveWorker -> spawn next -> repeat.
+  const ranking = { tiers: { low: ['haiku'], mid: ['sonnet'], heavy: ['opus-4.8', 'opus-4.7'], reasoning: ['fable'] } };
+  const blocked = [];
+  // desired reasoning. fable spawn fails (proven: instant 0-token "unavailable").
+  blocked.push('fable');
+  assert.deepEqual(resolveWorker(ranking, 'reasoning', { blocked }), { tier: 'heavy', model: 'opus-4.8' }); // fall to next available
+  // opus-4.8 ALSO blocked (quota) -> within-tier next.
+  blocked.push('opus-4.8');
+  assert.deepEqual(resolveWorker(ranking, 'reasoning', { blocked }), { tier: 'heavy', model: 'opus-4.7' });
+  // opus-4.7 blocked too -> drop a tier.
+  blocked.push('opus-4.7');
+  assert.deepEqual(resolveWorker(ranking, 'reasoning', { blocked }), { tier: 'mid', model: 'sonnet' });
+  // sonnet + haiku blocked -> everything gone -> null (hand back, never stuck on an unavailable model).
+  blocked.push('sonnet', 'haiku');
+  assert.equal(resolveWorker(ranking, 'reasoning', { blocked }), null);
+});
+
+test('isBootstrapRanking: a seeded floor (floor source + empty-list hash) is a bootstrap; an introspected ranking is not', () => {
+  // EMPTY_LIST_HASH is the fingerprint of buildFloorRanking([]) (no live enumeration).
+  assert.equal(EMPTY_LIST_HASH, modelListHash([]));
+  const seed = buildFloorRanking([]); seed.source = 'install-floor'; // exactly what install.mjs writes
+  assert.equal(isBootstrapRanking(seed), true);
+  assert.equal(isBootstrapRanking(buildFloorRanking([])), true);     // heuristic-floor over [] = also bootstrap
+  // Introspected (real listHash) -> NOT a bootstrap (no re-upgrade, token-floor holds).
+  assert.equal(isBootstrapRanking({ source: 'introspection', listHash: 'deadbeefdeadbeef', tiers: {} }), false);
+  // Floor source but a REAL list enumerated (non-empty hash) -> not a bootstrap.
+  assert.equal(isBootstrapRanking(buildFloorRanking(['Haiku 4.5', 'Opus 4.8'])), false);
+  // A floor over an empty list but already upgraded source -> not a bootstrap.
+  assert.equal(isBootstrapRanking({ source: 'introspection', listHash: EMPTY_LIST_HASH, tiers: {} }), false);
+  assert.equal(isBootstrapRanking(null), false);
+  assert.equal(isBootstrapRanking(undefined), false);
+});
+
+test('aliasDefaults reasoning floor = [opus] (always-available bare floor; fable is plan-gated, added by introspection-upgrade + the fall)', () => {
+  // Lock the task-item-5 invariant: the bare floor must NOT hardcode a plan-gated model (fable).
+  const a = buildFloorRanking([]); // no models, no pins -> pure alias floor
+  assert.deepEqual(a.tiers.reasoning, ['opus']);
+  assert.deepEqual(a.tiers.heavy, ['opus']);
+  assert.equal(a.tiers.reasoning.includes('fable'), false);
 });
