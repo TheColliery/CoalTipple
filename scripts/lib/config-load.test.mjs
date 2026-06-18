@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { loadMergedConfig, globalConfigPath, globalStateDir, projectConfigPath, claudeBaseDir } from './config-load.mjs';
+import { loadMergedConfig, globalConfigPath, globalStateDir, projectConfigPath, projectStateDir, claudeBaseDir, findGitRoot } from './config-load.mjs';
 
 // Build a sandbox with optional global/project file bodies; returns { home, cwd }.
 function sandbox({ global, project } = {}) {
@@ -89,6 +89,27 @@ test('a corrupt file never throws — the other layer still loads', () => {
   try {
     assert.equal(loadMergedConfig(s2).qualityBar, 33);
   } finally { cleanup(s2); }
+});
+
+test('project config anchors at the GIT ROOT, not raw cwd — a subdir cwd reads the root file (#3 path drift)', () => {
+  // Build <root>/.git + <root>/.claude/.coaltipple.json, then resolve from a nested subdir.
+  // Before the fix, projectConfigPath used raw cwd -> a subdir read a DIFFERENT (absent) file
+  // than the conductor/configure (which use findGitRoot), so per-project overrides mis-applied.
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-gitroot-'));
+  try {
+    fs.mkdirSync(path.join(root, '.git'), { recursive: true });
+    fs.mkdirSync(path.join(root, '.claude'), { recursive: true });
+    fs.writeFileSync(path.join(root, '.claude', '.coaltipple.json'), JSON.stringify({ qualityBar: 77 }), 'utf8');
+    const sub = path.join(root, 'pkg', 'src', 'deep');
+    fs.mkdirSync(sub, { recursive: true });
+    // findGitRoot walks the subdir up to the .git root.
+    assert.equal(findGitRoot(sub), root, 'findGitRoot resolves the subdir to the git root');
+    // projectConfigPath/projectStateDir from the subdir land on the ROOT, not the subdir.
+    assert.equal(projectConfigPath(sub), path.join(root, '.claude', '.coaltipple.json'));
+    assert.equal(projectStateDir(sub), path.join(root, '.claude', '.coaltipple'));
+    // The merged read from the subdir picks up the root project override.
+    assert.equal(loadMergedConfig({ cwd: sub, home: fs.mkdtempSync(path.join(os.tmpdir(), 'ct-h-')) }).qualityBar, 77);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
 test('CLAUDE_CONFIG_DIR redirects the GLOBAL paths (#6); comma-list -> first entry; project paths unaffected', () => {

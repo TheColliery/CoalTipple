@@ -37,7 +37,7 @@ export const CONFIG_SCHEMA = [
   { key: 'disableRouting', type: 'strArr', lower: true, flags: ['-x', '--disable'], help: 'Comma-separated task domains to never route (coding, text, math, research) or "all"' },
   { key: 'contextFiles', type: 'strArr', flags: ['-C', '--context'], help: 'Memory-anchor file(s) a fresh worker reads for project context/conventions beyond the task contract (any name). Empty = rely on platform memory (CLAUDE.md/AGENTS.md). Comma-separated paths' },
   { key: 'memoryOffer', type: 'enum', values: ['auto', 'off'], flags: ['--memory'], help: 'When no memory anchor exists, offer (lazily, once) to set one up: auto (default) or off (disabled/skipped; re-enable via /coaltipple memory)' },
-  { key: 'modelTiers', type: 'obj', noFlag: true, help: 'Optional user pins overriding auto-classification: { cheap|mid|heavy|reasoning|local: "model" | ["priority","chain"] }' },
+  { key: 'modelTiers', type: 'obj', noFlag: true, help: 'Optional user pins overriding auto-classification: { local|low|mid|heavy|reasoning: "model" | ["priority","chain"] }' },
 ];
 
 // Validate an already-parsed JSON value against a spec.

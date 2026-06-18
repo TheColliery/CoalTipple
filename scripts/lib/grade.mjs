@@ -3,6 +3,14 @@
 // LLM, so a cheap main model's overconfident self-assessment can never route a
 // hard task to a weak tier (the escalation-mode safety backstop). Same input ->
 // same grade (Phoenix #8 deterministic). Pure: no fs, no network, no deps.
+//
+// LANGUAGE SCOPE — the keyword floor is ENGLISH-ONLY: the `words` lists below (and
+// the conductor's mirrored HOT5/HOT4 hint) are English literals, so a non-English
+// prompt ("scan for bugs" / "constant-time compare" in Thai/CJK/Arabic) matches NO
+// keyword and gets only the size/path floor. That is BY DESIGN: the deterministic
+// layer is a best-effort English backstop; for a non-English task the MODEL layer
+// (SKILL.md Step 1/2) carries the grading — it grades by MEANING/intent and applies
+// the sensitive never-down gate by intent, because the keyword flag will not fire.
 
 import { KEYWORD_GROUPS, HOT5, HOT4, SENSITIVE, EXCLUDE } from './keywords.mjs';
 
@@ -17,11 +25,28 @@ export const DEFAULT_HOT4 = HOT4;
 
 const TIER_BY_GRADE = { 1: 'low', 2: 'low', 3: 'mid', 4: 'heavy', 5: 'reasoning' };
 
-// Word-START-boundary match: catches the keyword + its suffixes/plurals
-// (migration -> migrations) but NOT mid-word embeddings (immigration, anatomical),
-// killing the loose-substring false-positive class. `text` is already lowercased.
+// Keyword match with a STEM-vs-WHOLE-WORD convention (the trailing-* marker):
+//   - a keyword ending in `*` is a PREFIX/STEM: strip the `*`, anchor a leading \b
+//     only (no trailing boundary), so it catches the stem + every suffix —
+//     `authenticat*` -> authenticate/authentication, `migrat*` -> migrations.
+//   - any other keyword is WHOLE-WORD: leading AND trailing \b, so it matches the
+//     word but NOT a longer word that merely starts with it —
+//     `token` matches "token" but NOT "tokenizer"; `secret` not "secretary".
+// This kills the over-match class (token->tokenizer, session->sessionStorage,
+// crypto->cryptocurrency) WITHOUT breaking intended stems. `text` is already lowercased.
+// (`\b` after a word char still admits the trailing 's' of a plural, e.g. /\btoken\b/
+//  matches "tokens" at the boundary before 's'? no — it requires a boundary right after
+//  'token'; "tokens" has no boundary there. Plurals of whole-words are NOT auto-caught —
+//  list both forms or use a stem where the plural matters. Stems (*) catch plurals.)
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const includesAny = (text, list) =>
-  list.find((k) => new RegExp('\\b' + String(k).toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).test(text));
+  list.find((k) => {
+    const raw = String(k).toLowerCase();
+    const stem = raw.endsWith('*');
+    const word = escapeRe(stem ? raw.slice(0, -1) : raw);
+    if (!word) return false;
+    return new RegExp('\\b' + word + (stem ? '' : '\\b')).test(text);
+  });
 
 // Merge config.keywords over the factory groups (per group: a config group carrying a
 // `words` array replaces/adds that named group). The legacy flat `hotKeywords` maps onto
@@ -52,7 +77,16 @@ function mergeKeywordGroups(config) {
 // payment/regulated; keyed on a sensitive GROUP or PATH, NOT on the grade, so a weak
 // main that under-grades cannot bypass the hard gate) and `preserveVoice` (the prose
 // is the user-facing deliverable — don't delegate it to a cheaper model).
-export function grade({ prompt = '', files = [], sizeUnits = 0, config = {} } = {}) {
+export function grade(args = {}) {
+  // Coerce at the boundary — a destructuring default (`= {}`, `= []`) fires ONLY on
+  // `undefined`, never on an explicit `null`, so grade(null) / grade({files:null}) /
+  // grade({config:null}) would throw. A boundary authority must DEGRADE, not crash:
+  // normalize the whole arg, then each field, to a safe default.
+  const a = (args && typeof args === 'object') ? args : {};
+  const prompt = a.prompt == null ? '' : a.prompt;
+  const sizeUnits = a.sizeUnits == null ? 0 : a.sizeUnits;
+  const files = Array.isArray(a.files) ? a.files : [];
+  const config = (a.config && typeof a.config === 'object' && !Array.isArray(a.config)) ? a.config : {};
   const reasons = [];
   let g = 1;
   let sensitive = false;

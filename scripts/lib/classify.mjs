@@ -72,13 +72,20 @@ export function modelListHash(models = []) {
   return crypto.createHash('sha256').update(names.join('\n')).digest('hex').slice(0, 16);
 }
 
-// Valid iff: parses, matches schema version, complete, has tiers, and its
-// listHash matches the CURRENT model list. Any failure -> rebuild (Phoenix #12).
+// Valid iff: parses, matches schema version, strictly complete, has a USABLE tiers
+// map (a non-array plain object with every TIERS key present as an array, at least one
+// non-empty), and its listHash matches the CURRENT model list. Strict because a loosely
+// "valid" ranking (array tiers, {}, missing/non-array keys, all-empty) passes the Lock but
+// makes resolveWorker return null for every tier -> routing silently dead while the Lock
+// reads green. Any failure -> rebuild (Phoenix #12).
 export function validateRanking(ranking, currentHash) {
   if (!ranking || typeof ranking !== 'object') return 'missing';
   if (ranking.schemaVer !== SCHEMA_VER) return 'schema-version mismatch';
-  if (!ranking.complete) return 'incomplete (interrupted build)';
-  if (!ranking.tiers || typeof ranking.tiers !== 'object') return 'no tiers';
+  if (ranking.complete !== true) return 'incomplete (interrupted build)';
+  const tiers = ranking.tiers;
+  if (!tiers || typeof tiers !== 'object' || Array.isArray(tiers)) return 'no tiers';
+  for (const t of TIERS) if (!Array.isArray(tiers[t])) return `tiers missing/non-array key '${t}'`;
+  if (!TIERS.some((t) => tiers[t].length)) return 'tiers all empty (routing would be dead)';
   if (currentHash && ranking.listHash !== currentHash) return 'stale (model list changed)';
   return null;
 }
@@ -152,9 +159,20 @@ export function escalationStep(currentTier, { attemptsLeft = 1, farBelow = false
 export function resolveWorker(ranking, desiredTier, { blocked = [], floorTier = null, ladder = ESCALATION_LADDER } = {}) {
   const blockedSet = new Set((blocked || []).map(String));
   const tiers = (ranking && ranking.tiers) || {};
-  const di = ladder.indexOf(desiredTier);
+  const di = ladder.indexOf(String(desiredTier).toLowerCase());
   if (di < 0) return null;                                    // unknown tier -> caller handles
-  const floor = Math.max(floorTier ? ladder.indexOf(floorTier) : 0, 0);
+  // Floor resolution is FAIL-SAFE: a valid-but-wrong-case ('Heavy') normalizes; a
+  // tier below the ladder (e.g. 'local') allows from the bottom; an UNRECOGNIZED
+  // floor ('reasoner' typo) returns null rather than collapsing to the cheapest tier
+  // (Math.max(-1,0)=0 would breach the never-down gate for a sensitive task).
+  let floor = 0;
+  if (floorTier) {
+    const ft = String(floorTier).toLowerCase();
+    const fi = ladder.indexOf(ft);
+    if (fi >= 0) floor = fi;
+    else if (TIERS.includes(ft)) floor = 0;  // known tier below the ladder (e.g. 'local') -> allow from the bottom
+    else return null;                        // unrecognized floor -> FAIL SAFE, never collapse to the cheapest tier
+  }
   for (let i = di; i >= floor; i--) {                         // walk desired tier -> floor, never below
     const models = Array.isArray(tiers[ladder[i]]) ? tiers[ladder[i]] : [];
     for (const m of models) if (!blockedSet.has(String(m))) return { tier: ladder[i], model: m };

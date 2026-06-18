@@ -19,6 +19,8 @@ const os = require('os');
 // file may be missing/corrupt — each is read in isolation and contributes nothing
 // on failure, so the merge always yields the best available config (never throws).
 // Inlined (not imported) to keep the hook standalone-portable (Phoenix #9).
+// Keep findGitRoot byte-identical to scripts/lib/config-load.mjs + configure.mjs
+// (verify.mjs's config-path-sync gate guards the drift).
 function findGitRoot(startDir) {
   let dir = path.resolve(startDir);
   while (true) {
@@ -59,14 +61,46 @@ function loadCfg() {
 //     fuller file-aware grade). The grader/hint below fires ONLY on a hot
 //     keyword; the always-on routing forcer in main() fires on every prompt. ---
 // <coaltipple-shared: hot-keywords> — synced from scripts/lib/keywords.mjs by build-plugin.mjs; edit keywords.mjs, NOT this block
-const HOT5 = ['concurrency', 'mutex', 'race condition', 'deadlock', 'thread-saf', 'atomic', 'crypto', 'timing attack', 'timing-attack', 'constant-time', 'constant time', 'timing-safe', 'side-channel', 'encrypt', 'decrypt', 'mathematical proof', 'formal proof', 'derive equation', 'complexity bound'];
-const HOT4 = ['oauth', 'authenticat', 'authoriz', 'auth bypass', 'sql injection', 'access control', 'permission', 'secret', 'token', 'password', 'session', 'migration', 'schema change', 'payment', 'billing', 'rate limit', 'optimize query', 'bug scan', 'scan for bugs', 'find bugs', 'find all bugs', 'security audit', 'security review', 'vulnerability scan', 'audit the codebase', 'code audit', 'legal contract', 'compliance', 'license terms', 'financial audit', 'tax filing', 'valuation', 'medical diagnosis', 'clinical diagnosis', 'dosage', 'clinical trial', 'gdpr', 'hipaa', 'pii'];
+const HOT5 = ['concurrency', 'mutex', 'mutexes', 'race condition', 'deadlock', 'deadlocks', 'thread-saf*', 'atomic', 'crypto', 'cryptographic', 'cryptography', 'timing attack', 'timing-attack', 'constant-time', 'constant time', 'timing-safe', 'side-channel', 'encrypt*', 'decrypt*', 'mathematical proof', 'formal proof', 'derive equation', 'complexity bound'];
+const HOT4 = ['oauth', 'authenticat*', 'authoriz*', 'auth bypass', 'sql injection', 'access control', 'permission*', 'secret', 'secrets', 'token', 'tokens', 'password', 'passwords', 'session', 'sessions', 'migrat*', 'schema change', 'payment', 'payments', 'billing', 'rate limit', 'optimize query', 'bug scan', 'scan for bugs', 'find bugs', 'find all bugs', 'security audit', 'security review', 'vulnerability scan', 'audit the codebase', 'code audit', 'legal contract', 'compliance', 'license terms', 'financial audit', 'tax filing', 'valuation', 'medical diagnosis', 'clinical diagnosis', 'dosage', 'clinical trial', 'gdpr', 'hipaa', 'pii'];
 // </coaltipple-shared: hot-keywords>
+// Match a hot keyword with the SAME stem-vs-whole-word convention as the grader
+// (grade.mjs includesAny): a trailing `*` = STEM (prefix, leading \b only); a bare
+// word = WHOLE-WORD (leading + trailing \b), so the conductor's hint can't over-match
+// where the grader doesn't (token -> tokenizer, crypto -> cryptocurrency). `t` is lowercased.
+function matchKw(t, list) {
+  for (const k of list) {
+    const raw = String(k).toLowerCase();
+    const stem = raw.endsWith('*');
+    const word = (stem ? raw.slice(0, -1) : raw).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (!word) continue;
+    if (new RegExp('\\b' + word + (stem ? '' : '\\b')).test(t)) return true;
+  }
+  return false;
+}
 function hintFor(prompt) {
   const t = String(prompt || '').toLowerCase();
-  if (HOT5.some((k) => t.includes(k))) return { grade: 5, tier: 'reasoning', why: 'reasoning-hard keyword' };
-  if (HOT4.some((k) => t.includes(k))) return { grade: 4, tier: 'heavy', why: 'sensitive keyword' };
+  if (matchKw(t, HOT5)) return { grade: 5, tier: 'reasoning', why: 'reasoning-hard keyword' };
+  if (matchKw(t, HOT4)) return { grade: 4, tier: 'heavy', why: 'sensitive keyword' };
   return null;
+}
+
+// The deterministic HOT keyword flags are ENGLISH literals, so a non-English prompt
+// matches NOTHING and the keyword sensitive-gate silently vanishes for it. Detect a
+// non-Latin SCRIPT char — anything outside Basic Latin + Latin-1 Supplement + Latin
+// Extended-A/B (code point <= 0x24F), while excluding the General Punctuation block
+// (0x2000-0x206F: em-dash / smart quotes / ellipsis, common in English text) so an
+// English prompt with typographic punctuation does NOT trigger a false nudge. Catches
+// Thai / CJK / Arabic / Cyrillic / Hebrew / Devanagari / etc. The character class is
+// BUILT from char codes — never a raw high-Unicode literal in source (the tool layer
+// mangles those; this hook must stay deterministic + portable, Phoenix #8/#9).
+const NON_LATIN_RE = (() => {
+  const cc = String.fromCharCode;
+  const cls = '[^' + cc(0x00) + '-' + cc(0x24f) + cc(0x2000) + '-' + cc(0x206f) + ']';
+  return new RegExp(cls);
+})();
+function hasNonLatinScript(prompt) {
+  return NON_LATIN_RE.test(String(prompt || ''));
 }
 
 // The contract is model-facing English (the model reads it fine); the language
@@ -86,6 +120,7 @@ function contract(cfg) {
     '- DELEGATE-DOWN a task you can do but is large + cheap, to a lower tier — ONLY with a compact task-contract (goal+constraints+interface+done) AND verify the returned output on merge. Skip it for small tasks (spawn overhead beats the saving).',
     '- ESCALATE-UP a task beyond the current tier for quality. Workers are leaves by policy (routing stays depth-0): give each a bounded task-contract so it RETURNS rather than spawning its own workers; a worker that fails RETURNS its result and the MAIN re-routes.',
     '- Grade by the deterministic rubric, not a model self-assessment. Opus is scarce: cheapest lever first - raise effort, then a stronger same-tier version (e.g. Opus 4.6 -> 4.8), before escalating the tier.',
+    '- mode (.coaltipple.json, default auto): auto = route both directions per grade; delegation = delegate-down only (escalate-up suppressed, a budget-saving mode); escalation = escalate-up only (delegate-down suppressed, a quality mode); off = routing off, do it yourself. The sensitive HARD GATE overrides mode (sensitive is still never-down and may always escalate up).',
     '- Honor qualityBar (.coaltipple.json, 0-100, default 60): a result must clear it or climb the model ladder — start at the grade floor, verify vs the contract done-criteria by domain-appropriate means (code: tests/build; text: completeness; research: sourced claims), climb one rung if short, jump to the top tier if far below or out of attempts. 0 = anything passes (cheapest); 100 = climb until best.',
     langLine(cfg),
     '- Consent + token spend: honor .coaltipple.json; never silently fan out costly work.',
@@ -96,9 +131,18 @@ function readStdin() {
   try { return fs.readFileSync(0, 'utf8'); } catch { return ''; }
 }
 
+// Routing is OFF when the master switch is off OR mode is "off" (do-it-yourself).
+// Both silence the SessionStart contract AND the per-prompt forcer — the off switch.
+function routingOff(cfg) {
+  if (!cfg) return false;
+  if (cfg.enableRouting === false || cfg.routing === false) return true; // legacy key honored
+  if (typeof cfg.mode === 'string' && cfg.mode.toLowerCase() === 'off') return true; // mode:"off" short-circuit
+  return false;
+}
+
 function main() {
   const cfg = loadCfg();
-  if (cfg && (cfg.enableRouting === false || cfg.routing === false)) return; // legacy key honored
+  if (routingOff(cfg)) return;
   const disabled = cfg && cfg.disableRouting;
   if (Array.isArray(disabled) && disabled.includes('all')) return;
 
@@ -107,9 +151,14 @@ function main() {
   const event = input.hook_event_name || input.hookEventName || '';
 
   if (event === 'UserPromptSubmit') {
-    const h = hintFor(input.prompt || input.user_prompt || '');
+    const prompt = input.prompt || input.user_prompt || '';
+    const h = hintFor(prompt);
     const hint = h ? ` Complexity hint: grade ${h.grade} (${h.why}) -> start tier "${h.tier}"; fold into the grade, then the result must clear qualityBar or routing climbs the ladder.` : '';
-    process.stdout.write(`[CoalTipple] Route BEFORE acting on this prompt: apply the coaltipple routing contract (SKILL.md) -- grade the task, then delegate-down (large + cheap), escalate-up (beyond this tier), or keep-on-self, per the rubric. Routing actuates on Claude Code only.${hint}`);
+    // The English HOT-keyword hint cannot fire on a non-English prompt; add ONE generic
+    // deterministic nudge so the sensitive-gate backstop is not silently lost there.
+    // Complements (never replaces) the English hint above.
+    const nonEnglish = hasNonLatinScript(prompt) ? ' Non-English prompt -- grade by MEANING and apply the sensitive-gate by intent; the English keyword flags will not fire.' : '';
+    process.stdout.write(`[CoalTipple] Route BEFORE acting on this prompt: apply the coaltipple routing contract (SKILL.md) -- grade the task, then delegate-down (large + cheap), escalate-up (beyond this tier), or keep-on-self, per the rubric. Routing actuates on Claude Code only.${hint}${nonEnglish}`);
     return;
   }
   // SessionStart (and any non-prompt event) -> inject the routing contract.

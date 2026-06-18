@@ -46,8 +46,24 @@ export function claudeBaseDir(home = os.homedir()) {
 export function globalConfigPath(home = os.homedir()) {
   return path.join(claudeBaseDir(home), '.coaltipple.json');
 }
+
+// Walk up from startDir for a `.git`, returning the git root; fall back to startDir
+// when none is found (git is OPTIONAL — a non-git project still resolves to its own
+// dir). Anchors the PROJECT config/state at the git root so a subdir cwd reads the
+// SAME file the conductor + configure do (they each inline an identical copy — Phoenix
+// #9 keeps the hook standalone; verify.mjs's config-path-sync gate guards the drift).
+// Keep this logic byte-identical to the conductor's + configure's inlined copies.
+export function findGitRoot(startDir = process.cwd()) {
+  let dir = path.resolve(startDir);
+  while (true) {
+    if (fs.existsSync(path.join(dir, '.git'))) return dir;
+    const parent = path.dirname(dir);
+    if (parent === dir) return startDir;
+    dir = parent;
+  }
+}
 export function projectConfigPath(cwd = process.cwd()) {
-  return path.join(cwd, '.claude', '.coaltipple.json');
+  return path.join(findGitRoot(cwd), '.claude', '.coaltipple.json');
 }
 // State dirs — hold the ranking / work-state, NOT config. The GLOBAL state dir holds
 // the shared platform model-ranking; the PROJECT state dir holds per-project
@@ -56,7 +72,7 @@ export function globalStateDir(home = os.homedir()) {
   return path.join(claudeBaseDir(home), '.coaltipple');
 }
 export function projectStateDir(cwd = process.cwd()) {
-  return path.join(cwd, '.claude', '.coaltipple');
+  return path.join(findGitRoot(cwd), '.claude', '.coaltipple');
 }
 
 // Load + merge the cascade. Shallow per-key: project keys overwrite global keys;

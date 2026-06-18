@@ -2,6 +2,26 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.0.11] - 2026-06-18
+
+A comprehensive vulnerability hunt (4 parallel scanners + an adversarial work-review pass) — safety-gate, routing-correctness, config-honesty, and worldwide-language fixes.
+
+### Fixed
+
+- **The never-down sensitive gate could be breached by a mis-cased / typo'd floor.** `resolveWorker` (classify.mjs) matched `floorTier` case-sensitively, so `'Heavy'` or a typo fell through `indexOf → -1 → Math.max(-1,0) = 0` and collapsed a SENSITIVE task to the *cheapest* tier under a limit-hit. Now case-normalized + fail-safe: an unrecognized floor returns `null` (hand back), never the floor.
+- **Non-English sensitive prompts lost the deterministic safety flag.** The keyword grader + the conductor hint match English literals only, so a Thai/CJK/Arabic prompt meaning "scan for bugs" / "constant-time compare" fired no flag — the "keyword is the gate" backstop silently vanished. The Step-2 HARD GATE now states the model is the sensitive-gate authority for non-English (grade by MEANING), and the conductor injects a generic non-English nudge on non-Latin script. (The model layer has been multilingual since 1.0.9; this closes the *deterministic* backstop.)
+- **`mode` and per-domain `disableRouting` were documented but dead.** `mode:"off"` still routed; `disableRouting:["coding"]` did nothing. Both are now wired (SKILL + conductor): `mode` constrains direction (`auto`/`delegation`/`escalation`/`off`, the sensitive HARD GATE overriding it), and per-domain disable is honored.
+- **The grade keyword matcher over-matched, then a fix under-matched.** A missing trailing word-boundary let `token`→"tokenizer", `crypto`→"cryptocurrency" wrongly grade sensitive. Fixed with a stem (`*`) vs whole-word convention — and the common plurals (`tokens`/`secrets`/`passwords`/`sessions`/`payments`/`deadlocks`/`mutexes`) are now listed so a plural no longer escapes the never-down flag.
+- **The `modelTiers` pin doc named a non-existent tier.** The `--help`/schema text said `cheap` (silently dropped by `applyPins`); the real cheapest tier is `low`.
+- **Project config could be read from the wrong directory.** `config-load.mjs` resolved from `process.cwd()` while the conductor + configure used the git root — a subdir cwd read a different file. All three now anchor at the git root (git stays optional).
+- **`validateRanking` blessed broken rankings.** An array, `{}`, a missing key, or `complete` merely truthy passed the Lock, letting `resolveWorker` return `null` for every tier (routing dead while the Lock read green). Now strict: every tier present + an array, `complete === true`, ≥1 non-empty.
+- **`verify.mjs` used a third, divergent JSONC parser** instead of the shared `stripJsonc` — the gate now validates with the same parser runtime uses.
+- **`grade()` threw on null input** (`{files:null}`, etc.); a boundary authority now degrades instead of crashing.
+
+### Added
+
+- Regression tests across every fix — the case-insensitive/fail-safe floor, the non-English nudge, `mode:"off"`, the stem/whole-word + plural matching (A/B both directions), strict `validateRanking`, the git-root config anchor, and null-input degradation. 110 tests.
+
 ## [1.0.10] - 2026-06-18
 
 Keyword/config-precision hardenings, caught by the 3-sub review pass.

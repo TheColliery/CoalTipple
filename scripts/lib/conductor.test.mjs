@@ -141,6 +141,66 @@ test('UserPromptSubmit honors enableRouting:false -> fully silent (the always-on
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 });
 
+test('UserPromptSubmit: a non-English (Thai) prompt injects the generic non-English nudge', () => {
+  const tmp = mk();
+  try {
+    // Thai for "scan for bugs in this code" — matches NO English keyword, so the
+    // deterministic sensitive-gate backstop would vanish without this nudge.
+    const r = run({ hook_event_name: 'UserPromptSubmit', prompt: 'สแกนหาบั๊กในโค้ดนี้' }, tmp, tmp);
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /Route BEFORE acting/);          // the always-on forcer still fires
+    assert.match(r.stdout, /Non-English prompt/);            // + the generic non-English nudge
+    assert.match(r.stdout, /grade by MEANING/);
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
+test('UserPromptSubmit: a plain English prompt does NOT get the non-English nudge (no false trigger on typographic punctuation)', () => {
+  const tmp = mk();
+  try {
+    // Em-dash + smart quotes are English typography (General Punctuation block) -> excluded.
+    const r = run({ hook_event_name: 'UserPromptSubmit', prompt: 'refactor the parser — keep it “clean”' }, tmp, tmp);
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /Route BEFORE acting/);
+    assert.doesNotMatch(r.stdout, /Non-English prompt/);
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
+test('mode:"off" short-circuits the forcer (UserPromptSubmit fully silent — routing is off)', () => {
+  const tmp = mk();
+  try {
+    fs.mkdirSync(path.join(tmp, '.git'));
+    fs.mkdirSync(path.join(tmp, '.claude'), { recursive: true });
+    fs.writeFileSync(path.join(tmp, '.claude', '.coaltipple.json'), JSON.stringify({ mode: 'off' }));
+    const r = run({ hook_event_name: 'UserPromptSubmit', prompt: 'fix the race condition in the mutex' }, tmp, tmp);
+    assert.equal(r.status, 0);
+    assert.equal(r.stdout, '', 'mode:"off" silences the forcer like enableRouting:false');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
+test('mode:"off" also silences the SessionStart contract', () => {
+  const tmp = mk();
+  try {
+    fs.mkdirSync(path.join(tmp, '.git'));
+    fs.mkdirSync(path.join(tmp, '.claude'), { recursive: true });
+    fs.writeFileSync(path.join(tmp, '.claude', '.coaltipple.json'), JSON.stringify({ mode: 'off' }));
+    const r = run({ hook_event_name: 'SessionStart' }, tmp, tmp);
+    assert.equal(r.status, 0);
+    assert.equal(r.stdout, '');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
+test('mode:"auto" (default direction) still injects the forcer — only "off" silences', () => {
+  const tmp = mk();
+  try {
+    fs.mkdirSync(path.join(tmp, '.git'));
+    fs.mkdirSync(path.join(tmp, '.claude'), { recursive: true });
+    fs.writeFileSync(path.join(tmp, '.claude', '.coaltipple.json'), JSON.stringify({ mode: 'auto' }));
+    const r = run({ hook_event_name: 'UserPromptSubmit', prompt: 'list files' }, tmp, tmp);
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /Route BEFORE acting/);
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
 test('enableRouting:false (project) -> fully silent', () => {
   const tmp = mk();
   try {

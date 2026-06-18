@@ -8,14 +8,22 @@
 // Each group: { grade (1-5 floor), sensitive? (never-delegate-down), preserveVoice?
 // (never delegate the user-facing deliverable), words: [...] }. Use specific phrases
 // ('mathematical proof' not 'proof', 'legal contract' not 'contract') so substrings
-// like 'proofread' / 'smart contract' never false-trigger the word-START-boundary match.
+// like 'proofread' / 'smart contract' never false-trigger the match.
+//
+// STEM vs WHOLE-WORD (the trailing-* convention — see grade.mjs includesAny):
+//   - a word ending in `*` is a STEM: it matches the prefix + ANY suffix
+//     (`authenticat*` -> authenticate/authentication, `migrat*` -> migrations).
+//   - a bare word is WHOLE-WORD: it matches that word only, NOT a longer word that
+//     merely starts with it (`token` matches "token" but NOT "tokenizer";
+//     `secret` not "secretary"; `crypto` not "cryptocurrency"). Mark a word a stem
+//     ONLY when the suffixes are genuinely wanted; leave the over-matchers bare.
 export const KEYWORD_GROUPS = {
   // Coding — split by what forces the grade: concurrency/crypto are reasoning-hard
   // (5); security/coding are sensitive (4). crypto/security/coding also never-down.
-  'concurrency': { grade: 5, words: ['concurrency', 'mutex', 'race condition', 'deadlock', 'thread-saf', 'atomic'] },
-  'crypto':      { grade: 5, sensitive: true, words: ['crypto', 'timing attack', 'timing-attack', 'constant-time', 'constant time', 'timing-safe', 'side-channel', 'encrypt', 'decrypt'] },
-  'security':    { grade: 4, sensitive: true, words: ['oauth', 'authenticat', 'authoriz', 'auth bypass', 'sql injection', 'access control', 'permission', 'secret', 'token', 'password', 'session'] },
-  'coding':      { grade: 4, sensitive: true, words: ['migration', 'schema change', 'payment', 'billing', 'rate limit', 'optimize query'] },
+  'concurrency': { grade: 5, words: ['concurrency', 'mutex', 'mutexes', 'race condition', 'deadlock', 'deadlocks', 'thread-saf*', 'atomic'] },
+  'crypto':      { grade: 5, sensitive: true, words: ['crypto', 'cryptographic', 'cryptography', 'timing attack', 'timing-attack', 'constant-time', 'constant time', 'timing-safe', 'side-channel', 'encrypt*', 'decrypt*'] },
+  'security':    { grade: 4, sensitive: true, words: ['oauth', 'authenticat*', 'authoriz*', 'auth bypass', 'sql injection', 'access control', 'permission*', 'secret', 'secrets', 'token', 'tokens', 'password', 'passwords', 'session', 'sessions'] },
+  'coding':      { grade: 4, sensitive: true, words: ['migrat*', 'schema change', 'payment', 'payments', 'billing', 'rate limit', 'optimize query'] },
 
   // Audit / review — finding REAL issues needs capability; a cheap tier returns a
   // confident shallow all-clear. High-by-DIFFICULTY: route UP, never size-down/floor-self.

@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { CONFIG_SCHEMA, validateValue } from './lib/config-schema.mjs';
+import { stripJsonc } from './lib/jsonc.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 let fails = 0;
@@ -50,8 +51,9 @@ console.log('config (factory vs schema):');
 try {
   let c = fs.readFileSync(path.join(repo, 'platform-configs', '.coaltipple.json'), 'utf8');
   if (c.charCodeAt(0) === 0xFEFF) c = c.slice(1);
-  const clean = c.replace(/\\"|"(?:\\"|[^"])*"|(\/\/.*|\/\*[\s\S]*?\*\/)/g, (m, g) => (g ? '' : m));
-  const cfg = JSON.parse(clean);
+  // Use the SHARED stripJsonc (lib/jsonc.mjs) — the #12-fixed parser runtime + the
+  // conductor use — so the gate validates with the SAME parser as runtime, not a 3rd divergent regex.
+  const cfg = JSON.parse(stripJsonc(c));
   const byKey = Object.fromEntries(CONFIG_SCHEMA.map((s) => [s.key, s]));
   let bad = 0;
   for (const [k, v] of Object.entries(cfg)) {

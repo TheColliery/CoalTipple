@@ -3,6 +3,17 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { grade } from './grade.mjs';
 
+test('null inputs DEGRADE, never throw (a boundary authority must not crash)', () => {
+  // `= []`/`= {}` defaults fire only on undefined — an explicit null used to throw.
+  assert.equal(grade({ files: null }).grade, 1, 'files:null -> coerced to []');
+  assert.equal(grade({ config: null, prompt: 'x' }).grade, 1, 'config:null -> coerced to {}');
+  assert.equal(grade({ prompt: null }).grade, 1, 'prompt:null -> coerced to ""');
+  assert.equal(grade({ sizeUnits: null }).grade, 1, 'sizeUnits:null -> coerced to 0');
+  assert.equal(grade(null).grade, 1, 'grade(null) -> {} default + inner coercion, no throw');
+  // config:null must not break keyword grading either (still grades a hot keyword).
+  assert.equal(grade({ prompt: 'add a constant-time compare', config: null }).grade, 5);
+});
+
 test('trivial prompt, no files -> grade 1 / low', () => {
   const r = grade({ prompt: 'list the readme files' });
   assert.equal(r.grade, 1);
@@ -129,6 +140,51 @@ test('diagnosis keyword narrowed: bare word no longer fires, specific phrases st
   // bare 'clinical' was over-broad (matched "clinical analysis of code"); narrowed to 'clinical trial'.
   assert.notEqual(grade({ prompt: 'a clinical analysis of the codebase' }).grade, 4, 'bare clinical (non-medical adjective) must NOT fire the domain group');
   assert.equal(grade({ prompt: 'review the clinical trial protocol' }).grade, 4, 'clinical trial still fires the domain group');
+});
+
+test('STEM-vs-WHOLE-WORD: security/crypto keywords no longer over-match (token!=tokenizer, crypto!=cryptocurrency)', () => {
+  // FALSE POSITIVES must be GONE — these whole-words must NOT fire inside a longer word.
+  assert.equal(grade({ prompt: 'write a tokenizer for the parser', sizeUnits: 50 }).grade, 2, 'token must NOT fire inside tokenizer');
+  assert.equal(grade({ prompt: 'use sessionStorage in the browser', sizeUnits: 50 }).grade, 2, 'session must NOT fire inside sessionStorage');
+  assert.equal(grade({ prompt: 'ask the secretary to file it', sizeUnits: 50 }).grade, 2, 'secret must NOT fire inside secretary');
+  assert.equal(grade({ prompt: 'track the cryptocurrency price', sizeUnits: 50 }).grade, 2, 'crypto must NOT fire inside cryptocurrency');
+  // And as exact whole words they STILL fire (no false-negative regression).
+  assert.equal(grade({ prompt: 'store the session token securely', sizeUnits: 10 }).grade, 4, 'token + session whole-words still fire');
+  assert.equal(grade({ prompt: 'rotate the secret value', sizeUnits: 10 }).grade, 4, 'secret whole-word still fires');
+  assert.equal(grade({ prompt: 'reset the password', sizeUnits: 10 }).grade, 4, 'password whole-word still fires');
+  assert.equal(grade({ prompt: 'small crypto helper', sizeUnits: 10 }).sensitive, true, 'crypto whole-word still fires + sensitive');
+});
+
+test('STEM-vs-WHOLE-WORD: genuine stems still match the prefix + all suffixes (no false-negative)', () => {
+  // STEMS (trailing *) must catch the base AND its suffixes.
+  assert.equal(grade({ prompt: 'add authentication to the API', sizeUnits: 10 }).grade, 4, 'authenticat* -> authentication');
+  assert.equal(grade({ prompt: 'authenticate the user', sizeUnits: 10 }).grade, 4, 'authenticat* -> authenticate');
+  assert.equal(grade({ prompt: 'add authorization checks', sizeUnits: 10 }).grade, 4, 'authoriz* -> authorization');
+  assert.equal(grade({ prompt: 'make this thread-safe', sizeUnits: 10 }).grade, 5, 'thread-saf* -> thread-safe');
+  assert.equal(grade({ prompt: 'run the db migrations', sizeUnits: 10 }).grade, 4, 'migrat* -> migrations');
+  assert.equal(grade({ prompt: 'migrate the schema', sizeUnits: 10 }).grade, 4, 'migrat* -> migrate');
+  // crypto family additions: cryptographic / cryptography fire, cryptocurrency does NOT.
+  assert.equal(grade({ prompt: 'review the cryptographic primitives', sizeUnits: 10 }).grade, 5, 'cryptographic fires');
+  assert.equal(grade({ prompt: 'a question about cryptography', sizeUnits: 10 }).grade, 5, 'cryptography fires');
+  assert.equal(grade({ prompt: 'add encryption to the payload', sizeUnits: 10 }).grade, 5, 'encrypt* -> encryption');
+  // NO security keyword regressed to a false-negative: each canonical form fires.
+  assert.equal(grade({ prompt: 'check the permissions model', sizeUnits: 10 }).grade, 4, 'permission* -> permissions');
+});
+
+test('WHOLE-WORD plurals of sensitive nouns fire the never-down gate (no plural false-negative)', () => {
+  // The plural-FN class (caught in the v1.0.11 work-review + commit-gate audit): a bare whole-word's
+  // plural was silently missed (/\btoken\b/ != "tokens"), letting a sensitive prompt escape the
+  // deterministic flag. Both forms are now listed; the FP class must stay closed (token != tokenizer).
+  assert.equal(grade({ prompt: 'rotate the access tokens', sizeUnits: 10 }).grade, 4, 'tokens (plural) fires grade 4');
+  assert.equal(grade({ prompt: 'rotate the access tokens', sizeUnits: 10 }).sensitive, true, 'tokens (plural) is sensitive');
+  assert.equal(grade({ prompt: 'store the api secrets', sizeUnits: 10 }).sensitive, true, 'secrets (plural) is sensitive');
+  assert.equal(grade({ prompt: 'reset all user passwords', sizeUnits: 10 }).sensitive, true, 'passwords (plural) is sensitive');
+  assert.equal(grade({ prompt: 'invalidate stale sessions', sizeUnits: 10 }).sensitive, true, 'sessions (plural) is sensitive');
+  assert.equal(grade({ prompt: 'process the pending payments', sizeUnits: 10 }).sensitive, true, 'payments (plural) is sensitive');
+  assert.equal(grade({ prompt: 'debug the deadlocks', sizeUnits: 10 }).grade, 5, 'deadlocks (plural) fires grade 5');
+  assert.equal(grade({ prompt: 'the mutexes contend', sizeUnits: 10 }).grade, 5, 'mutexes (plural) fires grade 5');
+  assert.equal(grade({ prompt: 'rotate the access token', sizeUnits: 10 }).grade, 4, 'token (singular) still fires');
+  assert.equal(grade({ prompt: 'write a tokenizer', sizeUnits: 50 }).grade, 2, 'plural additions must NOT re-open the token->tokenizer FP');
 });
 
 test('a config.keywords grade is clamped to 1-5 — the grader never emits an undefined tier', () => {

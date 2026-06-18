@@ -55,11 +55,23 @@ test('buildFloorRanking: alias + heuristic, complete, unknown lands heavy', () =
 });
 
 test('validity gate: missing / wrong-schema / incomplete / stale all fail; good passes', () => {
+  // A complete + usable tiers map (every TIERS key present, >=1 non-empty) — the baseline a valid ranking needs.
+  const full = (over = {}) => ({ schemaVer: SCHEMA_VER, complete: true, tiers: { local: [], low: ['haiku'], mid: [], heavy: [], reasoning: [] }, ...over });
   assert.equal(validateRanking(null, 'h'), 'missing');
   assert.equal(validateRanking({ schemaVer: 999, complete: true, tiers: {} }, null), 'schema-version mismatch');
-  assert.match(validateRanking({ schemaVer: SCHEMA_VER, complete: false, tiers: {} }, null), /incomplete/);
-  assert.match(validateRanking({ schemaVer: SCHEMA_VER, complete: true, tiers: {}, listHash: 'old' }, 'new'), /stale/);
-  assert.equal(validateRanking({ schemaVer: SCHEMA_VER, complete: true, tiers: { low: [] }, listHash: 'x' }, 'x'), null);
+  assert.match(validateRanking(full({ complete: false }), null), /incomplete/);
+  assert.match(validateRanking(full({ listHash: 'old' }), 'new'), /stale/);
+  assert.equal(validateRanking(full({ listHash: 'x' }), 'x'), null);
+});
+
+test('validity gate (strict): array tiers / {} / missing key / non-array value / all-empty / complete-truthy all REJECTED', () => {
+  // A loosely-"valid" ranking that makes resolveWorker return null for every tier = routing silently dead.
+  assert.match(validateRanking({ schemaVer: SCHEMA_VER, complete: true, tiers: [] }, null), /no tiers/);          // array, not a plain object
+  assert.match(validateRanking({ schemaVer: SCHEMA_VER, complete: true, tiers: {} }, null), /missing\/non-array/); // {} -> no keys
+  assert.match(validateRanking({ schemaVer: SCHEMA_VER, complete: true, tiers: { local: [], low: ['x'], mid: [], heavy: [] } }, null), /reasoning/); // missing a key
+  assert.match(validateRanking({ schemaVer: SCHEMA_VER, complete: true, tiers: { local: [], low: 'x', mid: [], heavy: [], reasoning: [] } }, null), /non-array/); // non-array value
+  assert.match(validateRanking({ schemaVer: SCHEMA_VER, complete: true, tiers: { local: [], low: [], mid: [], heavy: [], reasoning: [] } }, null), /all empty/); // every tier empty
+  assert.match(validateRanking({ schemaVer: SCHEMA_VER, complete: 1, tiers: { local: [], low: ['x'], mid: [], heavy: [], reasoning: [] } }, null), /incomplete/); // complete truthy, not === true
 });
 
 test('atomic write + load roundtrip; stale/corrupt/missing -> rebuild signal', () => {
@@ -154,6 +166,24 @@ test('resolveWorker: SENSITIVE floor never breached on a limit-hit (never-down h
 test('resolveWorker: everything blocked -> null (hand back / do it yourself)', () => {
   const ranking = { tiers: { low: ['haiku'], mid: ['sonnet'], heavy: ['opus'], reasoning: ['fable'] } };
   assert.equal(resolveWorker(ranking, 'heavy', { blocked: ['haiku', 'sonnet', 'opus', 'fable'] }), null);
+});
+
+test('resolveWorker: floorTier is case-insensitive + fail-safe on an unrecognized floor (never collapse to cheapest)', () => {
+  const ranking = { tiers: { low: ['haiku'], mid: ['sonnet'], heavy: ['opus'], reasoning: ['fable'] } };
+  // valid floor 'heavy' (lowercase) -> walks reasoning->heavy, stops at heavy (no fall to mid/low)
+  assert.deepEqual(resolveWorker(ranking, 'reasoning', { blocked: ['fable'], floorTier: 'heavy' }), { tier: 'heavy', model: 'opus' });
+  // wrong-CASE floor 'Heavy'/'HEAVY' must behave the SAME (was indexOf=-1 -> Math.max(-1,0)=0 -> floor collapsed to cheapest)
+  assert.deepEqual(resolveWorker(ranking, 'reasoning', { blocked: ['fable'], floorTier: 'Heavy' }), { tier: 'heavy', model: 'opus' });
+  assert.deepEqual(resolveWorker(ranking, 'reasoning', { blocked: ['fable'], floorTier: 'HEAVY' }), { tier: 'heavy', model: 'opus' });
+  // crypto floored at heavy, heavy ALSO blocked: wrong-case floor must STILL refuse to fall cheaper -> null
+  assert.equal(resolveWorker(ranking, 'reasoning', { blocked: ['fable', 'opus'], floorTier: 'Heavy' }), null);
+  // 'local' = a known TIER below the climb ladder -> allow from the bottom (floor 0), not null
+  assert.deepEqual(resolveWorker(ranking, 'heavy', { blocked: ['opus', 'sonnet'], floorTier: 'local' }), { tier: 'low', model: 'haiku' });
+  // a typo'd / unrecognized floor -> FAIL SAFE: null, NEVER a cheap route
+  assert.equal(resolveWorker(ranking, 'heavy', { blocked: [], floorTier: 'reasoner' }), null);
+  assert.equal(resolveWorker(ranking, 'reasoning', { blocked: [], floorTier: 'Heavyy' }), null);
+  // desiredTier is also case-normalized
+  assert.deepEqual(resolveWorker(ranking, 'HEAVY', { blocked: [] }), { tier: 'heavy', model: 'opus' });
 });
 
 test('resolveWorker DRIVES the spawn-fail-fall loop: each unavailable model accrues, fall reaches a working one then null', () => {
