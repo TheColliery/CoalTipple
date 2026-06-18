@@ -34,7 +34,7 @@ body:
       label: What were you testing?
       options:
         - Skill discovery (the agent sees the coaltipple skill)
-        - Model ranking / the Lock (introspection builds a valid ranking)
+        - Model ranking / the Lock (the alias floor + pins builds a valid ranking)
         - Routing decisions (grade → tier · effort · delegate-down / escalate-up)
         - Spawning a worker through the platform's subagent tool
         - Limit-hit / availability fallback

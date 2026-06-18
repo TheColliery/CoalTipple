@@ -88,22 +88,14 @@
 
   // ─── model ranking ───
 
-  // ## Who builds the model tier ranking. auto = the AGENT introspects its own model list and builds it
-  // ## (overlaying any modelTiers pins below) — the auto path must be maximally accurate + correct. manual = the
-  // ## HUMAN owns it via modelTiers (+ the alias floor haiku<sonnet<opus for any tier left unpinned); no introspection.
-  // # Setting type: String (auto, manual)
-  // # Default value: auto
-  "rankingMode": "auto",
-
-  // ## Optional pins that override auto-classification — e.g. when introspection is unclear (a renamed flagship).
+  // ## The ranking is the alias floor (haiku<sonnet<opus -> low/mid/heavy, reasoning=opus) overlaid with
+  // ## the pins below — a constant the platform resolves to its current best model, so it never goes stale.
+  // ## Routing rides the tier STRUCTURE + the unknown->heavy rule + the spawn-fail-fall, never an exact list.
+  // ## Optional pins are the one human override — name a model introspection cannot see (released after a
+  // ## model's training cutoff) or correct a tier. A pin front-loads its model(s) into the named tier.
   // # Setting type: Object { local | low | mid | heavy | reasoning : "model" | ["priority", "chain"] }  (cheapest tier is `low`, not `cheap`)
-  // # Default value: unset (auto-classify by introspection; the heuristic floor is the last resort)
+  // # Default value: unset (the alias floor applies; pins overlay it when set)
   // "modelTiers": { "low": "haiku", "mid": "sonnet", "heavy": "opus", "reasoning": ["Fable 5", "opus"] },
-
-  // ## Cadence backstop (days) to re-classify the model tier map even when the model list is unchanged.
-  // # Setting type: Integer (range 1-365; min 1 — 0 would force a per-session enumerate = token burn)
-  // # Default value: 30
-  "rankingRefreshDays": 30,
 
   // ─── grading scope ───
 

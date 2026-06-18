@@ -2,6 +2,19 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.0.14] - 2026-06-18
+
+Routing-core simplification — the model-ranking introspection layer is gone; routing rides the alias floor + pins (the "B2" finding from the comprehensive vuln-hunt).
+
+### Changed
+- **The ranking is now ALWAYS the alias floor + `modelTiers` pins — no introspection, no model-list enumeration, no refresh cadence.** The vuln-hunt confirmed routing rides the tier STRUCTURE + unknown→heavy + spawn-fail-fall, not the auto-introspected exact list (the fragile, non-load-bearing layer). `buildFloorRanking` now always produces `aliasDefaults()` + pins; the model reads a lean Step 0 (alias floor · unknown→heavy · pins = the human override · failed-spawn-falls / platform-resolves-the-alias at spawn-time). Verified on a live Haiku main: it builds the alias floor without enumerating, and the sensitive never-down gate holds.
+
+### Removed
+- Dropped the introspection machinery: `classifyModel`, `parseModel`, `buildHeuristicFloor`, `isBootstrapRanking`, `EMPTY_LIST_HASH` (classify.mjs, −83 lines). Tombstoned the `rankingMode` and `rankingRefreshDays` config keys (no consumer after the simplification; a leftover key in an existing config is harmlessly ignored).
+
+### Preserved (byte-unchanged)
+- `resolveWorker` (spawn-fail-fall + the sensitive never-down floor), `escalationStep`, `applyPins`, the strict `validateRanking`, and all v1.0.11/1.0.12/1.0.13 safety features.
+
 ## [1.0.13] - 2026-06-18
 
 Self-Updating (kind-1) — an opt-in, consent-gated update-check, ported from CoalMine v3.7.5.

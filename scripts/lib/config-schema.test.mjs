@@ -46,18 +46,20 @@ test('every schema spec has a key + a type (no malformed entry)', () => {
   }
 });
 
-test('rankingMode enum + swept int ranges are enforced', () => {
-  assert.equal(validateValue(specOf('rankingMode'), 'auto'), null);
-  assert.equal(validateValue(specOf('rankingMode'), 'manual'), null);
-  assert.match(validateValue(specOf('rankingMode'), 'robot'), /one of/);
-  // the guardrail sweep — each swept int rejects its degenerate values
-  assert.match(validateValue(specOf('rankingRefreshDays'), 0), />= 1/);   // 0 = per-session enumerate = token burn
-  assert.equal(validateValue(specOf('rankingRefreshDays'), 30), null);
+test('swept int ranges are enforced (the guardrail sweep — each swept int rejects its degenerate values)', () => {
   assert.match(validateValue(specOf('maxConcurrentSubagents'), 0), />= 1/);
   assert.match(validateValue(specOf('maxConcurrentSubagents'), 17), /<= 16/);
   assert.match(validateValue(specOf('subagentTimeoutSeconds'), 4), />= 5/);
   assert.match(validateValue(specOf('delegateMinLines'), 0), />= 1/);
   assert.match(validateValue(specOf('delegateMinLines'), 100001), /<= 100000/);
+});
+
+test('B2 tombstones: rankingMode + rankingRefreshDays are REMOVED from the schema (introspection layer dropped)', () => {
+  // The ranking is now ALWAYS the alias floor + modelTiers pins — no "who builds it" choice and
+  // no refresh cadence. A leftover key in a user config is harmless (cascade/configure ignore it),
+  // but neither may be a settable schema key anymore (same tombstone-by-removal as hardEnforce).
+  assert.equal(specOf('rankingMode'), undefined);
+  assert.equal(specOf('rankingRefreshDays'), undefined);
 });
 
 test('self-update keys validate (updateMode enum + updateCheckDays min 1, max 365)', () => {

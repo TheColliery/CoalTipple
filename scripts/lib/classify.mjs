@@ -1,9 +1,11 @@
-// The ranking + bootstrap LOCK. Routing is gated on a valid ranking; this module
-// guarantees one is always obtainable. Model introspection (self-knowledge) is
-// the PRIMARY classifier — run by SKILL.md, persisted here. These functions are
-// the deterministic substrate: the 0-token heuristic FLOOR (last resort —
-// name-matching ROTS, so it is never the authority), the validity gate, and
-// atomic state I/O. Node built-ins only.
+// The ranking LOCK. Routing is gated on a valid ranking; this module guarantees
+// one is always obtainable. The ranking IS the alias floor (haiku<sonnet<opus ->
+// low/mid/heavy, reasoning=opus) overlaid with the user's `modelTiers` pins — a
+// constant the platform resolves to its current best model, never stale. Routing
+// rides this tier STRUCTURE + the agent's unknown->heavy rule + the spawn-fail-fall
+// (resolveWorker), NOT an auto-introspected exact model list. These functions are
+// the deterministic substrate: the floor builder, the validity gate, atomic state
+// I/O, the escalation/availability resolvers, and the pin overlay. Node built-ins only.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -13,56 +15,12 @@ export const SCHEMA_VER = 1;
 export const TIERS = ['local', 'low', 'mid', 'heavy', 'reasoning'];
 const STATE_FILE = 'ranking.json';
 
-// Order = priority: local is orthogonal (on-device) and wins; then strongest
-// capability word wins (heavy > mid > low) so "Sonnet (Thinking)" reads heavy,
-// not mid. A name matching no word falls through to the unknown -> heavy rule.
-const WORD_TIER = [
-  [/(local|llama|ollama|gguf)/i, 'local'],
-  [/(opus|ultra|thinking|reason|o1|o3|large|max)/i, 'heavy'],
-  [/(sonnet|pro|medium|30b|70b)/i, 'mid'],
-  [/(haiku|flash|mini|nano|lite|small|8b|7b|3b)/i, 'low'],
-];
-
-// Classify ONE raw model name -> tier. LAST RESORT (introspection is primary).
-// Unknown -> 'heavy', NEVER cheap (the Fable rule: unrecognized = assume strong).
-export function classifyModel(name) {
-  const s = String(name || '');
-  for (const [re, tier] of WORD_TIER) if (re.test(s)) return tier;
-  return 'heavy';
-}
-
 const nameOf = (m) => (typeof m === 'string' ? m : (m && m.name) || '');
-
-// Parse a display name -> { base, version, longContext }. A "256k"/"1m" variant
-// is the SAME model with a bigger context window (orthogonal flag), NOT a
-// separate capability entry — so variants collapse and never crowd a tier.
-export function parseModel(name) {
-  const s = String(name || '').trim();
-  const longContext = /\b(\d+k|1m)\b/i.test(s);
-  const base = s.replace(/\(?\b(\d+k|1m)\b\)?/ig, ' ').replace(/\s+/g, ' ').trim();
-  const vm = base.match(/(\d+(?:\.\d+)?)/);
-  return { base, version: vm ? parseFloat(vm[1]) : 0, longContext };
-}
-
-// Deduped, version-ordered floor: collapse context-variants to one base model
-// per tier, newest version first (the priority-chain order). Last resort only —
-// introspection orders better; this just keeps the fallback sane on raw names.
-export function buildHeuristicFloor(models = []) {
-  const seen = { local: new Map(), low: new Map(), mid: new Map(), heavy: new Map(), reasoning: new Map() };
-  for (const m of models) {
-    const name = nameOf(m);
-    if (!name) continue;
-    const { base, version } = parseModel(name);
-    const map = seen[classifyModel(base)];
-    if (!map.has(base)) map.set(base, version); // dedupe context-variants by base
-  }
-  const out = { local: [], low: [], mid: [], heavy: [], reasoning: [] };
-  for (const t of TIERS) out[t] = [...seen[t].entries()].sort((a, b) => b[1] - a[1]).map(([base]) => base);
-  return out;
-}
 
 // Claude-family alias tiers — always available, never stale (the platform
 // resolves the alias to the current model). reasoning = strongest @ max effort.
+// This IS the ranking floor: routing keys off the tier STRUCTURE, not an exact
+// enumerated model list, so a vendor model-list shuffle never breaks it.
 export function aliasDefaults() {
   return { local: [], low: ['haiku'], mid: ['sonnet'], heavy: ['opus'], reasoning: ['opus'] };
 }
@@ -201,39 +159,17 @@ export function applyPins(tiers, modelTiers = {}) {
   return out;
 }
 
-// A complete floor ranking ready to persist (install / conductor bootstrap when
-// no valid ranking exists yet and no introspection has run). Heuristic over
-// alias defaults; reasoning mirrors heavy (strongest @ max effort). User
-// `modelTiers` pins overlay LAST — they beat auto-classification.
+// A complete floor ranking ready to persist (install seed; rebuilt on the spot
+// whenever the validity gate rejects the cached one). The ranking is ALWAYS the
+// alias floor (haiku<sonnet<opus -> low/mid/heavy) with reasoning mirroring heavy
+// (strongest @ max effort); the user's `modelTiers` pins overlay LAST — they are
+// the one human override (a model released after a model's training cutoff that
+// introspection cannot see). `models` is accepted only to stamp the `listHash`
+// (the freshness fingerprint) — it does NOT shape the tiers: routing rides the
+// tier STRUCTURE + unknown->heavy + the spawn-fail-fall, not an exact model list.
 export function buildFloorRanking(models = [], modelTiers = {}) {
   const tiers = aliasDefaults();
-  if (models && models.length) {
-    const floor = buildHeuristicFloor(models);
-    for (const t of TIERS) if (floor[t] && floor[t].length) tiers[t] = floor[t];
-  }
   if (!tiers.reasoning || !tiers.reasoning.length) tiers.reasoning = tiers.heavy.slice();
   const pinned = applyPins(tiers, modelTiers);
-  return { schemaVer: SCHEMA_VER, listHash: modelListHash(models), complete: true, source: 'heuristic-floor', tiers: pinned };
-}
-
-// The listHash of an EMPTY model list — the fingerprint of a ranking seeded
-// WITHOUT enumerating the live list (install / bootstrap). sha256('').slice(0,16).
-export const EMPTY_LIST_HASH = modelListHash([]);
-const BOOTSTRAP_SOURCES = ['install-floor', 'heuristic-floor'];
-
-// Is this ranking a never-introspected BOOTSTRAP seed (not a real enumeration)?
-// The installer/conductor seed the floor over an EMPTY list when no introspection
-// has run yet: `source` is a floor source AND `listHash` is the empty-list hash.
-// Its `complete:true` only attests "the floor is seeded", NOT "the live list was
-// enumerated" — so on the first route by a capable main, Step 0 UPGRADES it via
-// introspection (writes source:"introspection" + a real listHash). A cheap signal:
-// the `source`/`listHash` fields alone decide it — no live enumeration needed, so
-// the token-floor holds (a non-bootstrap cached ranking is trusted as-is). The
-// validity gate still treats a bootstrap as VALID (routing never stalls waiting to
-// upgrade); this is the "should refresh when convenient" signal, layered on top.
-// Pure (Phoenix #8): same input, same output.
-export function isBootstrapRanking(ranking) {
-  return !!ranking
-    && BOOTSTRAP_SOURCES.includes(ranking.source)
-    && ranking.listHash === EMPTY_LIST_HASH;
+  return { schemaVer: SCHEMA_VER, listHash: modelListHash(models), complete: true, source: 'alias-floor', tiers: pinned };
 }

@@ -41,7 +41,7 @@ You are **main**. CoalTipple decides, per task, whether to:
 
 ## 🤖 Compatibility
 
-* **Claude Code (validated live across the 2.1.x line):** Built Claude-Code-first and run end-to-end across all model tiers (Haiku, Sonnet, Opus). Routing degrades safe on any CC version — an unfamiliar model classifies strong, a failed spawn falls, and the ranking self-heals on first route.
+* **Claude Code (validated live across the 2.1.x line):** Built Claude-Code-first and run end-to-end across all model tiers (Haiku, Sonnet, Opus). Routing degrades safe on any CC version — an unfamiliar model classifies strong, a failed spawn falls, and the platform resolves each alias to its current best model at spawn-time (the ranking is the alias floor + pins — nothing to enumerate).
 * **Routing actuates on Claude Code only:** CT needs a platform where an *agent* can pick a spawned worker's model + effort. CC's Agent/Task tool takes a `model` param -- that is the requirement.
 * **Subagent-capable != qualifies:** a platform can spawn workers yet give the agent no model choice (e.g. **Antigravity**, where the worker inherits the parent's model). There CT does **not** cleanly self-degrade -- a weak main hallucinates a delegate-down it cannot perform -- so CT is gated to CC. Other platforms (Cursor, Codex) are under monthly review.
 
@@ -106,10 +106,10 @@ Routing adjusts **two independent knobs** (always raise effort before tier):
 ## 🔒 The Lock — Safe Routing States
 
 The Lock guarantees CoalTipple is only ever in one of two states: *routing correctly* or *routing off*.
-* **Always Buildable:** Uses self-introspection, falling back to an alias floor, then a stub. Unknown models default to `heavy`.
+* **Always Buildable:** The ranking is the alias floor `haiku < sonnet < opus` (→ `low/mid/heavy`, reasoning = `opus`) overlaid with your `modelTiers` pins — a constant, no enumeration. Unknown models default to `heavy`.
 * **Validity-Gated:** Checks ranking schema, hash, and completeness before writing.
 * **Fails Safe:** Bypasses routing if the model ranking is broken.
-* **Cached:** Ranking cache (`ranking.json`) is trusted until `rankingRefreshDays` (default 30).
+* **Spawn-Time Resolution:** The platform resolves each alias to its current best model at spawn-time, and a failed spawn falls to the next available tier — so the floor never goes stale and there is no refresh cadence.
 
 ---
 
@@ -134,8 +134,7 @@ Key settings (see [`scripts/lib/config-schema.mjs`](scripts/lib/config-schema.mj
 | `maxTotalAttempts` | Integer 1–5 | `2` | Staircase attempt budget before jumping to top tier |
 | `delegateMinLines` | Integer | `120` | Minimum lines threshold for down-delegation |
 | `qaOnMerge` | Enum | `standard` | Merge verification rigor (`strict` \| `standard` \| `off`) |
-| `rankingMode` | Enum | `auto` | `auto` (LLM introspects) \| `manual` (uses `modelTiers` pins) |
-| `modelTiers` | Object | unset | Optional manual model-to-tier mappings |
+| `modelTiers` | Object | unset | Optional pins overlaying the alias floor (`{ tier: "model" }`) — the one human override for a model the agent cannot see |
 
 ### Configurator CLI
 

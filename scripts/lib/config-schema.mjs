@@ -28,8 +28,12 @@ export const CONFIG_SCHEMA = [
   { key: 'fastModeOnLatencyRequest', type: 'bool', flags: ['-F'], help: 'Allow attaching fast-mode only on an explicit human latency request — never as a routing rung (default: true)' },
   { key: 'preserveVoiceForUserFacing', type: 'bool', flags: ['-V'], help: 'Never delegate final user-facing prose/answers to a cheaper model (default: true)' },
   { key: 'gitRecoveryBoundary', type: 'enum', values: ['auto', 'on', 'off'], flags: ['-G'], help: 'Use git commits as an extra recovery boundary when inside a git repo (auto, on, off; default: auto)' },
-  { key: 'rankingMode', type: 'enum', values: ['auto', 'manual'], flags: ['-M', '--ranking'], help: 'Who builds the model ranking: auto = the agent introspects + builds it (overlays modelTiers pins) — must be maximally accurate; manual = the human owns it via modelTiers (+ alias floor for unpinned tiers), no introspection. Default: auto' },
-  { key: 'rankingRefreshDays', type: 'int', min: 1, max: 365, flags: ['-R'], help: 'Cadence backstop (days) to re-enumerate + re-classify the model tier map even when the list seems unchanged. Range 1-365 (min 1 — 0 would force a per-session enumerate = token burn), default 30' },
+  // TOMBSTONED (B2 — Core-Lock simplification): `rankingMode` (auto|manual) and
+  // `rankingRefreshDays` removed. The ranking is now ALWAYS the alias floor + `modelTiers` pins —
+  // there is no "who builds it" choice (no introspection layer) and the alias floor does not go
+  // stale, so there is no cadence to re-enumerate. A leftover key in a user's .coaltipple.json is
+  // harmless: configure.mjs ignores an unknown flag and the conductor/cascade ignore unknown keys.
+  // (Same tombstone-by-removal pattern as hardEnforce / skillUpdateCheckDays in earlier versions.)
   { key: 'sensitivePaths', type: 'strArr', flags: ['--sensitive'], help: 'Comma-separated path fragments that force the High/Reasoning tier (e.g. auth, crypto, payments, migrations)' },
   { key: 'excludePaths', type: 'strArr', lower: true, flags: ['-X', '--exclude'], help: 'Comma-separated dirs skipped when grading (default: node_modules, .git, dist, vendor, build)' },
   { key: 'hotKeywords', type: 'strArr', lower: true, flags: ['--keywords'], help: 'LEGACY flat keyword list (prefer the structured `keywords` groups). Still merges as a grade-4 sensitive group. Comma-separated' },

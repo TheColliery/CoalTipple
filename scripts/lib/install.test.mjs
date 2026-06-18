@@ -103,16 +103,16 @@ test('project config preservation: reinstall never overwrites it; a project --re
     run(tmp, home, dest);                                    // first install -> project config + shared ranking
     fs.writeFileSync(cfg, '{ "qualityBar": 95 }', 'utf8');   // user customizes their project config
     const r0 = JSON.parse(fs.readFileSync(rp, 'utf8'));
-    r0.source = 'introspection-refined';                     // mark the shared ranking as agent-refined
+    r0.source = 'user-refined';                              // mark the shared ranking as user-refined (e.g. pinned)
     fs.writeFileSync(rp, JSON.stringify(r0), 'utf8');
 
     run(tmp, home, dest);                                    // REINSTALL (a skill update)
     assert.match(fs.readFileSync(cfg, 'utf8'), /95/, 'reinstall PRESERVES the project config');
-    assert.equal(JSON.parse(fs.readFileSync(rp, 'utf8')).source, 'introspection-refined', 'reinstall PRESERVES the shared ranking');
+    assert.equal(JSON.parse(fs.readFileSync(rp, 'utf8')).source, 'user-refined', 'reinstall PRESERVES the shared ranking');
 
     const reset = run(tmp, home, '--reset');                 // project-scoped reset (config only)
     assert.equal(reset.status, 0, `reset must pass:\n${reset.stdout}${reset.stderr}`);
     assert.doesNotMatch(fs.readFileSync(cfg, 'utf8'), /"qualityBar": 95/, 'project --reset OVERWRITES the project config to factory');
-    assert.equal(JSON.parse(fs.readFileSync(rp, 'utf8')).source, 'introspection-refined', 'a project --reset leaves the GLOBAL ranking alone (reset it with --reset --global)');
+    assert.equal(JSON.parse(fs.readFileSync(rp, 'utf8')).source, 'user-refined', 'a project --reset leaves the GLOBAL ranking alone (reset it with --reset --global)');
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); }
 });

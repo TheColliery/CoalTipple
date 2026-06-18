@@ -5,21 +5,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
-  classifyModel, modelListHash, validateRanking, parseModel, buildHeuristicFloor,
+  aliasDefaults, modelListHash, validateRanking,
   loadRanking, writeRankingAtomic, buildFloorRanking, SCHEMA_VER, escalationStep, applyPins, resolveWorker,
-  isBootstrapRanking, EMPTY_LIST_HASH,
 } from './classify.mjs';
-
-test('parseModel: strips 256k/1m context suffix, extracts version, flags long-context', () => {
-  assert.deepEqual(parseModel('Opus 4.8 256k'), { base: 'Opus 4.8', version: 4.8, longContext: true });
-  assert.deepEqual(parseModel('Sonnet 4.6'), { base: 'Sonnet 4.6', version: 4.6, longContext: false });
-});
-
-test('floor collapses context variants + orders by version (flexible for many models)', () => {
-  const r = buildHeuristicFloor(['Opus 4.8', 'Opus 4.8 256k', 'Opus 4.7', 'Opus 4.6', 'Haiku 4.5']);
-  assert.deepEqual(r.heavy, ['Opus 4.8', 'Opus 4.7', 'Opus 4.6']); // 256k collapsed, version desc
-  assert.deepEqual(r.low, ['Haiku 4.5']);
-});
 
 test('writeRankingAtomic falls back to a direct write on EPERM/EBUSY (#7 Windows) — the update is never lost', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-rank-'));
@@ -33,25 +21,25 @@ test('writeRankingAtomic falls back to a direct write on EPERM/EBUSY (#7 Windows
   } finally { mock.restoreAll(); fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('classifyModel: known -> tier; UNKNOWN -> heavy (Fable rule), never cheap', () => {
-  assert.equal(classifyModel('Haiku 4.5'), 'low');
-  assert.equal(classifyModel('Sonnet 4.6'), 'mid');
-  assert.equal(classifyModel('Sonnet 4.6 (Thinking)'), 'heavy'); // strongest word wins over mid
-  assert.equal(classifyModel('Opus 4.8'), 'heavy');
-  assert.equal(classifyModel('Llama 3.3 70B (Local)'), 'local'); // local orthogonal, wins over 70b
-  assert.equal(classifyModel('Fable 5'), 'heavy');        // unknown -> heavy, NOT cheap
-  assert.equal(classifyModel('Mythos Preview'), 'heavy');
-  assert.equal(classifyModel(''), 'heavy');
+test('aliasDefaults: the alias floor structure (low<mid<heavy, reasoning=opus, no local/empty)', () => {
+  // B2: the ranking IS this constant alias floor — routing keys off the tier STRUCTURE,
+  // not an enumerated model list. haiku<sonnet<opus -> low/mid/heavy; reasoning = strongest.
+  assert.deepEqual(aliasDefaults(), { local: [], low: ['haiku'], mid: ['sonnet'], heavy: ['opus'], reasoning: ['opus'] });
 });
 
-test('buildFloorRanking: alias + heuristic, complete, unknown lands heavy', () => {
-  const r = buildFloorRanking(['Haiku 4.5', 'Opus 4.8', 'Fable 5']);
+test('buildFloorRanking: ALWAYS the alias floor (B2 — models do not shape tiers, only stamp listHash)', () => {
+  const r = buildFloorRanking();
   assert.equal(r.complete, true);
   assert.equal(r.schemaVer, SCHEMA_VER);
-  assert.ok(r.tiers.low.includes('Haiku 4.5'));
-  assert.ok(r.tiers.heavy.includes('Opus 4.8'));
-  assert.ok(r.tiers.heavy.includes('Fable 5'));
-  assert.ok(r.tiers.reasoning.length > 0);
+  assert.equal(r.source, 'alias-floor');
+  assert.deepEqual(r.tiers.low, ['haiku']);
+  assert.deepEqual(r.tiers.mid, ['sonnet']);
+  assert.deepEqual(r.tiers.heavy, ['opus']);   // strong floor: an unknown model the agent over-provisions to 'heavy' lands here
+  assert.deepEqual(r.tiers.reasoning, ['opus']); // reasoning mirrors heavy (strongest @ max effort)
+  // The `models` arg is for the listHash fingerprint ONLY — it must NOT inject names into the tiers
+  // (no introspection layer; routing rides the structure + unknown->heavy + the spawn-fail-fall).
+  const r2 = buildFloorRanking(['Some-New-Model 9', 'Mythos Preview', 'Fable 5']);
+  assert.deepEqual(r2.tiers, r.tiers, 'arbitrary model names do not pollute the alias floor');
 });
 
 test('validity gate: missing / wrong-schema / incomplete / stale all fail; good passes', () => {
@@ -83,7 +71,7 @@ test('atomic write + load roundtrip; stale/corrupt/missing -> rebuild signal', (
 
     const ok = loadRanking(dir, hash);
     assert.equal(ok.ok, true);
-    assert.ok(ok.ranking.tiers.low.includes('Haiku 4.5'));
+    assert.deepEqual(ok.ranking.tiers.low, ['haiku']); // the alias floor (B2: models stamp the hash, don't shape tiers)
 
     assert.equal(loadRanking(dir, 'differenthash').ok, false); // stale
 
@@ -138,11 +126,15 @@ test('applyPins: front-loads pinned models, de-dups across tiers, no-pin = passt
   assert.deepEqual(applyPins(base, { low: ['a', 'b'] }).low, ['a', 'b', 'haiku']); // array pin
 });
 
-test('buildFloorRanking honors modelTiers pins (the introspection blind-spot override)', () => {
-  const r = buildFloorRanking(['Haiku 4.5', 'Opus 4.8'], { reasoning: 'fable-9-unreleased' });
-  assert.equal(r.tiers.reasoning[0], 'fable-9-unreleased'); // a model introspection can't see, pinned -> wins
+test('buildFloorRanking honors modelTiers pins (the human override for a model the agent cannot see)', () => {
+  const r = buildFloorRanking([], { reasoning: 'fable-9-unreleased' });
+  assert.equal(r.tiers.reasoning[0], 'fable-9-unreleased'); // a model the agent can't see, pinned -> wins (front)
   assert.equal(r.complete, true);
-  assert.ok(r.tiers.low.includes('Haiku 4.5'));            // floor still built underneath
+  assert.deepEqual(r.tiers.low, ['haiku']);                // the alias floor is built underneath the pins
+  // a pin re-tiering an alias-floor model de-dups it out of its old tier
+  const r2 = buildFloorRanking([], { mid: 'opus' });
+  assert.equal(r2.tiers.mid[0], 'opus');
+  assert.equal(r2.tiers.heavy.includes('opus'), false);
 });
 
 test('resolveWorker: limit-hit falls DOWN to the next available tier', () => {
@@ -204,24 +196,10 @@ test('resolveWorker DRIVES the spawn-fail-fall loop: each unavailable model accr
   assert.equal(resolveWorker(ranking, 'reasoning', { blocked }), null);
 });
 
-test('isBootstrapRanking: a seeded floor (floor source + empty-list hash) is a bootstrap; an introspected ranking is not', () => {
-  // EMPTY_LIST_HASH is the fingerprint of buildFloorRanking([]) (no live enumeration).
-  assert.equal(EMPTY_LIST_HASH, modelListHash([]));
-  const seed = buildFloorRanking([]); seed.source = 'install-floor'; // exactly what install.mjs writes
-  assert.equal(isBootstrapRanking(seed), true);
-  assert.equal(isBootstrapRanking(buildFloorRanking([])), true);     // heuristic-floor over [] = also bootstrap
-  // Introspected (real listHash) -> NOT a bootstrap (no re-upgrade, token-floor holds).
-  assert.equal(isBootstrapRanking({ source: 'introspection', listHash: 'deadbeefdeadbeef', tiers: {} }), false);
-  // Floor source but a REAL list enumerated (non-empty hash) -> not a bootstrap.
-  assert.equal(isBootstrapRanking(buildFloorRanking(['Haiku 4.5', 'Opus 4.8'])), false);
-  // A floor over an empty list but already upgraded source -> not a bootstrap.
-  assert.equal(isBootstrapRanking({ source: 'introspection', listHash: EMPTY_LIST_HASH, tiers: {} }), false);
-  assert.equal(isBootstrapRanking(null), false);
-  assert.equal(isBootstrapRanking(undefined), false);
-});
-
-test('aliasDefaults reasoning floor = [opus] (always-available bare floor; fable is plan-gated, added by introspection-upgrade + the fall)', () => {
-  // Lock the task-item-5 invariant: the bare floor must NOT hardcode a plan-gated model (fable).
+test('reasoning floor = [opus] (always-available bare floor; fable is plan-gated, reached only by the spawn-fail-fall / a pin)', () => {
+  // The bare floor must NOT hardcode a plan-gated model (fable): a fable spawn errors
+  // instantly when off-plan, so the floor is opus and resolveWorker / a modelTiers pin
+  // is what introduces fable when it IS available.
   const a = buildFloorRanking([]); // no models, no pins -> pure alias floor
   assert.deepEqual(a.tiers.reasoning, ['opus']);
   assert.deepEqual(a.tiers.heavy, ['opus']);
