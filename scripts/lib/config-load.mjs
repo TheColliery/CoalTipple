@@ -36,9 +36,15 @@ function readJsonc(file) {
 }
 
 // The canonical paths, exported so other readers (configure/install/conductor) agree.
-// Everything lives under .claude/ — global at ~/.claude, project at <cwd>/.claude.
+// Everything lives under .claude/ — global at ~/.claude (or $CLAUDE_CONFIG_DIR), project at <cwd>/.claude.
+// CLAUDE_CONFIG_DIR (#6) redirects the GLOBAL .claude dir (portable / multi-account / CI installs);
+// it may be a comma-list (multi-account) — use the first entry. Project paths are NOT affected.
+export function claudeBaseDir(home = os.homedir()) {
+  const c = process.env.CLAUDE_CONFIG_DIR;
+  return c ? c.split(',')[0].trim() : path.join(home, '.claude');
+}
 export function globalConfigPath(home = os.homedir()) {
-  return path.join(home, '.claude', '.coaltipple.json');
+  return path.join(claudeBaseDir(home), '.coaltipple.json');
 }
 export function projectConfigPath(cwd = process.cwd()) {
   return path.join(cwd, '.claude', '.coaltipple.json');
@@ -47,7 +53,7 @@ export function projectConfigPath(cwd = process.cwd()) {
 // the shared platform model-ranking; the PROJECT state dir holds per-project
 // work-state (proposed/, state.json) and the optional project conductor copy.
 export function globalStateDir(home = os.homedir()) {
-  return path.join(home, '.claude', '.coaltipple');
+  return path.join(claudeBaseDir(home), '.coaltipple');
 }
 export function projectStateDir(cwd = process.cwd()) {
   return path.join(cwd, '.claude', '.coaltipple');

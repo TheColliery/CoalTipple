@@ -72,6 +72,15 @@ test('crypto/timing keyword forces grade 5 by description, no files (the constan
   assert.equal(grade({ prompt: 'small crypto helper, ~10 lines' }).grade, 5);
 });
 
+test('audit / bug-scan keyword forces grade 4 by description (the Haiku-floor-self gap)', () => {
+  // pre-fix: 'scan for bugs' / 'security audit' matched NO group, so a whole-repo
+  // bug-scan graded by SIZE alone -> at the floor (Haiku) it collapsed to SELF and
+  // returned a shallow "no bugs". The 'audit' group makes it high-by-DIFFICULTY.
+  assert.equal(grade({ prompt: 'scan for bugs in the codebase' }).grade, 4);
+  assert.equal(grade({ prompt: 'do a security audit of this skill' }).grade, 4);
+  assert.equal(grade({ prompt: 'find all bugs, most thorough' }).grade, 4);
+});
+
 test('keyword GROUPS set the sensitive flag (never-down), keyed on the group not the grade', () => {
   const crypto = grade({ prompt: 'add a constant-time compare' });
   assert.equal(crypto.grade, 5);

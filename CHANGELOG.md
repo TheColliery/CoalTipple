@@ -2,6 +2,20 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.0.9] - 2026-06-18
+
+Routing now treats a whole-repo audit/bug-scan as a capability task, plus two field-reported fixes (#6, #7).
+
+### Fixed
+
+- **A whole-repo audit / bug-scan / security-review now grades high-by-DIFFICULTY, not size.** Such a task spans many files (it looked size-driven, so at the Haiku floor it collapsed to SELF and returned a shallow "no bugs"). A new `audit` keyword group (grade 4) + a Step-1 rule route it UP or keep it on a capable main, never floor-self / delegate-down-to-cheap. Graded by the task's MEANING in any language (the skill ships worldwide — not a literal English keyword).
+- **#6 — `CLAUDE_CONFIG_DIR` is honored for the GLOBAL config** (`config-load.mjs` + the conductor). A non-default config dir (portable / multi-account / CI) had its global `.coaltipple.json` silently missed. A shared `claudeBaseDir()` reads `$CLAUDE_CONFIG_DIR` (first entry of a comma-list), else `~/.claude`; project paths are unaffected.
+- **#7 — `writeRankingAtomic` no longer loses the ranking on Windows `EPERM`/`EBUSY`.** When `ranking.json` is held open (the conductor reading it), `renameSync` threw and the write was lost; it now falls back to a direct overwrite (a kill mid-write leaves a corrupt file the Lock rebuilds).
+
+### Added
+
+- Regression tests for all three: the `audit` grade-4 group, `CLAUDE_CONFIG_DIR` redirection, and the `EPERM` fallback (97 tests).
+
 ## [1.0.8] - 2026-06-18
 
 A version gate guards every path until the cross-version self-heal is verified, plus a test pinning the conductor's inline #12 fix.

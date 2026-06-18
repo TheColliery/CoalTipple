@@ -103,7 +103,15 @@ export function writeRankingAtomic(stateDir, ranking) {
   const tmp = `${dest}.${process.pid}.tmp`;
   try {
     fs.writeFileSync(tmp, JSON.stringify(ranking, null, 2) + '\n', 'utf8');
-    fs.renameSync(tmp, dest);
+    try {
+      fs.renameSync(tmp, dest);
+    } catch (e) {
+      // Windows (#7): dest held open (e.g. the conductor reading ranking.json) -> renameSync
+      // throws EPERM/EBUSY. Fall back to a direct overwrite so the update is never lost; a kill
+      // mid-overwrite leaves a corrupt dest that the Lock's validity gate catches + rebuilds.
+      if (e.code === 'EPERM' || e.code === 'EBUSY') fs.writeFileSync(dest, fs.readFileSync(tmp, 'utf8'), 'utf8');
+      else throw e;
+    }
   } finally {
     // Phoenix #1 (zero-garbage): a failed write/rename never leaves a stray temp.
     // On success the rename consumed tmp, so this is a no-op.

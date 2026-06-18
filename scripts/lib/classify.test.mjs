@@ -1,5 +1,5 @@
 // Zero-dep tests for the ranking Lock. Run: node --test classify.test.mjs
-import { test } from 'node:test';
+import { test, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -19,6 +19,18 @@ test('floor collapses context variants + orders by version (flexible for many mo
   const r = buildHeuristicFloor(['Opus 4.8', 'Opus 4.8 256k', 'Opus 4.7', 'Opus 4.6', 'Haiku 4.5']);
   assert.deepEqual(r.heavy, ['Opus 4.8', 'Opus 4.7', 'Opus 4.6']); // 256k collapsed, version desc
   assert.deepEqual(r.low, ['Haiku 4.5']);
+});
+
+test('writeRankingAtomic falls back to a direct write on EPERM/EBUSY (#7 Windows) — the update is never lost', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-rank-'));
+  try {
+    mock.method(fs, 'renameSync', () => { const e = new Error('EPERM'); e.code = 'EPERM'; throw e; });
+    writeRankingAtomic(dir, { schemaVer: SCHEMA_VER, complete: true, tiers: {} });
+    mock.restoreAll();
+    const written = fs.readdirSync(dir).filter((f) => !f.includes('.tmp'));
+    assert.equal(written.length, 1, 'dest written via the fallback; tmp cleaned (no orphan)');
+    assert.equal(JSON.parse(fs.readFileSync(path.join(dir, written[0]), 'utf8')).schemaVer, SCHEMA_VER);
+  } finally { mock.restoreAll(); fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
 test('classifyModel: known -> tier; UNKNOWN -> heavy (Fable rule), never cheap', () => {

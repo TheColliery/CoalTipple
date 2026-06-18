@@ -44,7 +44,10 @@ function readCfgFile(file) {
 let _cfg;
 function loadCfg() {
   if (_cfg !== undefined) return _cfg;
-  const global = readCfgFile(path.join(os.homedir(), '.claude', '.coaltipple.json'));
+  // CLAUDE_CONFIG_DIR (#6) redirects ~/.claude (portable / multi-account / CI); first entry if a comma-list.
+  const cfgEnv = process.env.CLAUDE_CONFIG_DIR;
+  const cfgDir = cfgEnv ? cfgEnv.split(',')[0].trim() : path.join(os.homedir(), '.claude');
+  const global = readCfgFile(path.join(cfgDir, '.coaltipple.json'));
   const project = readCfgFile(path.join(findGitRoot(process.cwd()), '.claude', '.coaltipple.json'));
   // Merge only when something loaded; keep null (= "no config") if neither did, so
   // the existing `if (cfg && ...)` guards in main() behave exactly as before.
@@ -57,7 +60,7 @@ function loadCfg() {
 //     keyword; the always-on routing forcer in main() fires on every prompt. ---
 // <coaltipple-shared: hot-keywords> — synced from scripts/lib/keywords.mjs by build-plugin.mjs; edit keywords.mjs, NOT this block
 const HOT5 = ['concurrency', 'mutex', 'race condition', 'deadlock', 'thread-saf', 'atomic', 'crypto', 'timing attack', 'timing-attack', 'constant-time', 'constant time', 'timing-safe', 'side-channel', 'encrypt', 'decrypt', 'mathematical proof', 'formal proof', 'derive equation', 'complexity bound'];
-const HOT4 = ['oauth', 'authenticat', 'authoriz', 'auth bypass', 'sql injection', 'access control', 'permission', 'secret', 'token', 'password', 'session', 'migration', 'schema change', 'payment', 'billing', 'rate limit', 'optimize query', 'legal contract', 'compliance', 'license terms', 'financial audit', 'tax filing', 'valuation', 'diagnosis', 'dosage', 'clinical', 'gdpr', 'hipaa', 'pii'];
+const HOT4 = ['oauth', 'authenticat', 'authoriz', 'auth bypass', 'sql injection', 'access control', 'permission', 'secret', 'token', 'password', 'session', 'migration', 'schema change', 'payment', 'billing', 'rate limit', 'optimize query', 'bug scan', 'scan for bugs', 'find bugs', 'find all bugs', 'security audit', 'security review', 'vulnerability scan', 'audit the codebase', 'code audit', 'legal contract', 'compliance', 'license terms', 'financial audit', 'tax filing', 'valuation', 'diagnosis', 'dosage', 'clinical', 'gdpr', 'hipaa', 'pii'];
 // </coaltipple-shared: hot-keywords>
 function hintFor(prompt) {
   const t = String(prompt || '').toLowerCase();

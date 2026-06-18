@@ -17,6 +17,10 @@ export const KEYWORD_GROUPS = {
   'security':    { grade: 4, sensitive: true, words: ['oauth', 'authenticat', 'authoriz', 'auth bypass', 'sql injection', 'access control', 'permission', 'secret', 'token', 'password', 'session'] },
   'coding':      { grade: 4, sensitive: true, words: ['migration', 'schema change', 'payment', 'billing', 'rate limit', 'optimize query'] },
 
+  // Audit / review — finding REAL issues needs capability; a cheap tier returns a
+  // confident shallow all-clear. High-by-DIFFICULTY: route UP, never size-down/floor-self.
+  'audit':       { grade: 4, words: ['bug scan', 'scan for bugs', 'find bugs', 'find all bugs', 'security audit', 'security review', 'vulnerability scan', 'audit the codebase', 'code audit'] },
+
   // Math — reasoning-hard proof / derivation.
   'math':      { grade: 5, words: ['mathematical proof', 'formal proof', 'derive equation', 'complexity bound'] },
 

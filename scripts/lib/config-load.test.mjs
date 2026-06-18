@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { loadMergedConfig, globalConfigPath, projectConfigPath } from './config-load.mjs';
+import { loadMergedConfig, globalConfigPath, globalStateDir, projectConfigPath, claudeBaseDir } from './config-load.mjs';
 
 // Build a sandbox with optional global/project file bodies; returns { home, cwd }.
 function sandbox({ global, project } = {}) {
@@ -89,4 +89,23 @@ test('a corrupt file never throws — the other layer still loads', () => {
   try {
     assert.equal(loadMergedConfig(s2).qualityBar, 33);
   } finally { cleanup(s2); }
+});
+
+test('CLAUDE_CONFIG_DIR redirects the GLOBAL paths (#6); comma-list -> first entry; project paths unaffected', () => {
+  const saved = process.env.CLAUDE_CONFIG_DIR;
+  try {
+    const custom = path.join(os.tmpdir(), 'ct-cfgdir-test');
+    process.env.CLAUDE_CONFIG_DIR = custom;
+    assert.equal(globalConfigPath(), path.join(custom, '.coaltipple.json'), 'global config under $CLAUDE_CONFIG_DIR');
+    assert.equal(globalStateDir(), path.join(custom, '.coaltipple'), 'global state under $CLAUDE_CONFIG_DIR');
+    assert.equal(claudeBaseDir(), custom);
+    process.env.CLAUDE_CONFIG_DIR = `${custom},${path.join(os.tmpdir(), 'other')}`; // multi-account comma-list
+    assert.equal(claudeBaseDir(), custom, 'first entry of a comma-list');
+    delete process.env.CLAUDE_CONFIG_DIR; // unset -> home/.claude (unchanged default)
+    assert.equal(globalConfigPath('/h'), path.join('/h', '.claude', '.coaltipple.json'));
+    process.env.CLAUDE_CONFIG_DIR = custom; // project path NEVER uses it
+    assert.equal(projectConfigPath('/proj'), path.join('/proj', '.claude', '.coaltipple.json'));
+  } finally {
+    if (saved === undefined) delete process.env.CLAUDE_CONFIG_DIR; else process.env.CLAUDE_CONFIG_DIR = saved;
+  }
 });
