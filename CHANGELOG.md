@@ -2,6 +2,15 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.0.8] - 2026-06-18
+
+A version gate guards every path until the cross-version self-heal is verified, plus a test pinning the conductor's inline #12 fix.
+
+### Added
+
+- **Version gate on every path (human + agent), live until newer CC is verified.** "Validated on Claude Code 2.1.143" now also rides in the conductor SessionStart contract and `SKILL.md` (the agent paths) - alongside the README, CONTRIBUTING, repo About, and Release notes (the human paths): on a different CC version, rebuild the ranking on first route and verify before relying on it (routing degrades safe - unknown model to the strong tier, failed spawn falls to the next - but the self-heal is unverified outside 2.1.143). The gate lifts once newer versions are verified.
+- **Behavioral test for the conductor's inline JSONC stripper (#12).** `conductor.test.mjs` feeds a backslash-terminated value plus a `//`-containing string and asserts it still parses (no silent revert) - guarding the inline copy (duplicated per Phoenix #9) from silently diverging from `jsonc.mjs`.
+
 ## [1.0.7] - 2026-06-18
 
 Routing is hardened to be never-fail across Claude Code updates and model-availability changes: an unavailable model can never strand a route, and a freshly-installed floor ranking upgrades itself on first use.

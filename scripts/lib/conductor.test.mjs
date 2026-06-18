@@ -75,6 +75,29 @@ test('config cascade: project overrides global (project language wins the merge)
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); }
 });
 
+test('config cascade: a backslash value + a //-containing string still parse (conductor #12 inline stripper)', () => {
+  const tmp = mk();
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-home-'));
+  fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+  // The CM #12 case in the conductor's INLINE stripper: a value ending in a literal
+  // backslash, plus a later string containing //. A non-string-aware stripper miscounts
+  // the string boundary, JSON.parse throws, the catch returns null, and the language
+  // directive silently reverts. The inline string-aware stripper must survive both.
+  const fileContent = [
+    '{',
+    '  "winPath": "C:\\\\",',
+    '  "url": "http://example.com",',
+    '  "language": "th"',
+    '}',
+  ].join('\n');
+  fs.writeFileSync(path.join(home, '.claude', '.coaltipple.json'), fileContent);
+  try {
+    const r = run({ hook_event_name: 'SessionStart' }, tmp, home);
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /Respond to the user in Thai/, 'config parsed despite the backslash + // (no silent revert)');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); }
+});
+
 test('config cascade: global enableRouting:false silences even with no project file', () => {
   const tmp = mk();
   const home = mkHomeGlobal({ enableRouting: false });
