@@ -2,6 +2,18 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.0.15] - 2026-06-19
+
+Doc-accuracy + a conductor input-hardening.
+
+### Fixed
+- **Conductor stdin-parse guard (C6).** Valid-but-non-object stdin (`null` / a number / an array) was assigned straight to `input`, making the later `input.hook_event_name` read a null-deref (Phoenix-caught, but the contract was then silently skipped). The parse now falls back to `{}` on a non-object, so a malformed event still safely injects the contract. + a hermetic test.
+
+### Changed
+- **SECURITY.md — honest scan provenance.** Pins the last actual SkillSpector scan (v1.0.8) and states scanning is periodic, not per-release; dropped the "result stands for later versions" framing (an unscanned version is unverified). Findings are section-NAME-based, so they do not drift on a skill edit.
+- **Config-help clarity.** `qualityBar` and `maxTotalAttempts` trimmed to the one-line convention (the full mechanic lives in SKILL.md); `disableRouting` now notes the domain is inferred from the task content + its matched keyword group; `xhigh` corrected to `max` throughout (CoalTipple's effort ladder is `low→max`; `xhigh` was a cross-platform-vocabulary leak).
+- **SKILL.md** — `modelTiers` now documents the array (priority-chain) form, matching the schema.
+
 ## [1.0.14] - 2026-06-18
 
 Routing-core simplification — the model-ranking introspection layer is gone; routing rides the alias floor + pins (the "B2" finding from the comprehensive vuln-hunt).

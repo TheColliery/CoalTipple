@@ -221,3 +221,19 @@ test('garbage stdin -> exit 0, no crash, no stderr (fail-silent)', () => {
     assert.equal(r.stderr, '');
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 });
+
+test('valid-but-non-object stdin (null / number / array) -> exit 0, no crash, defaults to the contract (C6 guard)', () => {
+  const tmp = mk();
+  try {
+    // Valid JSON that is NOT a plain object. Before the C6 guard, `input` became
+    // null/42/[] and `input.hook_event_name` was a null-deref (Phoenix-caught, but the
+    // contract was then silently skipped). After the guard, input falls back to {} ->
+    // event '' -> the non-prompt SessionStart branch injects the contract. No crash.
+    for (const payload of ['null', '42', '[1,2,3]']) {
+      const r = run(payload, tmp, tmp); // home := tmp -> no global config layer
+      assert.equal(r.status, 0, `exit 0 for stdin ${payload}`);
+      assert.equal(r.stderr, '', `no stderr for stdin ${payload}`);
+      assert.match(r.stdout, /\[CoalTipple\]/, `contract injected (input fell back to {}) for stdin ${payload}`);
+    }
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});

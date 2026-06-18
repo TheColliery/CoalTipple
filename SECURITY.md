@@ -40,9 +40,9 @@ CoalTipple is distributed as source (human-auditable skill Markdown). The plugin
 
 ## 🔬 Independent Scanning — NVIDIA SkillSpector
 
-<!-- version-transition: re-run SkillSpector on any SKILL.md edit; re-sync the scanner version + score below. Findings reference the SKILL.md section by NAME (not a line number) so they do not drift on a skill edit. Last scan: SkillSpector v2.2.3, CoalTipple v1.0.8 (commit 87be8dd), 2026-06-18, static stage -- score 0/100 (LOW, SAFE), 0 issues. Authoritative report: skillspector-20260618.json (local). -->
+<!-- version-transition: the pin below reflects the LAST ACTUAL scan -- do NOT bump the scanner/CoalTipple version or score without a real re-scan (an unscanned version's security is UNVERIFIED; never claim coverage). Re-scan periodically or on a significant SKILL.md change, then re-sync. Findings reference the SKILL.md section by NAME (not a line number) so they do not drift on a skill edit. Last scan: SkillSpector v2.2.3, CoalTipple v1.0.8 (commit 87be8dd), 2026-06-18, static stage -- score 0/100 (LOW, SAFE), 0 issues. Authoritative report: skillspector-20260618.json (local). -->
 
-CoalTipple is evaluated against [NVIDIA SkillSpector](https://github.com/NVIDIA/skillspector) v2.2.3, executed on the shipped `plugin/` distribution.
+CoalTipple is evaluated against [NVIDIA SkillSpector](https://github.com/NVIDIA/skillspector) v2.2.3. **Last scan: CoalTipple v1.0.8 (commit `87be8dd`), 2026-06-18.** Scanning is periodic, not per-release — this pins the last version actually verified, not the current ship; later releases are not claimed scanned.
 
 * **Static Scan (0/100 - LOW · SAFE · 0 issues):** The static analyzer (YARA rules + heuristics) raised **no findings** across all 7 scanned components (`SKILL.md`, the conductor hook, the three command files, `plugin.json`, `hooks.json`). The conductor is flagged only as an executable script in metadata -- not as an issue.
 * **Method:** `uvx --from git+https://github.com/NVIDIA/skillspector.git skillspector scan <plugin> --format json` -- uvx fetches its own ephemeral Python, so **no manual Python/pip install is needed** (this corrects an earlier note). A JSON report is written even when the optional LLM stage is unavailable.

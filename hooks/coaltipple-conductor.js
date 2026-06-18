@@ -220,7 +220,10 @@ function main() {
   if (Array.isArray(disabled) && disabled.includes('all')) return;
 
   let input = {};
-  try { input = JSON.parse(readStdin() || '{}'); } catch {}
+  // Guard the parse result: valid JSON that is NOT a plain object (null, a number,
+  // an array) must not become `input`, or the `input.hook_event_name` read below is a
+  // null-deref / silent-wrong read. Non-object -> keep the empty-object default.
+  try { const parsed = JSON.parse(readStdin() || '{}'); if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) input = parsed; } catch {}
   const event = input.hook_event_name || input.hookEventName || '';
 
   if (event === 'UserPromptSubmit') {
