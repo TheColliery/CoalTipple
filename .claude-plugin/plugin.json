@@ -1,6 +1,6 @@
 {
   "name": "coaltipple",
-  "version": "1.0.15",
+  "version": "1.0.16",
   "description": "CoalTipple — model/effort router for Claude Code. Delegates a task you CAN do but is large+cheap DOWN to a lower tier to save tokens; escalates a task beyond the current tier UP for quality. Two-knob routing (tier × effort, effort-before-tier), an alias-floor tier ranking (haiku<sonnet<opus + modelTiers pins) the platform resolves at spawn-time, a validity-gated ranking Lock that never routes on broken state, and git-optional damage control. Advise-only Phoenix-pure hook; the model performs the routing.",
   "author": { "name": "HetCreep" },
   "homepage": "https://github.com/TheColliery/CoalTipple",

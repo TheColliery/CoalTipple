@@ -52,13 +52,23 @@ test('validity gate: missing / wrong-schema / incomplete / stale all fail; good 
   assert.equal(validateRanking(full({ listHash: 'x' }), 'x'), null);
 });
 
+test('validity gate: local-only ranking and empty-string models are REJECTED (routable-tier check)', () => {
+  // 'local' is NOT on the escalation ladder -> a local-only ranking routes nothing, yet a
+  // naive TIERS check passed it ("Lock reads green while routing is dead" — the audit finding).
+  assert.match(validateRanking({ schemaVer: SCHEMA_VER, complete: true, tiers: { local: ['haiku', 'sonnet', 'opus'], low: [], mid: [], heavy: [], reasoning: [] } }, null), /routable|dead/);
+  // an empty-string entry is no model.
+  assert.match(validateRanking({ schemaVer: SCHEMA_VER, complete: true, tiers: { local: [''], low: [''], mid: [], heavy: [], reasoning: [] } }, null), /routable|dead/);
+  // a genuinely routable ranking still passes.
+  assert.equal(validateRanking({ schemaVer: SCHEMA_VER, complete: true, tiers: { local: [], low: ['haiku'], mid: ['sonnet'], heavy: ['opus'], reasoning: ['opus'] } }, null), null);
+});
+
 test('validity gate (strict): array tiers / {} / missing key / non-array value / all-empty / complete-truthy all REJECTED', () => {
   // A loosely-"valid" ranking that makes resolveWorker return null for every tier = routing silently dead.
   assert.match(validateRanking({ schemaVer: SCHEMA_VER, complete: true, tiers: [] }, null), /no tiers/);          // array, not a plain object
   assert.match(validateRanking({ schemaVer: SCHEMA_VER, complete: true, tiers: {} }, null), /missing\/non-array/); // {} -> no keys
   assert.match(validateRanking({ schemaVer: SCHEMA_VER, complete: true, tiers: { local: [], low: ['x'], mid: [], heavy: [] } }, null), /reasoning/); // missing a key
   assert.match(validateRanking({ schemaVer: SCHEMA_VER, complete: true, tiers: { local: [], low: 'x', mid: [], heavy: [], reasoning: [] } }, null), /non-array/); // non-array value
-  assert.match(validateRanking({ schemaVer: SCHEMA_VER, complete: true, tiers: { local: [], low: [], mid: [], heavy: [], reasoning: [] } }, null), /all empty/); // every tier empty
+  assert.match(validateRanking({ schemaVer: SCHEMA_VER, complete: true, tiers: { local: [], low: [], mid: [], heavy: [], reasoning: [] } }, null), /routable|dead/); // every tier empty -> routing dead
   assert.match(validateRanking({ schemaVer: SCHEMA_VER, complete: 1, tiers: { local: [], low: ['x'], mid: [], heavy: [], reasoning: [] } }, null), /incomplete/); // complete truthy, not === true
 });
 

@@ -119,10 +119,30 @@ test('config.keywords overrides/extends the factory groups (the user-tunable lay
   const added = grade({ prompt: 'frobnicate the reactor', config: { keywords: { 'custom.frob': { grade: 5, sensitive: true, words: ['frobnicate'] } } } });
   assert.equal(added.grade, 5);
   assert.equal(added.sensitive, true);
-  // overriding an existing group replaces its words: the new word fires
+  // overriding an existing group MERGES its words (union) + inherits its flags: the new word fires
   const over = grade({ prompt: 'add a nonce', config: { keywords: { 'crypto': { grade: 5, sensitive: true, words: ['nonce'] } } } });
   assert.equal(over.grade, 5);
   assert.equal(over.sensitive, true);
+});
+
+test('keyword merge is SAFE: a config override cannot silently strip the sensitive flag or drop a built-in word', () => {
+  // override the factory `security` group but OMIT `sensitive` -> the flag must INHERIT, not strip the gate
+  const omit = grade({ prompt: 'rotate the password', config: { keywords: { security: { grade: 4, words: ['password'] } } } });
+  assert.equal(omit.sensitive, true, 'sensitive inherits from the factory group when omitted');
+  // override `coding` with a narrow word list -> a built-in sensitive word ('payment') STILL fires (union, not replace)
+  const drop = grade({ prompt: 'process the payment', config: { keywords: { coding: { grade: 4, sensitive: true, words: ['unrelatedword'] } } } });
+  assert.equal(drop.sensitive, true, 'built-in sensitive word survives a config word override (union)');
+  // an explicit sensitive:false is still honored (a deliberate opt-out is allowed)
+  const optout = grade({ prompt: 'add a nonce value', config: { keywords: { crypto: { grade: 5, sensitive: false, words: ['nonce'] } } } });
+  assert.equal(optout.sensitive, false, 'explicit sensitive:false is honored');
+});
+
+test('non-English prompt: deterministic layer returns grade 1 (English-only seed, BY DESIGN)', () => {
+  // The keyword floor is English-only (grade.mjs LANGUAGE SCOPE): a pure-Thai sensitive prompt
+  // matches NO keyword -> only the size/path floor -> grade 1. Locks that documented boundary so a
+  // regex change can't silently start matching/missing Unicode; the MODEL layer grades it by intent.
+  assert.equal(grade({ prompt: 'ตรวจสอบรหัสผ่านเพื่อกันการโจมตีแบบจับเวลา' }).grade, 1, 'no English keyword -> grade 1');
+  assert.equal(grade({ prompt: 'ตรวจสอบรหัสผ่านเพื่อกันการโจมตีแบบจับเวลา' }).sensitive, false, 'deterministic layer flags nothing; the model applies the gate by intent');
 });
 
 test('legacy hotKeywords still merges as a grade-4 sensitive group (backward-compat)', () => {

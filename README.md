@@ -172,7 +172,9 @@ We evaluate both routing decisions (the Lock and probe tasks) and final output c
 
 *Total: 20/20 PASS deliverables generated correctly.*
 
-The full output-quality harness (tasks, scorer, results) lives in the series umbrella at [`TheColliery/.github/benchmarks/CoalTipple`](https://github.com/TheColliery/.github/tree/main/benchmarks/CoalTipple).
+**Routing Savings (Measured 2026-06-19):** main does it itself vs delegates a big mechanical task (a 12-handler API scaffold) to a cheap worker — **~70–75% cheaper** to delegate down (Opus is 5× Haiku per token; the cheap tier also ran terser, 51k vs 71k tokens). The saving holds only **above** the `delegateMinLines` floor (a small task costs more to hand off than to do inline) and **never** applies to sensitive work (the hard gate). Detail: [`benchmarks/CoalTipple/ROUTING-SAVINGS.md`](https://github.com/TheColliery/.github/blob/main/benchmarks/CoalTipple/ROUTING-SAVINGS.md).
+
+The full benchmark harnesses (tasks, scorer, results) live in the series umbrella at [`TheColliery/.github/benchmarks/CoalTipple`](https://github.com/TheColliery/.github/tree/main/benchmarks/CoalTipple).
 
 ---
 

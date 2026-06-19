@@ -2,6 +2,17 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.0.16] - 2026-06-19
+
+Routing-safety hardening + a routing-savings benchmark.
+
+### Fixed
+- **`mergeKeywordGroups` (grade.mjs)** — a config keyword group now INHERITS the base group's flags and UNIONs its words (deduped), so a custom override can never silently DROP a built-in sensitive word or flag. Hardens the never-delegate-down sensitive gate against a partial config.
+- **`validateRanking` (classify.mjs)** — rejects a ranking where no routable tier holds a usable (non-empty) model (a local-only or empty-model ranking that reads green but routes to nothing), iterating the escalation-ladder source-of-truth.
+
+### Added
+- **Benchmark** (`eval/`): routing savings — main does it itself (Opus) vs delegates to a cheap worker (Haiku) on a big mechanical task — ~70–75% cheaper to delegate above the floor, with the honest crossover + sensitive-never-down caveats.
+
 ## [1.0.15] - 2026-06-19
 
 Doc-accuracy + a conductor input-hardening.

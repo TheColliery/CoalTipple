@@ -48,16 +48,23 @@ const includesAny = (text, list) =>
     return new RegExp('\\b' + word + (stem ? '' : '\\b')).test(text);
   });
 
-// Merge config.keywords over the factory groups (per group: a config group carrying a
-// `words` array replaces/adds that named group). The legacy flat `hotKeywords` maps onto
-// a grade-4 sensitive group so OLD configs keep forcing a high grade (backward-compat).
+// Merge config.keywords OVER the factory groups. Two safety rules — a config must never
+// silently WEAKEN the never-down gate (the audit found a full-replace dropped it):
+//   - `sensitive` / `preserveVoice` FLAGS inherit from the factory group unless the config
+//     sets them explicitly (omitting `sensitive` can no longer strip a built-in gate);
+//   - `words` are the UNION of factory + config (a config ADDS keywords; it can't silently
+//     DROP a built-in sensitive word like 'payment'). `grade` stays overridable.
+// The legacy flat `hotKeywords` maps onto a grade-4 sensitive group (backward-compat).
 function mergeKeywordGroups(config) {
   const groups = { ...DEFAULT_KEYWORD_GROUPS };
   const ck = config.keywords;
   if (ck && typeof ck === 'object' && !Array.isArray(ck)) {
     for (const name of Object.keys(ck)) {
       const grp = ck[name];
-      if (grp && typeof grp === 'object' && Array.isArray(grp.words)) groups[name] = grp;
+      if (!grp || typeof grp !== 'object' || !Array.isArray(grp.words)) continue;
+      const base = groups[name] || {};
+      const baseWords = Array.isArray(base.words) ? base.words : [];
+      groups[name] = { ...base, ...grp, words: [...new Set([...baseWords, ...grp.words])] };
     }
   }
   if (Array.isArray(config.hotKeywords) && config.hotKeywords.length) {

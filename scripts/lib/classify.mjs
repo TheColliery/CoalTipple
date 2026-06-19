@@ -43,7 +43,13 @@ export function validateRanking(ranking, currentHash) {
   const tiers = ranking.tiers;
   if (!tiers || typeof tiers !== 'object' || Array.isArray(tiers)) return 'no tiers';
   for (const t of TIERS) if (!Array.isArray(tiers[t])) return `tiers missing/non-array key '${t}'`;
-  if (!TIERS.some((t) => tiers[t].length)) return 'tiers all empty (routing would be dead)';
+  // At least one ROUTABLE tier must hold a USABLE (non-empty) model. Routing rides the
+  // ESCALATION_LADDER (low<mid<heavy<reasoning; the SOT defined below) — 'local' is NOT
+  // routable, so a local-only ranking is dead despite passing a naive TIERS check; and an
+  // empty-string entry is no model. Either would read GREEN while resolveWorker returns null.
+  if (!ESCALATION_LADDER.some((t) => Array.isArray(tiers[t]) && tiers[t].some((m) => m && String(m).trim()))) {
+    return 'no routable tier has a usable model (routing would be dead)';
+  }
   if (currentHash && ranking.listHash !== currentHash) return 'stale (model list changed)';
   return null;
 }
