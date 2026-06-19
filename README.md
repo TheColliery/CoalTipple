@@ -12,7 +12,7 @@
 
 [Changelog](CHANGELOG.md) · [Security](SECURITY.md) · [Privacy](PRIVACY.md) · [Releases](https://github.com/TheColliery/CoalTipple/releases)
 
-**Part of [TheColliery](https://github.com/TheColliery)** — sibling: **[CoalMine](https://github.com/HetCreep/CoalMine)**.
+**Part of [TheColliery](https://github.com/TheColliery)** — siblings: **[CoalMine](https://github.com/HetCreep/CoalMine)** (quality canaries) · **[CoalBoard](https://github.com/TheColliery/CoalBoard)** (consensus & debate board).
 
 </div>
 
@@ -177,7 +177,7 @@ The full output-quality harness (tasks, scorer, results) lives in the series umb
 ---
 
 ## 🧭 Part of TheColliery
-CoalTipple shares its engineering doctrine with [CoalMine](https://github.com/HetCreep/CoalMine): Phoenix-13 hooks (zero-dependency, no network, fail-silent, no child processes, deterministic), single-source-of-truth config schemas, and a strict no-overkill discipline.
+CoalTipple shares its engineering doctrine with [CoalMine](https://github.com/HetCreep/CoalMine) and [CoalBoard](https://github.com/TheColliery/CoalBoard): Phoenix-13 hooks (zero-dependency, no network, fail-silent, no child processes, deterministic), single-source-of-truth config schemas, and a strict no-overkill discipline.
 
 ## 📄 License
 MIT License. See [LICENSE](LICENSE) for details.
