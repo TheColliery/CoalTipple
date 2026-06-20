@@ -25,7 +25,7 @@ body:
     id: version
     attributes:
       label: CoalTipple version + agent version
-      placeholder: "CoalTipple v1.0.0 · Cursor 2.4"
+      placeholder: "CoalTipple vX.Y.Z · Cursor 2.4"
     validations:
       required: true
   - type: dropdown

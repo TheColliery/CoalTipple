@@ -23,7 +23,7 @@ body:
     id: version
     attributes:
       label: CoalTipple version + platform
-      placeholder: "v1.0.0 · Claude Code on Windows 11"
+      placeholder: "vX.Y.Z · Claude Code on Windows 11"
     validations:
       required: true
   - type: textarea
