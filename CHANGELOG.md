@@ -2,6 +2,18 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.0.17] - 2026-06-20
+
+CoalBoard-audit hardening (dogfood) — scripts/CLI bugfixes. The shipped `plugin/` runtime is unchanged; these fix the user-run CLIs + the grade reference.
+
+### Fixed
+- **`configure.mjs` `setKeyInText` (H1)** — editing the LAST config key (no trailing comma) no longer corrupts the file: it synthesized a trailing comma that `stripJsonc` cannot strip → the file was written unparseable, then `parseConfig` threw AFTER the bad write. Now preserves the original comma state AND validates the rewrite parses before touching disk.
+- **`grade.mjs` never-down gate (H2, security)** — the sensitive-path check now runs over the PRE-exclusion file list, and EXCLUDE matches by whole path SEGMENT (split on `/` and `\`), not a raw substring. A sensitive path containing an exclude substring (e.g. `src/auth-dist/login.js` contains `dist`) can no longer be dropped before the check → the never-delegate-down hard gate can no longer be bypassed. Also fixes the size under-count (`payment/distributor.js`).
+- **`configure.mjs` arg-parse (M6/M7)** — a trailing `// comment` is preserved on a value rewrite; a `strArr` flag no longer swallows a following flag as its value; the `-p` collision (was both `--project` and the `updateCheckDays` shortcut) is resolved — `-P` is now the `updateCheckDays` short form, `-p` is `--project` only.
+
+### Removed
+- **`build-skill.mjs` dead code (M8)** — the parked cross-platform machinery (`buildPlatform`/`loadAdapter`/`platformOut` + the empty-`PLATFORMS` loop) removed per YAGNI (Antigravity cross-platform was scrapped); `verify.mjs` now guards against a platform listed without its builder. `applyAdapter` (test-covered) kept.
+
 ## [1.0.16] - 2026-06-19
 
 Routing-safety hardening + a routing-savings benchmark.
@@ -164,6 +176,7 @@ The topic-keyword config is now fully editable, the factory config ships its bui
 ### Added
 
 - **`CONTRIBUTING.md`** - the support policy (Claude Code + Antigravity are the validated platforms; others best-effort) and the contributor rule that `SKILL.md` is the load-bearing, behavioral surface that must be dogfooded, not just unit-tested.
+  > **Superseded by v1.0.6:** Antigravity support was removed — the live tool schema confirmed `invoke_subagent`/`define_subagent` expose no model parameter, so routing cannot actuate. Claude Code is the only validated platform.
 
 ### Fixed
 

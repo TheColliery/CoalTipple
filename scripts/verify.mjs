@@ -126,11 +126,8 @@ try {
 console.log('cross-platform SKILL transform engine (PARKED -- no active platform; add one only after verifying its spawn tool takes a worker model param):');
 try {
   const bs = await import(pathToFileURL(path.join(repo, 'scripts', 'build-skill.mjs')).href);
-  for (const p of bs.PLATFORMS) {
-    const problems = await bs.buildPlatform(p, { check: true });
-    if (problems.length) for (const x of problems) fail(x);
-    else ok(`${p}: SKILL.md in sync with CC source (no CC-ism residual, no TODOs)`);
-  }
+  if (bs.PLATFORMS.length === 0) ok('PLATFORMS=[]: no active platform to check (expected while parked)');
+  else for (const p of bs.PLATFORMS) fail(`${p}: in PLATFORMS but buildPlatform was removed — restore it before adding a platform`);
 } catch (e) { fail(`cross-platform SKILL check: ${e.message}`); }
 
 console.log('plugin/ dist (the clean CC plugin vs source SSoT):');

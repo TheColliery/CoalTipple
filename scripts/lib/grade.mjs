@@ -48,6 +48,27 @@ const includesAny = (text, list) =>
     return new RegExp('\\b' + word + (stem ? '' : '\\b')).test(text);
   });
 
+// EXCLUDE matches a path by whole SEGMENT, not raw substring. Split on BOTH `/` and
+// `\` (cross-platform: a Windows path uses `\`) and compare each segment exactly, so
+// `dist` excludes a `dist/` directory but NOT `auth-dist` (the never-down bypass —
+// a sensitive path that merely CONTAINS an exclude word) or `distributor.js` (the
+// size under-count). A bare-substring `.includes()` here silently broke both.
+const segments = (p) => String(p).toLowerCase().split(/[\\/]+/).filter(Boolean);
+const isExcluded = (path, exclude) => {
+  const segs = segments(path);
+  return exclude.some((x) => {
+    const xs = segments(x);
+    if (xs.length === 0) return false;
+    // a multi-segment exclude (e.g. 'a/b') matches a contiguous run of segments;
+    // the common single-segment case is the simple membership test.
+    if (xs.length === 1) return segs.includes(xs[0]);
+    for (let i = 0; i + xs.length <= segs.length; i++) {
+      if (xs.every((s, j) => s === segs[i + j])) return true;
+    }
+    return false;
+  });
+};
+
 // Merge config.keywords OVER the factory groups. Two safety rules — a config must never
 // silently WEAKEN the never-down gate (the audit found a full-replace dropped it):
 //   - `sensitive` / `preserveVoice` FLAGS inherit from the factory group unless the config
@@ -105,7 +126,8 @@ export function grade(args = {}) {
 
   // 1. Content size / breadth (excluded dirs never count). Lines for code, or a
   //    generalized sizeUnits (words/chars) for non-code work — whichever is larger.
-  const scoped = files.filter((f) => f && f.path && !exclude.some((x) => f.path.toLowerCase().includes(String(x).toLowerCase())));
+  const withPath = files.filter((f) => f && f.path)
+  const scoped = withPath.filter((f) => !isExcluded(f.path, exclude))
   const fileCount = scoped.length;
   const fileLines = scoped.reduce((n, f) => n + (Number(f.lines) || 0), 0);
   const maxLines = scoped.reduce((n, f) => Math.max(n, Number(f.lines) || 0), 0);
@@ -115,8 +137,12 @@ export function grade(args = {}) {
   else if (fileCount >= 2 || size >= 500) { g = Math.max(g, 3); reasons.push(`size: ${fileCount} file(s) / ${size} units`); }
   else if (fileCount === 1 || size > 0) { g = Math.max(g, 2); reasons.push(fileCount ? '1 file edit' : `content: ${size} units`); }
 
-  // 2. Sensitive PATH -> >=4 + sensitive (never-down) even at 1 file.
-  const hitSensitive = scoped.find((f) => sensitivePaths.some((s) => f.path.toLowerCase().includes(String(s).toLowerCase())));
+  // 2. Sensitive PATH -> >=4 + sensitive (never-down) even at 1 file. Checked over the
+  //    PRE-exclusion list (`withPath`), NEVER `scoped`: sensitivity is decoupled from
+  //    the directory-exclude filter, so a sensitive path that happens to contain an
+  //    exclude word (e.g. `src/auth-dist/login.js`) can NEVER be dropped before the
+  //    never-down gate sees it. (A directory-breadth filter must not gate safety.)
+  const hitSensitive = withPath.find((f) => sensitivePaths.some((s) => f.path.toLowerCase().includes(String(s).toLowerCase())));
   if (hitSensitive) { g = Math.max(g, 4); sensitive = true; reasons.push(`sensitive path: ${hitSensitive.path}`); }
 
   // 3. Keyword GROUPS -> floor the grade + flag sensitive / preserveVoice, regardless of

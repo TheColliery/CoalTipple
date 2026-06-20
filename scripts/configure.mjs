@@ -108,14 +108,50 @@ function parseValue(spec, raw) {
 }
 
 // Rewrite a single top-level "key": value line in the JSONC text, preserving the
-// leading indentation, the trailing comma, and every comment around it. Returns
-// the new text, or null if the key line is not present (caller appends instead).
+// leading indentation, the trailing comma, any trailing // comment, and every
+// comment around it. Returns the new text, or null if the key line is not present
+// (caller appends instead). Validates the result parses before returning so a
+// corrupt rewrite is caught before the caller writes to disk.
 function setKeyInText(text, key, jsonValue) {
-  // Match an active (non-commented) "key": ... line. The leading group keeps the
-  // indent; we only swap the value up to an optional trailing comma.
-  const re = new RegExp(`^(\\s*"${key}"\\s*:\\s*)([^\\n]*?)(,?)(\\s*)$`, 'm');
-  if (!re.test(text)) return null;
-  return text.replace(re, (_m, head, _old, comma, tail) => `${head}${jsonValue}${comma || ','}${tail}`);
+  // Match an active (non-commented) "key": ... line. The lazy suffix group captures
+  // everything after the colon-space up to the optional trailing whitespace at EOL.
+  // We then dissect the suffix ourselves to separate value / comma / comment so that:
+  //   - the trailing comma is PRESERVED AS-IS (never synthesised) — H1 fix
+  //   - any trailing // comment is preserved verbatim — M6 fix
+  const re = new RegExp(`^(\\s*"${key}"\\s*:\\s*)([^\\n]*?)(\\s*)$`, 'm')
+  if (!re.test(text)) return null
+  const result = text.replace(re, (_m, head, suffix, tail) => {
+    // Walk the suffix char-by-char to find the first '//' outside a quoted string.
+    let commentPart = ''
+    let rest = suffix
+    let inStr = false
+    for (let ci = 0; ci < rest.length - 1; ci++) {
+      const ch = rest[ci]
+      if (inStr) {
+        if (ch === '\\') { ci++; continue } // skip escaped char
+        if (ch === '"') inStr = false
+      } else {
+        if (ch === '"') { inStr = true; continue }
+        if (ch === '/' && rest[ci + 1] === '/') {
+          commentPart = rest.slice(ci) // "// ..." to end of suffix
+          rest = rest.slice(0, ci)     // value[,][spaces]
+          break
+        }
+      }
+    }
+    // Extract the trailing comma and any spaces between the value/comma and the comment.
+    // `rest` at this point is everything before the '//' (e.g. '"auto", ' or '"on"').
+    // Trim trailing whitespace to isolate the structural content, then separate the comma.
+    const restTrimmed = rest.trimEnd()       // e.g. '"auto",' or '"on"'
+    const trailingSpaces = rest.slice(restTrimmed.length) // spaces before comment (e.g. ' ')
+    const trailingComma = restTrimmed.endsWith(',') ? ',' : '' // H1: preserve, never synthesise
+    return `${head}${jsonValue}${trailingComma}${trailingSpaces}${commentPart}${tail}`
+  })
+  // Validate the rewrite parses before the caller writes it to disk.
+  let check = result
+  if (check.charCodeAt(0) === 0xFEFF) check = check.slice(1)
+  JSON.parse(stripJsonc(check)) // throws if the rewrite corrupted the JSON
+  return result
 }
 
 function main() {
@@ -161,9 +197,15 @@ function main() {
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--list') { listAfter = true; continue; }
     if (args[i] === '--project' || args[i] === '-p') continue; // target flag, handled above
-    const spec = flagMap.get(args[i]);
+    const spec = flagMap.get(args[i])
     if (!spec) { console.error(`Error: Unrecognized option '${args[i]}'`); printHelp(); process.exitCode = 1; return; }
-    const parsed = parseValue(spec, args[++i]);
+    // Peek at the next token: consume it as the value only if it exists AND does not
+    // look like a flag (does not start with '-'). A flag-shaped next token means the
+    // user forgot the value — pass undefined so parseValue emits the "needs a value" error
+    // rather than silently swallowing the next flag as data (M7a fix).
+    const nextToken = args[i + 1]
+    const rawValue = (nextToken !== undefined && !nextToken.startsWith('-')) ? args[++i] : undefined
+    const parsed = parseValue(spec, rawValue)
     if (parsed.error) { console.error(`Error: ${parsed.error}`); process.exitCode = 1; return; }
     edits.push([spec.key, parsed.value]);
   }

@@ -207,6 +207,49 @@ test('WHOLE-WORD plurals of sensitive nouns fire the never-down gate (no plural 
   assert.equal(grade({ prompt: 'write a tokenizer', sizeUnits: 50 }).grade, 2, 'plural additions must NOT re-open the token->tokenizer FP');
 });
 
+test('H2 never-down bypass CLOSED: a sensitive path containing an EXCLUDE substring is still sensitive', () => {
+  // The hard gate: a sensitive path must NEVER be dropped by the directory-exclude filter.
+  // pre-fix: EXCLUDE used .includes() so 'src/auth-dist/login.js' contained 'dist' -> the file
+  // was dropped before the sensitive check -> sensitive=false -> never-down gate silently bypassed.
+  const r = grade({ prompt: 'small tweak', files: [{ path: 'src/auth-dist/login.js', lines: 30 }] });
+  assert.equal(r.sensitive, true, 'auth-dist path is sensitive (gate HOLDS despite the dist substring)');
+  assert.equal(r.grade, 4, 'sensitive path forces grade >=4');
+  assert.match(r.reasons.join(' '), /sensitive path/);
+});
+
+test('H2 size under-count CLOSED: a real file containing an EXCLUDE substring is NOT excluded', () => {
+  // 'src/payment/distributor.js' contains 'dist' -> pre-fix it was wrongly excluded and its
+  // size/sensitivity vanished. Segment-matching excludes a `dist/` DIR only, not `distributor.js`.
+  const r = grade({ prompt: 'rename a helper', files: [{ path: 'src/payment/distributor.js', lines: 200 }] });
+  assert.equal(r.grade, 4, 'the file counts (1 file + sensitive payment path -> >=4), not silently dropped');
+  assert.equal(r.sensitive, true, 'payment is a sensitive path');
+  // and a genuine size case: distributor.js alone must register as a counted file, not vanish.
+  const sz = grade({ prompt: 'edit', files: [{ path: 'lib/distributor.js', lines: 50 }] });
+  assert.equal(sz.grade, 2, '1 counted file -> grade 2 (not the 1/trivial of a dropped file)');
+});
+
+test('EXCLUDE matches a whole SEGMENT, not a substring — genuine excluded dirs still excluded (both / and \\)', () => {
+  // A real excluded directory still drops out of breadth (the original behavior preserved)...
+  assert.equal(grade({ prompt: 'x', files: [{ path: 'node_modules/foo/a.js', lines: 9999 }] }).grade, 1, 'node_modules/ still excluded');
+  assert.equal(grade({ prompt: 'x', files: [{ path: 'dist/bundle.js', lines: 9999 }] }).grade, 1, 'a real dist/ dir still excluded');
+  assert.equal(grade({ prompt: 'x', files: [{ path: 'src/dist/chunk.js', lines: 9999 }] }).grade, 1, 'dist/ as an inner segment still excluded');
+  // ...and it matches a Windows-separated path too (cross-platform: split on \\ as well as /).
+  assert.equal(grade({ prompt: 'x', files: [{ path: 'project\\dist\\bundle.js', lines: 9999 }] }).grade, 1, 'dist excluded on a \\-separated path');
+  assert.equal(grade({ prompt: 'x', files: [{ path: 'project\\node_modules\\pkg\\i.js', lines: 9999 }] }).grade, 1, 'node_modules excluded on a \\-separated path');
+  // ...but a NON-directory substring match no longer excludes (the over-match that caused the under-count).
+  assert.equal(grade({ prompt: 'x', files: [{ path: 'src/distributor.js', lines: 50 }] }).grade, 2, 'distributor.js is NOT excluded (dist is only a substring)');
+  assert.equal(grade({ prompt: 'x', files: [{ path: 'src/build-tools.js', lines: 50 }] }).grade, 2, 'build-tools.js is NOT excluded (build is only a substring)');
+});
+
+test('H2: a real sensitive crypto/auth/payment path is sensitive REGARDLESS of any exclude substring', () => {
+  // The decoupling property: sensitivity is checked over the pre-exclusion list, so no
+  // exclude word (dist/build/vendor/coverage/...) can ever strip the never-down flag.
+  assert.equal(grade({ prompt: 'tweak', files: [{ path: 'src/crypto-dist/sign.js', lines: 10 }] }).sensitive, true, 'crypto path + dist substring -> still sensitive');
+  assert.equal(grade({ prompt: 'tweak', files: [{ path: 'auth/build-helper.js', lines: 10 }] }).sensitive, true, 'auth path + build substring -> still sensitive');
+  assert.equal(grade({ prompt: 'tweak', files: [{ path: 'payment\\dist\\charge.js', lines: 10 }] }).sensitive, true, 'payment path + dist segment (\\-sep) -> still sensitive');
+  assert.equal(grade({ prompt: 'tweak', files: [{ path: 'security/coverage-report.js', lines: 10 }] }).sensitive, true, 'security path + coverage substring -> still sensitive');
+});
+
 test('a config.keywords grade is clamped to 1-5 — the grader never emits an undefined tier', () => {
   const hi = grade({ prompt: 'frobnicate', config: { keywords: { x: { grade: 9, words: ['frobnicate'] } } } });
   assert.equal(hi.grade, 5);          // 9 -> clamped to 5

@@ -143,3 +143,76 @@ test('an unknown flag fails loud and writes nothing', () => {
     assert.ok(!fs.existsSync(projectPath(p.dir)));
   } finally { cleanup(p); }
 });
+
+// H1: editing the last key (gitRecoveryBoundary — no trailing comma in factory) must NOT
+// corrupt the file. After the write the file must parse cleanly AND hold the new value.
+test('H1: editing the last config key (gitRecoveryBoundary) does not corrupt the file', () => {
+  const p = freshProject();
+  try {
+    const r = run(p, '--gitRecoveryBoundary', 'on');
+    assert.equal(r.status, 0, `expected exit 0 but got: ${r.stderr}`);
+    const raw = fs.readFileSync(globalPath(p.home), 'utf8');
+    // Must parse cleanly — a trailing-comma bug would throw here.
+    const cfg = stripJsonc(raw);
+    assert.equal(cfg.gitRecoveryBoundary, 'on', 'gitRecoveryBoundary must be updated to on');
+    // The factory has no trailing comma after gitRecoveryBoundary — the rewrite must not add one.
+    assert.ok(!/"gitRecoveryBoundary"[^,\n]*,/.test(raw), 'last key must not gain a trailing comma');
+  } finally { cleanup(p); }
+});
+
+// H1 (regression): editing the first key still works after the same fix.
+test('H1 (regression): editing a non-last key (qualityBar) still works correctly', () => {
+  const p = freshProject();
+  try {
+    const r = run(p, '--qualityBar', '75');
+    assert.equal(r.status, 0, r.stderr);
+    const cfg = stripJsonc(fs.readFileSync(globalPath(p.home), 'utf8'));
+    assert.equal(cfg.qualityBar, 75);
+  } finally { cleanup(p); }
+});
+
+// M6: a trailing // comment on the rewritten line must be preserved.
+test('M6: trailing // comment on the rewritten line is preserved', () => {
+  const p = freshProject();
+  try {
+    fs.mkdirSync(path.join(p.dir, '.claude'), { recursive: true });
+    // Write a config where the value line has a trailing comment.
+    fs.writeFileSync(projectPath(p.dir),
+      '{\n  "mode": "auto", // routing direction\n  "qualityBar": 60\n}\n', 'utf8');
+    const r = run(p, '--project', '--mode', 'delegation');
+    assert.equal(r.status, 0, r.stderr);
+    const raw = fs.readFileSync(projectPath(p.dir), 'utf8');
+    assert.ok(raw.includes('// routing direction'), 'trailing comment on rewritten line must survive');
+    const cfg = stripJsonc(raw);
+    assert.equal(cfg.mode, 'delegation', 'value must be updated');
+  } finally { cleanup(p); }
+});
+
+// M7a: a strArr flag must NOT swallow the following flag as its value.
+test('M7a: --sensitive followed by another flag does not swallow that flag as value', () => {
+  const p = freshProject();
+  try {
+    // --sensitive with no value (next token is --mode, a flag) must error, not eat --mode.
+    const r = run(p, '--sensitive', '--mode', 'delegation');
+    assert.notEqual(r.status, 0, 'expected non-zero exit when strArr is given a flag as its value');
+    assert.match(r.stderr, /sensitivePaths needs a comma-separated value/);
+  } finally { cleanup(p); }
+});
+
+// M7b: -p is reserved for --project; updateCheckDays uses -P (uppercase).
+test('M7b: -p resolves to --project (not updateCheckDays); -P sets updateCheckDays', () => {
+  const p = freshProject();
+  try {
+    // -p without a key flag must be treated as --project; qualityBar arg selects GLOBAL above.
+    // Using `-p --qualityBar 70` should write the PROJECT config (not fail with "Unrecognized '70'").
+    const r = run(p, '-p', '--qualityBar', '70');
+    assert.equal(r.status, 0, r.stderr);
+    assert.ok(fs.existsSync(projectPath(p.dir)), '-p must write the project config');
+    assert.equal(stripJsonc(fs.readFileSync(projectPath(p.dir), 'utf8')).qualityBar, 70);
+
+    // -P (uppercase) must set updateCheckDays.
+    const r2 = run(p, '-P', '30');
+    assert.equal(r2.status, 0, r2.stderr);
+    assert.equal(stripJsonc(fs.readFileSync(globalPath(p.home), 'utf8')).updateCheckDays, 30);
+  } finally { cleanup(p); }
+});

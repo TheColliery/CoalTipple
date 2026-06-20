@@ -42,7 +42,7 @@ export const CONFIG_SCHEMA = [
   { key: 'contextFiles', type: 'strArr', flags: ['-C', '--context'], help: 'Memory-anchor file(s) a fresh worker reads for project context/conventions beyond the task contract (any name). Empty = rely on platform memory (CLAUDE.md/AGENTS.md). Comma-separated paths' },
   { key: 'memoryOffer', type: 'enum', values: ['auto', 'off'], flags: ['--memory'], help: 'When no memory anchor exists, offer (lazily, once) to set one up: auto (default) or off (disabled/skipped; re-enable via /coaltipple memory)' },
   { key: 'updateMode', type: 'enum', values: ['ask', 'auto', 'remind', 'off'], flags: ['-u', '--update-mode'], help: 'Self-update behavior at session start (ask, auto, remind, off; default: ask). Orthogonal to routing — its own off-switch' },
-  { key: 'updateCheckDays', type: 'int', min: 1, max: 365, flags: ['-p', '--update-days'], help: 'Days between self-update checks/reminders (range 1-365, default: 14)' },
+  { key: 'updateCheckDays', type: 'int', min: 1, max: 365, flags: ['-P', '--update-days'], help: 'Days between self-update checks/reminders (range 1-365, default: 14). Short flag -P (uppercase; -p is reserved for --project)' },
   { key: 'modelTiers', type: 'obj', noFlag: true, help: 'Optional user pins overriding auto-classification: { local|low|mid|heavy|reasoning: "model" | ["priority","chain"] }' },
 ];
 
