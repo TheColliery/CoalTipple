@@ -85,7 +85,17 @@ function mergeKeywordGroups(config) {
       if (!grp || typeof grp !== 'object' || !Array.isArray(grp.words)) continue;
       const base = groups[name] || {};
       const baseWords = Array.isArray(base.words) ? base.words : [];
-      groups[name] = { ...base, ...grp, words: [...new Set([...baseWords, ...grp.words])] };
+      const merged = { ...base, ...grp, words: [...new Set([...baseWords, ...grp.words])] };
+      // A config may ADD to a BUILT-IN group but NEVER WEAKEN its safety (the never-down gate):
+      // keep the factory `sensitive`/`preserveVoice` flags and never lower the grade below the
+      // factory floor — so `{crypto:{grade:1,sensitive:false}}` cannot un-gate the built-in crypto group.
+      if (Object.prototype.hasOwnProperty.call(DEFAULT_KEYWORD_GROUPS, name)) {
+        if (base.sensitive) merged.sensitive = true;
+        if (base.preserveVoice) merged.preserveVoice = true;
+        const baseG = Number(base.grade);
+        if (Number.isFinite(baseG)) merged.grade = Math.max(baseG, Number(merged.grade) || 0);
+      }
+      groups[name] = merged;
     }
   }
   if (Array.isArray(config.hotKeywords) && config.hotKeywords.length) {
@@ -120,8 +130,13 @@ export function grade(args = {}) {
   let sensitive = false;
   let preserveVoice = false;
 
-  const sensitivePaths = config.sensitivePaths && config.sensitivePaths.length ? config.sensitivePaths : DEFAULT_SENSITIVE;
-  const exclude = config.excludePaths && config.excludePaths.length ? config.excludePaths : DEFAULT_EXCLUDE;
+  // UNION config.sensitivePaths with the factory DEFAULT_SENSITIVE — NEVER replace. A REPLACE
+  // let the documented `configure --sensitive <path>` workflow DROP the built-in crypto/auth/
+  // payment/token/session fragments, so a sensitive file + neutral prompt graded sensitive:false
+  // → eligible for delegate-DOWN = the never-down gate defeated. The config ADDS paths, it can
+  // never silently drop a built-in sensitive path (mirrors the keyword-group words UNION).
+  const sensitivePaths = Array.isArray(config.sensitivePaths) && config.sensitivePaths.length ? [...new Set([...DEFAULT_SENSITIVE, ...config.sensitivePaths])] : DEFAULT_SENSITIVE;
+  const exclude = Array.isArray(config.excludePaths) && config.excludePaths.length ? [...new Set([...DEFAULT_EXCLUDE, ...config.excludePaths])] : DEFAULT_EXCLUDE;
   const text = String(prompt).toLowerCase();
 
   // 1. Content size / breadth (excluded dirs never count). Lines for code, or a

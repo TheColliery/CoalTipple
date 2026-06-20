@@ -132,9 +132,14 @@ test('keyword merge is SAFE: a config override cannot silently strip the sensiti
   // override `coding` with a narrow word list -> a built-in sensitive word ('payment') STILL fires (union, not replace)
   const drop = grade({ prompt: 'process the payment', config: { keywords: { coding: { grade: 4, sensitive: true, words: ['unrelatedword'] } } } });
   assert.equal(drop.sensitive, true, 'built-in sensitive word survives a config word override (union)');
-  // an explicit sensitive:false is still honored (a deliberate opt-out is allowed)
-  const optout = grade({ prompt: 'add a nonce value', config: { keywords: { crypto: { grade: 5, sensitive: false, words: ['nonce'] } } } });
-  assert.equal(optout.sensitive, false, 'explicit sensitive:false is honored');
+  // CT-2 (audit fix): an explicit sensitive:false / sub-floor grade on a BUILT-IN sensitive group is
+  // REJECTED — a config may ADD sensitivity, never strip the never-down floor off a factory gate.
+  const optout = grade({ prompt: 'add a nonce value', config: { keywords: { crypto: { grade: 1, sensitive: false, words: ['nonce'] } } } });
+  assert.equal(optout.sensitive, true, 'built-in crypto stays sensitive despite config sensitive:false');
+  assert.ok(optout.grade >= 5, 'built-in crypto grade cannot be lowered below its factory floor');
+  // a CUSTOM (non-built-in) group is fully user-defined — there an explicit sensitive:false IS honored.
+  const custom = grade({ prompt: 'touch the frobnicator', config: { keywords: { frobs: { grade: 2, sensitive: false, words: ['frobnicator'] } } } });
+  assert.equal(custom.sensitive, false, 'a custom group is not a built-in floor — explicit sensitive:false honored');
 });
 
 test('non-English prompt: deterministic layer returns grade 1 (English-only seed, BY DESIGN)', () => {

@@ -2,6 +2,16 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.0.18] - 2026-06-21
+
+Round-2 dogfood audit (CoalBoard whole-Colliery, the user as customer) — the never-delegate-down gate hardened against a config bypass.
+
+### Fixed
+- **CT-1 (HIGH · security):** `scripts/lib/grade.mjs` — `sensitivePaths` now UNIONs the config with `DEFAULT_SENSITIVE` instead of REPLACING it. The documented `configure.mjs --sensitive <path>` workflow used to DROP the built-in crypto/auth/payment/token/session path fragments, so a sensitive file + a neutral prompt graded `sensitive:false` → eligible for delegate-DOWN → defeating the never-down guarantee. (`excludePaths` UNIONs too — the same systemic REPLACE pattern.)
+- **CT-2 (MED · security):** `mergeKeywordGroups` no longer lets a config WEAKEN a BUILT-IN sensitive group — the factory `sensitive`/`preserveVoice` flags stay set and the grade cannot drop below the factory floor (so `{crypto:{grade:1,sensitive:false}}` can't un-gate the built-in crypto group). A config may still ADD words; a custom (non-built-in) group is fully user-defined.
+
+Gate: build (plugin + dist) + verify + 135 tests PASS.
+
 ## [1.0.17] - 2026-06-20
 
 CoalBoard-audit hardening (dogfood) — scripts/CLI bugfixes. The shipped `plugin/` runtime is unchanged; these fix the user-run CLIs + the grade reference.
