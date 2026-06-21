@@ -2,6 +2,15 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.0.19] - 2026-06-21
+
+SKILL.md load-path carve (token economy) — routing behavior unchanged.
+
+### Changed
+- **#9 carve** — the always-resident SKILL.md body compressed −29% (32,295 → 22,875 chars): the rare ranking-REBUILD procedure + its rationale moved to `references/lock.md`, and the damage-control mechanics + the memory-anchor lifecycle + self-error-report moved to `references/damage-control.md` (both loaded ON-DEMAND, off the every-prompt routing path). Every auto-path behavior stays resident — the grade rubric, the TIER×EFFORT route table, the sensitive HARD GATE, the qualityBar staircase, delegate-floor, budget-gate, spawn-fail-fall, and the Lock's routing rules. Rolls the CoalBoard load-path carve (skill-authoring §4) to CoalTipple.
+
+Gate: build (2-step) + 135 tests + verify PASS.
+
 ## [1.0.18] - 2026-06-21
 
 Round-2 dogfood audit (CoalBoard whole-Colliery, the user as customer) — the never-delegate-down gate hardened against a config bypass.
