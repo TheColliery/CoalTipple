@@ -1,10 +1,10 @@
 # CoalTipple CodeQL config.
-# CoalTipple is the series' deliberate no-semicolon repo (StandardJS-style). CodeQL's
-# security-and-quality suite includes js/automatic-semicolon-insertion — a QUALITY rule
-# (security_severity: none) that flags every statement in a no-semicolon codebase = pure
-# noise here. The flagged spots are ASI-safe (the following line always begins with a
-# keyword like const/if, never a continuation token), so there is no actual mis-parse.
-# Exclude that one quality rule; keep ALL security queries + the rest of the quality suite.
+# js/automatic-semicolon-insertion is excluded because it is a style/quality rule
+# (security_severity: none) and every flagged spot is ASI-safe: the line that follows
+# each statement always begins with a keyword (const, let, if, return, …) rather than
+# a continuation token (open-paren, open-bracket, template-literal, etc.), so the JS
+# engine cannot mis-parse the boundary. There is no actual mis-parse risk; the alert
+# is noise. ALL security queries and the rest of the quality suite are kept.
 name: "CoalTipple CodeQL config"
 queries:
   - uses: security-and-quality
