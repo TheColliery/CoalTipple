@@ -2,28 +2,30 @@
 
 # 🚂 CoalTipple
 
+> A *tipple* is the sorting-and-rail-switching station of a coal mine — this one switches rails for prompts across models.
+
 **A model/effort router for Claude Code** — delegate a task you *can* do but that is large and cheap *down* to a cheaper tier to save tokens, and hand a task beyond your reach *up* to a stronger tier for quality.
 
 ![version](https://img.shields.io/github/v/tag/TheColliery/CoalTipple?label=version&color=blue)
 ![license](https://img.shields.io/badge/license-MIT-blue)
+![status](https://img.shields.io/badge/status-live-brightgreen)
 ![SKILL.md](https://img.shields.io/badge/SKILL.md-open_standard-success)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-validated-success)
-![status](https://img.shields.io/badge/status-live-brightgreen)
 
-[Changelog](CHANGELOG.md) · [Security](SECURITY.md) · [Privacy](PRIVACY.md) · [Releases](https://github.com/TheColliery/CoalTipple/releases)
+[Benchmark](https://github.com/TheColliery/.github/tree/main/benchmarks/CoalTipple) · [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md) · [Security](SECURITY.md) · [Privacy](PRIVACY.md) · [Releases](https://github.com/TheColliery/CoalTipple/releases)
 
 **Part of [TheColliery](https://github.com/TheColliery)** — siblings: **[CoalMine](https://github.com/HetCreep/CoalMine)** (quality canaries) · **[CoalBoard](https://github.com/TheColliery/CoalBoard)** (consensus & debate board).
 
 </div>
 
-✅ **Live -- in real use on Claude Code.** The v1 core is validated on **Claude Code** (across the 2.1.x line) and active; the conductor hook fires a routing forcer on every prompt.
+---
 
 > [!CAUTION]
 > **Claude Code only.** CoalTipple's routing only actuates where an agent can pick a spawned worker's model + effort. Today that is **Claude Code**. **Antigravity does NOT work** -- its subagents inherit the parent's model (no per-spawn model parameter, no separate effort knob), so routing cannot actuate there. Other platforms (Codex, Cursor, ...) are under monthly review.
 
 ---
 
-## 🚂 What CoalTipple is
+## 🚂 What it is
 
 A *tipple* is the sorting-and-rail-switching station of a coal mine. This tool switches rails for **prompts across models** (alongside [CoalMine](https://github.com/HetCreep/CoalMine)).
 
@@ -47,7 +49,7 @@ You are **main**. CoalTipple decides, per task, whether to:
 
 ---
 
-## 🚀 Installation
+## 🚀 Install
 
 ### Claude Code plugin
 
@@ -120,9 +122,9 @@ Workers start context-fresh. A **memory anchor** file gives a fresh worker proje
 
 ---
 
-## ⚙️ Configuration (.coaltipple.json)
+## ⚙️ Configure
 
-Shops zero-config with optimal defaults. Precedence: **project override → global config → schema default**.
+Ships zero-config with optimal defaults in `.coaltipple.json`. Precedence: **project override → global config → schema default**.
 
 Key settings (see [`scripts/lib/config-schema.mjs`](scripts/lib/config-schema.mjs) for the full SSoT schema):
 
@@ -147,34 +149,14 @@ node scripts/configure.mjs --help                        # view all schema-drive
 
 ---
 
-## 📊 Benchmark — Routing & Output Correctness
+## 📊 Benchmark
 
-We evaluate both routing decisions (the Lock and probe tasks) and final output correctness:
+We evaluate the **final output correctness** after the main escalates one rung, and the **token savings** of delegating mechanical bulk down — each dated, on small honest samples, never inlined here so a copied number cannot drift.
 
-**Routing Decisions (Measured 2026-06-14/15, CoalTipple v1.0.3):**
+* **Output correctness (+1-rung escalation):** **20/20** — every main, escalating one rung, delivered correctly across all 5 domains (crypto · proof · research · legal · voice; measured 2026-06-15, v1.0.3).
+* **Routing savings:** delegating a big mechanical task down from Opus to a cheaper tier ran **~70–75% cheaper** — holding only above the `delegateMinLines` floor and never on sensitive work (measured 2026-06-19, version-sensitive rates).
 
-| Probe Task | What it Evaluates | Pass Rate |
-|---|---|---|
-| **A: Delegate-down** | Large, mechanical tasks offloaded correctly | **7 / 7 tiers** |
-| **B: Sensitive safety** | Crypto/auth tasks stay on heavy/main tier | **7 / 7 tiers** |
-| **C: Escalate-up** | Tasks beyond main's tier escalate for quality | **7 / 7 tiers** |
-| **D: Context routing** | Right model capacity mapped correctly | **7 / 7 tiers** |
-| **Lock ranking** | Correct tier order classification | **5 / 7 tiers** |
-
-**Output Correctness (+1 Rung Escalation):**
-
-| Main Model | Escalation Rung | Task Domains (Crypto, Proof, Research, Legal, Voice) | Output Pass Rate |
-|---|---|---|---|
-| `Haiku` | ➡️ `Sonnet` | 5/5 tasks | **100%** |
-| `Sonnet` | ➡️ `Opus` | 5/5 tasks | **100%** |
-| `Opus 4.6` | ➡️ Self-inline | 5/5 tasks | **100%** |
-| `Opus 4.7` | ➡️ Self-inline | 5/5 tasks | **100%** |
-
-*Total: 20/20 PASS deliverables generated correctly.*
-
-**Routing Savings (Measured 2026-06-19):** main does it itself vs delegates a big mechanical task (a 12-handler API scaffold) to a cheap worker — **~70–75% cheaper** to delegate down (Opus is 5× Haiku per token; the cheap tier also ran terser, 51k vs 71k tokens). The saving holds only **above** the `delegateMinLines` floor (a small task costs more to hand off than to do inline) and **never** applies to sensitive work (the hard gate). Detail: [`benchmarks/CoalTipple/ROUTING-SAVINGS.md`](https://github.com/TheColliery/.github/blob/main/benchmarks/CoalTipple/ROUTING-SAVINGS.md).
-
-The full benchmark harnesses (tasks, scorer, results) live in the series umbrella at [`TheColliery/.github/benchmarks/CoalTipple`](https://github.com/TheColliery/.github/tree/main/benchmarks/CoalTipple).
+Full harnesses, per-task scoring, and the dated figures live in the series umbrella: [`TheColliery/.github/benchmarks/CoalTipple`](https://github.com/TheColliery/.github/tree/main/benchmarks/CoalTipple) ([output-quality RESULTS](https://github.com/TheColliery/.github/blob/main/benchmarks/CoalTipple/RESULTS.md) · [routing savings](https://github.com/TheColliery/.github/blob/main/benchmarks/CoalTipple/ROUTING-SAVINGS.md)).
 
 ---
 

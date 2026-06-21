@@ -59,7 +59,7 @@ CoalTipple is **Claude Code only**. Routing actuates only where an agent can pic
 
 ## 🚀 Releasing (Maintainers)
 
-Bump version in `.claude-plugin/plugin.json` ➡️ Add changelog entry in `CHANGELOG.md` ➡️ Ensure `verify.mjs` and `test.mjs` pass ➡️ Commit ➡️ Create signed git tag (`vX.Y.Z`) ➡️ Push ➡️ Create a GitHub Release.
+Bump version in `.claude-plugin/plugin.json` ➡️ Add a changelog entry in `CHANGELOG.md` ➡️ Ensure `verify.mjs` and `test.mjs` pass ➡️ Commit ➡️ Create a signed git tag (`vX.Y.Z`) ➡️ Push `--follow-tags` ➡️ Create a GitHub Release (stable tags only).
 
 ---
 
