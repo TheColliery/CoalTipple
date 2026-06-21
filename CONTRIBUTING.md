@@ -19,8 +19,11 @@ CoalTipple is **zero-dependency** (built using Node.js built-ins only, Node 18+)
 Keep the verification gates green before and after making edits:
 
 ```bash
-node scripts/verify.mjs   # validates config schemas, plugins, and SSoT sync
-node scripts/test.mjs     # runs the zero-dependency test runner (node --test)
+# after editing a skill, hook, or manifest, rebuild the dist FIRST — verify checks dist-sync:
+node scripts/build-plugin.mjs   # re-sync the conductor from keywords.mjs (the SSoT)
+node scripts/build-dist.mjs     # compile plugin/ from source
+node scripts/verify.mjs         # validates config schemas, plugins, and SSoT sync
+node scripts/test.mjs           # runs the zero-dependency test runner (node --test)
 ```
 
 ### Development Rules

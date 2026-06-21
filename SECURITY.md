@@ -34,9 +34,8 @@ CoalTipple is distributed as source (human-auditable skill Markdown). The plugin
 
 ---
 
-## 🔬 Independent Scanning — NVIDIA SkillSpector
-
 <!-- version-transition: the pin below reflects the LAST ACTUAL scan -- do NOT bump the scanner/CoalTipple version or score without a real re-scan (an unscanned version's security is UNVERIFIED; never claim coverage). Re-scan periodically or on a significant SKILL.md change, then re-sync. Findings reference the SKILL.md section by NAME (not a line number) so they do not drift on a skill edit. Last scan: SkillSpector v2.2.3, CoalTipple v1.0.16 (commit 79143ba), 2026-06-20, static stage -- score 100/100 (CRITICAL, all false-positive), 9 issues (RA1 self-update x8 + RA2 memory-anchor). Authoritative report: skillspector-20260620.json (local). -->
+## 🔬 Independent Scanning — NVIDIA SkillSpector
 
 CoalTipple is evaluated against [NVIDIA SkillSpector](https://github.com/NVIDIA/skillspector) v2.2.3. **Last scan: CoalTipple v1.0.16 (commit `79143ba`), 2026-06-20.** Scanning is event-driven (a new SkillSpector version, or a genuinely new attack surface) — this pins the last version actually verified.
 

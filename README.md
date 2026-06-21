@@ -153,7 +153,7 @@ node scripts/configure.mjs --help                        # view all schema-drive
 
 We evaluate the **final output correctness** after the main escalates one rung, and the **token savings** of delegating mechanical bulk down — each dated, on small honest samples, never inlined here so a copied number cannot drift.
 
-* **Output correctness (+1-rung escalation):** **20/20** — every main, escalating one rung, delivered correctly across all 5 domains (crypto · proof · research · legal · voice; measured 2026-06-15, v1.0.3).
+* **Output correctness (+1-rung escalation):** **20/20** — every main, escalating one rung, delivered correctly across all 5 domains (crypto · proof · research · legal · voice; measured on v1.0.3, 2026-06-15 — predates the v1.0.18 sensitive-path grading change that touches the crypto + legal tasks, so not yet re-benchmarked; see the record).
 * **Routing savings:** delegating a big mechanical task down from Opus to a cheaper tier ran **~70–75% cheaper** — holding only above the `delegateMinLines` floor and never on sensitive work (measured 2026-06-19, version-sensitive rates).
 
 Full harnesses, per-task scoring, and the dated figures live in the series umbrella: [`TheColliery/.github/benchmarks/CoalTipple`](https://github.com/TheColliery/.github/tree/main/benchmarks/CoalTipple) ([output-quality RESULTS](https://github.com/TheColliery/.github/blob/main/benchmarks/CoalTipple/RESULTS.md) · [routing savings](https://github.com/TheColliery/.github/blob/main/benchmarks/CoalTipple/ROUTING-SAVINGS.md)).
@@ -161,7 +161,7 @@ Full harnesses, per-task scoring, and the dated figures live in the series umbre
 ---
 
 ## 🧭 Part of TheColliery
-CoalTipple shares its engineering doctrine with [CoalMine](https://github.com/HetCreep/CoalMine) and [CoalBoard](https://github.com/TheColliery/CoalBoard): Phoenix-13 hooks (zero-dependency, no network, fail-silent, no child processes, deterministic), single-source-of-truth config schemas, and a strict no-overkill discipline.
+CoalTipple shares its engineering doctrine with [CoalMine](https://github.com/HetCreep/CoalMine) and [CoalBoard](https://github.com/TheColliery/CoalBoard): Phoenix-13 hooks (zero-dependency, no network, fail-silent, no child processes, deterministic), single-source-of-truth config schemas, and a strict no-overkill discipline. Install one and it stands alone; install all and they compose without conflict.
 
 ## 📄 License
 MIT License. See [LICENSE](LICENSE) for details.
