@@ -17,6 +17,7 @@ function run(input, cwd, home) {
   const stdin = typeof input === 'string' ? input : JSON.stringify(input);
   const env = { ...process.env };
   if (home) { env.USERPROFILE = home; env.HOME = home; }
+  delete env.CLAUDE_CONFIG_DIR;
   return spawnSync(process.execPath, [HOOK], { input: stdin, cwd, env, encoding: 'utf8', timeout: 20000 });
 }
 const mk = () => fs.mkdtempSync(path.join(os.tmpdir(), 'ct-hook-'));

@@ -13,7 +13,7 @@ const INSTALL = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'i
 function mkHome() { return fs.mkdtempSync(path.join(os.tmpdir(), 'ct-install-home-')); }
 const run = (cwd, home, ...a) =>
   spawnSync(process.execPath, [INSTALL, ...a],
-    { cwd, env: { ...process.env, USERPROFILE: home, HOME: home }, encoding: 'utf8', timeout: 30000 });
+    { cwd, env: { ...process.env, USERPROFILE: home, HOME: home, CLAUDE_CONFIG_DIR: undefined }, encoding: 'utf8', timeout: 30000 });
 
 // Canonical NEW paths (everything under .claude): the project config + state live at
 // <cwd>/.claude; the SHARED model ranking lives at <home>/.claude/.coaltipple/.

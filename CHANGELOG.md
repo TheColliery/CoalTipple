@@ -2,6 +2,21 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.0.20] - 2026-06-21
+
+Board-audit fixes (verify-triaged from the whole-Colliery nasa board) — bugfixes + doc accuracy, routing behavior unchanged.
+
+### Fixed
+- **Hermetic-isolation gap in the spawn tests** — `conductor.test.mjs` + `install.test.mjs` `run()` now `delete env.CLAUDE_CONFIG_DIR`, so the tests can't read/write a real config dir on a machine/CI where that env var is set.
+- **config-path-sync FALSE GUARD CLAIM** — the `config-load.mjs`/conductor comment claimed `verify.mjs` compares the `findGitRoot` function BODIES; it only substring-checks the path segment. Comment corrected to match the gate (no false guarantee).
+- **updateCheckDays validation drift** — the conductor's inline read now applies the schema bound (int 1-365), matching `config-schema.mjs` (`1.5`/`99999` no longer slips through).
+- **README:97 stale capability claim** — "Workers cannot spawn nested subagents" (the pre-2.1.172 framing the project disavowed) corrected to the by-policy framing.
+- **PRIVACY.md path accuracy** — the model ranking is GLOBAL (`~/.claude/.coaltipple/ranking.json`), not project-scoped; restored the `.claude/` segment on the project-config path.
+- **factory config `xhigh` → `max`** — the `.coaltipple.json` ultracode comment used `xhigh`; the ladder is `low→max` (corrected in [1.0.15]).
+- **config comments** — `modelTiers` dropped the non-existent `local` tier; `keywords` added the omitted `audit` group; `config-load.mjs` header path corrected to `<gitroot>/.claude/.coaltipple.json`.
+
+Gate: build (2-step) + 135 tests + verify PASS.
+
 ## [1.0.19] - 2026-06-21
 
 SKILL.md load-path carve (token economy) — routing behavior unchanged.

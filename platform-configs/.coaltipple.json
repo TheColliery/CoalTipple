@@ -76,7 +76,7 @@
 
   // ─── levers ───
 
-  // ## Allow the ultracode top rung (xhigh + multi-agent fan-out) for genuinely broad, independent work.
+  // ## Allow the ultracode top rung (max effort + multi-agent fan-out) for genuinely broad, independent work.
   // # Setting type: Boolean
   // # Default value: true
   "ultracodeEnabled": true,
@@ -93,7 +93,7 @@
   // ## Routing rides the tier STRUCTURE + the unknown->heavy rule + the spawn-fail-fall, never an exact list.
   // ## Optional pins are the one human override — name a model introspection cannot see (released after a
   // ## model's training cutoff) or correct a tier. A pin front-loads its model(s) into the named tier.
-  // # Setting type: Object { local | low | mid | heavy | reasoning : "model" | ["priority", "chain"] }  (cheapest tier is `low`, not `cheap`)
+  // # Setting type: Object { low | mid | heavy | reasoning : "model" | ["priority", "chain"] }  (cheapest tier is `low`, not `cheap`)
   // # Default value: unset (the alias floor applies; pins overlay it when set)
   // "modelTiers": { "low": "haiku", "mid": "sonnet", "heavy": "opus", "reasoning": ["Fable 5", "opus"] },
 
@@ -122,7 +122,7 @@
   // ## deterministic grader scans the prompt for these; difficulty always overrides size. This is the heart of
   // ## topic-aware routing — add/remove a word or change a grade to tune how cautious CoalTipple is per domain.
   // ## Ships POPULATED below (edit directly); set `keywords`: {} instead to fall back to the built-ins — which then track skill updates).
-  // ## Groups: concurrency · crypto · security · coding · math · knowledge · domain · creative.
+  // ## Groups: concurrency · crypto · security · coding · audit · math · knowledge · domain · creative.
   // ## To OVERRIDE one: your entry replaces that group's grade/words; omit a group to keep its shipped default.
   // ## KEEP `crypto` at grade 5 + sensitive: that is the never-down safety gate.
   // ##   e.g.  "keywords": { "crypto": { "grade": 5, "sensitive": true, "words": ["crypto", "nonce", "kdf"] } }

@@ -1,7 +1,7 @@
 // CoalTipple config cascade — the 2-level merge that every config reader uses.
 //
 //   GLOBAL  = <home>/.claude/.coaltipple.json   the user's defaults for ALL projects
-//   PROJECT = <cwd>/.claude/.coaltipple.json     optional per-project OVERRIDE
+//   PROJECT = <gitroot>/.claude/.coaltipple.json optional per-project OVERRIDE
 //
 // Precedence (shallow, per-key): PROJECT value > GLOBAL value > schema default.
 // A project file is created ONLY when the user customizes per-project (no-clutter):
@@ -9,7 +9,7 @@
 //
 // State dirs (NOT part of the config merge):
 //   GLOBAL  <home>/.claude/.coaltipple/  the model RANKING (platform-level, shared)
-//   PROJECT <cwd>/.claude/.coaltipple/   per-project work-state (proposed/, state.json)
+//   PROJECT <gitroot>/.claude/.coaltipple/   per-project work-state (proposed/, state.json)
 // Everything CoalTipple writes lives UNDER .claude/, mirroring CoalMine's layout:
 // global under ~/.claude, project under <project>/.claude, nothing loose at the root.
 //
@@ -51,7 +51,8 @@ export function globalConfigPath(home = os.homedir()) {
 // when none is found (git is OPTIONAL — a non-git project still resolves to its own
 // dir). Anchors the PROJECT config/state at the git root so a subdir cwd reads the
 // SAME file the conductor + configure do (they each inline an identical copy — Phoenix
-// #9 keeps the hook standalone; verify.mjs's config-path-sync gate guards the drift).
+// #9 keeps the hook standalone; verify.mjs's config-path-sync gate guards the project-config
+// PATH SEGMENTS, not the function body).
 // Keep this logic byte-identical to the conductor's + configure's inlined copies.
 export function findGitRoot(startDir = process.cwd()) {
   let dir = path.resolve(startDir);

@@ -94,7 +94,7 @@ Routing adjusts **two independent knobs** (always raise effort before tier):
 * **Overhead Floor:** Tasks below `delegateMinLines` (default 120) stay on main to avoid spawn overhead.
 * **Prose Preservation:** User-facing writing and translation stay on main to protect voice.
 * **Verify, Do Not Eyeball:** Output merges require passing objective checks (`qaOnMerge`: strict/standard/off).
-* **Workers are Leaves:** Workers cannot spawn nested subagents; they return results to main.
+* **Workers are Leaves:** By policy a worker is given a bounded task contract and returns to main rather than spawning its own workers — routing stays depth-0 whether or not the platform allows nesting.
 
 ### Damage Control
 * **Isolation:** Uses git worktree-isolation (or local `.claude/.coaltipple/proposed/` sandbox with `state.json` journaling) to protect files from mid-run failures.

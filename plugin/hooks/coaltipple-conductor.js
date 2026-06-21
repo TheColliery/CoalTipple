@@ -20,7 +20,7 @@ const os = require('os');
 // on failure, so the merge always yields the best available config (never throws).
 // Inlined (not imported) to keep the hook standalone-portable (Phoenix #9).
 // Keep findGitRoot byte-identical to scripts/lib/config-load.mjs + configure.mjs
-// (verify.mjs's config-path-sync gate guards the drift).
+// (verify.mjs's config-path-sync gate guards the project-config PATH SEGMENTS, not the function body).
 function findGitRoot(startDir) {
   let dir = path.resolve(startDir);
   while (true) {
@@ -249,7 +249,7 @@ function main() {
     const v = cfg.updateMode.toLowerCase();
     if (v === 'ask' || v === 'auto' || v === 'remind' || v === 'off') updateMode = v;
   }
-  if (cfg && typeof cfg.updateCheckDays === 'number' && cfg.updateCheckDays >= 1) {
+  if (cfg && Number.isInteger(cfg.updateCheckDays) && cfg.updateCheckDays >= 1 && cfg.updateCheckDays <= 365) {
     updateCheckDays = cfg.updateCheckDays;
   }
   // Throttled by the persistent stamp: fires at most once per updateCheckDays.
