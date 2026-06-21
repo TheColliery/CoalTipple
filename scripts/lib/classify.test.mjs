@@ -165,6 +165,19 @@ test('resolveWorker: SENSITIVE floor never breached on a limit-hit (never-down h
   assert.equal(resolveWorker(ranking, 'reasoning', { blocked: ['fable', 'opus-4.8'], floorTier: 'heavy' }), null);
 });
 
+test('resolveWorker: a SCALAR blocked (a model-supplied single option) never throws — normalized to an array', () => {
+  // The never-fail contract: blocked may arrive as a bare string, not an array. A string's
+  // `.map` would throw; normalize first so it behaves like a one-element block list.
+  const ranking = { tiers: { low: ['haiku'], mid: ['sonnet'], heavy: ['opus-4.8', 'opus-4.7'], reasoning: ['fable'] } };
+  assert.doesNotThrow(() => resolveWorker(ranking, 'heavy', { blocked: 'opus-4.8' }));
+  // scalar 'opus-4.8' blocked -> within-tier next version, same as the array form.
+  assert.deepEqual(resolveWorker(ranking, 'heavy', { blocked: 'opus-4.8' }), { tier: 'heavy', model: 'opus-4.7' });
+  // a scalar that blocks the only model at a tier still falls correctly.
+  assert.deepEqual(resolveWorker(ranking, 'reasoning', { blocked: 'fable' }), { tier: 'heavy', model: 'opus-4.8' });
+  // null / undefined blocked are tolerated (default-empty) and never throw.
+  assert.deepEqual(resolveWorker(ranking, 'heavy', { blocked: null }), { tier: 'heavy', model: 'opus-4.8' });
+});
+
 test('resolveWorker: everything blocked -> null (hand back / do it yourself)', () => {
   const ranking = { tiers: { low: ['haiku'], mid: ['sonnet'], heavy: ['opus'], reasoning: ['fable'] } };
   assert.equal(resolveWorker(ranking, 'heavy', { blocked: ['haiku', 'sonnet', 'opus', 'fable'] }), null);

@@ -121,7 +121,10 @@ export function escalationStep(currentTier, { attemptsLeft = 1, farBelow = false
 // never-down gate just because a limit was hit. Returns { tier, model } | null.
 // Deterministic, pure (Phoenix #8).
 export function resolveWorker(ranking, desiredTier, { blocked = [], floorTier = null, ladder = ESCALATION_LADDER } = {}) {
-  const blockedSet = new Set((blocked || []).map(String));
+  // `blocked` may arrive as a scalar (a model-supplied single option) — normalize to an
+  // array so a string never hits `.map` (would throw, breaking the never-fail contract).
+  const blockedList = Array.isArray(blocked) ? blocked : (blocked == null ? [] : [blocked]);
+  const blockedSet = new Set(blockedList.map(String));
   const tiers = (ranking && ranking.tiers) || {};
   const di = ladder.indexOf(String(desiredTier).toLowerCase());
   if (di < 0) return null;                                    // unknown tier -> caller handles

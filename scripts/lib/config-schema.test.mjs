@@ -88,6 +88,20 @@ test('memory-anchor keys validate (contextFiles strArr + memoryOffer enum)', () 
   assert.match(validateValue(specOf('memoryOffer'), 'maybe'), /one of/);
 });
 
+test('modelTiers pins are deep-validated (a non-string entry fails loud, not a silent dead route)', () => {
+  const spec = specOf('modelTiers');
+  assert.ok(spec, 'modelTiers spec exists');
+  assert.equal(validateValue(spec, {}), null);                                  // empty = no pins
+  assert.equal(validateValue(spec, { heavy: 'opus-9' }), null);                 // a scalar string pin
+  assert.equal(validateValue(spec, { reasoning: ['fable-9', 'opus'] }), null);  // a priority chain
+  assert.match(validateValue(spec, 'opus'), /must be an object/);               // not an object at all
+  // The typo'd object pin: { heavy: { model: 'opus' } } would pass a bare obj check, then
+  // applyPins String()-coerces it to "[object Object]" -> resolveWorker yields null (route fails).
+  assert.match(validateValue(spec, { heavy: { model: 'opus' } }), /must be a model name/);
+  assert.match(validateValue(spec, { mid: 42 }), /must be a model name/);        // a number, not a model name
+  assert.match(validateValue(spec, { low: ['haiku', 7] }), /must be a model name/); // a non-string in the chain
+});
+
 test('keywords groups are deep-validated (a bad group fails loud, not a silent bad grade)', () => {
   const spec = specOf('keywords');
   assert.ok(spec, 'keywords spec exists');

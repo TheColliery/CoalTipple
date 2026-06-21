@@ -17,7 +17,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { TARGETS, detectPresentAgents } from './lib/targets.mjs';
 import { buildFloorRanking, writeRankingAtomic } from './lib/classify.mjs';
-import { globalConfigPath, projectConfigPath, globalStateDir, projectStateDir } from './lib/config-load.mjs';
+import { globalConfigPath, projectConfigPath, globalStateDir, projectStateDir, findGitRoot } from './lib/config-load.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const skillSrc = path.join(repo, 'skills', 'coaltipple');
@@ -91,10 +91,14 @@ function seedGlobalRanking(force = false) {
 //   .claude/.coaltipple/hooks/...   the conductor copy (CODE -> always refreshed)
 // The ranking is NOT here (it is global + shared). CONFIG PRESERVATION: the config is
 // created only when ABSENT; the ONLY overwrite is the explicit --reset.
-function seedProjectFiles(force = false) {
+// `projectRoot` defaults to the invoker's cwd (a named-agent target's skills dir IS
+// under cwd, so its project files belong at <cwd>/.claude). A bare PATH target passes
+// the target's inferred root explicitly so the config/conductor land WITH the skill,
+// not silently in the invoker's cwd.
+function seedProjectFiles(force = false, projectRoot = process.cwd()) {
   try {
-    const dest = projectConfigPath();
-    fs.mkdirSync(path.dirname(dest), { recursive: true }); // ensure <cwd>/.claude exists
+    const dest = projectConfigPath(projectRoot);
+    fs.mkdirSync(path.dirname(dest), { recursive: true }); // ensure <root>/.claude exists
     if (force || !fs.existsSync(dest)) {
       writeFactoryConfig(dest);
       console.log(`  ${force ? 'RESET settings to factory' : 'created default settings'} -> ${dest}`);
@@ -102,11 +106,21 @@ function seedProjectFiles(force = false) {
   } catch (e) { console.warn(`  [warn] settings: ${e.message}`); process.exitCode = 1; }
   // conductor hook = CODE -> always refreshed so an update ships the new hook.
   try {
-    const hookDir = path.join(projectStateDir(), 'hooks');
+    const hookDir = path.join(projectStateDir(projectRoot), 'hooks');
     fs.mkdirSync(hookDir, { recursive: true });
     fs.copyFileSync(conductorSrc, path.join(hookDir, 'coaltipple-conductor.js'));
     console.log(`  refreshed conductor -> ${path.join(hookDir, 'coaltipple-conductor.js')}`);
   } catch (e) { console.warn(`  [warn] conductor: ${e.message}`); process.exitCode = 1; }
+}
+
+// Infer the project root for a bare PATH target so project files land WITH the skill
+// (not in the invoker's cwd). The skill installs into `<dest>/coaltipple`, so `dest`
+// is the agent's skills dir; walk up from it for a `.git` root, else use the skills
+// dir's PARENT (the agent config home, e.g. `<root>/.cursor` -> root `<root>`). A
+// named-agent target keeps the cwd default (its skills dir already sits under cwd).
+function pathTargetRoot(dest) {
+  const gitRoot = findGitRoot(dest);
+  return fs.existsSync(path.join(gitRoot, '.git')) ? gitRoot : path.dirname(dest);
 }
 
 function uninstall(dest) {
@@ -196,16 +210,23 @@ if (isUninstall) {
 console.log(`\nInstalling CoalTipple -> ${dest}`);
 installSkill(dest);
 // GLOBAL install (claude / --global / a ~/.claude dest) seeds the GLOBAL config +
-// shared ranking — no project file. A PROJECT/PATH install ensures the shared ranking
-// exists, then seeds the project config + conductor under <cwd>/.claude.
+// shared ranking — no project file. A NAMED-AGENT install seeds project files at the
+// invoker's cwd (its skills dir is under cwd). A bare PATH install seeds them at the
+// TARGET's inferred root, so the config/conductor land with the skill — not silently
+// in the invoker's cwd (the PATH-target footgun).
 if (isGlobalInstall(key, dest)) {
   console.log('\nSeeding global config + shared ranking...');
   seedGlobalConfig();
   seedGlobalRanking();
   console.log(`\nDone. Per-project overrides: node scripts/configure.mjs --project ...   Verify: node scripts/verify.mjs`);
 } else {
+  const isNamedAgent = key in TARGETS;
+  const projectRoot = isNamedAgent ? process.cwd() : pathTargetRoot(dest);
   console.log('\nSeeding shared ranking + project files...');
+  if (!isNamedAgent && path.resolve(projectRoot) !== path.resolve(process.cwd())) {
+    console.log(`  PATH target -> project config + conductor anchored at the target root: ${projectRoot}`);
+  }
   seedGlobalRanking();
-  seedProjectFiles();
+  seedProjectFiles(false, projectRoot);
   console.log(`\nDone. Verify: node scripts/verify.mjs`);
 }

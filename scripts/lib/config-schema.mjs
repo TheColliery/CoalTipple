@@ -43,7 +43,7 @@ export const CONFIG_SCHEMA = [
   { key: 'memoryOffer', type: 'enum', values: ['auto', 'off'], flags: ['--memory'], help: 'When no memory anchor exists, offer (lazily, once) to set one up: auto (default) or off (disabled/skipped; re-enable via /coaltipple memory)' },
   { key: 'updateMode', type: 'enum', values: ['ask', 'auto', 'remind', 'off'], flags: ['-u', '--update-mode'], help: 'Self-update behavior at session start (ask, auto, remind, off; default: ask). Orthogonal to routing — its own off-switch' },
   { key: 'updateCheckDays', type: 'int', min: 1, max: 365, flags: ['-P', '--update-days'], help: 'Days between self-update checks/reminders (range 1-365, default: 14). Short flag -P (uppercase; -p is reserved for --project)' },
-  { key: 'modelTiers', type: 'obj', noFlag: true, help: 'Optional user pins overriding auto-classification: { low|mid|heavy|reasoning: "model" | ["priority","chain"] }' },
+  { key: 'modelTiers', type: 'obj', noFlag: true, validate: validateModelTiers, help: 'Optional user pins overriding auto-classification: { low|mid|heavy|reasoning: "model" | ["priority","chain"] }' },
 ];
 
 // Validate an already-parsed JSON value against a spec.
@@ -77,6 +77,21 @@ export function validateValue(spec, v) {
 // Deep validator for the `keywords` groups (validateValue calls it for that key; verify.mjs +
 // configure.mjs surface its message). A malformed group fails loud rather than silently grading wrong:
 // an out-of-range grade is the input-boundary the grader would otherwise turn into an undefined tier.
+// Deep validator for `modelTiers` pins. Each value is a model name (string) or a
+// priority chain (array of strings). A typo'd object pin ({ heavy: { model: 'opus' } })
+// would pass the bare 'obj' type check, then applyPins String()-coerces it to
+// "[object Object]" — a non-existent model name that makes resolveWorker yield null
+// (route silently fails). Reject a non-string entry at the config boundary instead.
+function validateModelTiers(pins) {
+  for (const tier of Object.keys(pins)) {
+    const v = pins[tier];
+    if (typeof v === 'string') continue;
+    if (Array.isArray(v) && v.every((m) => typeof m === 'string')) continue;
+    return `pin '${tier}' must be a model name (string) or an array of model names`;
+  }
+  return null;
+}
+
 function validateKeywordGroups(groups) {
   for (const name of Object.keys(groups)) {
     const g = groups[name];

@@ -47,6 +47,30 @@ test('install to a PATH: copies skill, seeds project config + conductor + the sh
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); }
 });
 
+test('PATH target: project config + conductor land AT THE TARGET root, not in the invoker cwd (the PATH-target footgun)', () => {
+  // The skill installs into <target>/skills/coaltipple. The project config + conductor must
+  // anchor on the TARGET (its skills-dir parent), NOT silently in the unrelated invoker cwd.
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-pathcwd-'));   // where the user runs the installer
+  const target = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-pathtgt-')); // an unrelated project to configure
+  const home = mkHome();
+  const dest = path.join(target, 'skills');
+  try {
+    const r = run(cwd, home, dest);
+    assert.equal(r.status, 0, `install must pass:\n${r.stdout}${r.stderr}`);
+    assert.ok(fs.existsSync(path.join(dest, 'coaltipple', 'SKILL.md')), 'SKILL.md installed at the target');
+    // Config + conductor land under the TARGET root (skills-dir parent), no .git present.
+    assert.ok(fs.existsSync(projCfg(target)), 'project config seeded under the TARGET root/.claude');
+    assert.ok(fs.existsSync(path.join(projState(target), 'hooks', 'coaltipple-conductor.js')), 'conductor under the TARGET root/.claude');
+    // The invoker cwd is left untouched — no stray .claude there (the footgun fixed).
+    assert.ok(!fs.existsSync(projCfg(cwd)), 'no stray project config in the invoker cwd');
+    assert.ok(!fs.existsSync(path.join(cwd, '.claude')), 'no stray .claude in the invoker cwd');
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+    fs.rmSync(target, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test('GLOBAL install (--global): seeds the global config + shared ranking, NO project files', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-global-'));
   const home = mkHome();

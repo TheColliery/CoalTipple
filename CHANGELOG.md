@@ -2,6 +2,16 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [Unreleased]
+
+CB-audit fixes — **repo-level only (`scripts/` tooling, not in the `plugin/` dist); no version bump.** The installed plugin is byte-identical to v1.0.20.
+
+### Fixed
+- **`resolveWorker` threw on a scalar `blocked`** — `classify.mjs` `(blocked || []).map` raised a `TypeError` when `blocked` was a string (a model-supplied option), violating the never-throw `{tier,model}|null` contract. Now coerced: `const b = Array.isArray(blocked) ? blocked : [blocked]`. + a test.
+- **`modelTiers` pin had no deep validation** — a typo'd object pin (`{heavy:{model:"opus"}}`) passed `validateValue`, then `String()`-coerced to `["[object Object]"]` → a silent dead route (`null`). Added a `validate` rejecting non-string entries (fail-loud). + a test.
+- **`install.mjs` PATH-target wrote config to the invoker's cwd, not the target** — guarded. + a hermetic spawn test.
+- (138 node tests, +3.) The two audit-refuted findings — `grade.mjs` ReDoS "crash" and `modelTiers` "spawnable `[object Object]`" — were honored (not reintroduced; ground-truth showed `grade()` never throws and the pin returns `null`, not a spawnable worker).
+
 ## [1.0.20] - 2026-06-21
 
 Board-audit fixes (verify-triaged from the whole-Colliery nasa board) — bugfixes + doc accuracy, routing behavior unchanged.
