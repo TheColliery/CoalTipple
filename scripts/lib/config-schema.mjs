@@ -22,7 +22,6 @@ export const CONFIG_SCHEMA = [
   { key: 'maxTotalAttempts', type: 'int', min: 1, max: 5, flags: ['-a'], help: 'Escalation staircase budget: max spawn+retry attempts across tiers before jump-to-top/hand-back (range 1-5; 1 = jump too fast, 4-5 = death by a thousand cuts, 2-3 = sweet spot). Default 2.' },
   { key: 'subagentTimeoutSeconds', type: 'int', min: 5, max: 3600, flags: ['-s'], help: 'Seconds before a stalled background sub-worker is marked failed. Range 5-3600, default 150' },
   { key: 'maxConcurrentSubagents', type: 'int', min: 1, max: 16, flags: ['-c'], help: 'Cap on concurrent sub-workers in a fan-out (they share one rate limit). Range 1-16 (platform concurrency ceiling), default 4' },
-  { key: 'ultracodeEnabled', type: 'bool', flags: ['-U'], help: 'Allow the ultracode top rung (max effort + multi-agent fan-out) for wide parallel work (default: true)' },
   { key: 'requireTaskContract', type: 'bool', flags: ['-T'], help: 'Require a compact task contract (goal+constraints+interface+done) on every delegation — the outbound briefing (default: true)' },
   { key: 'qaOnMerge', type: 'enum', values: ['strict', 'standard', 'off'], flags: ['-q'], help: 'Verify a sub-worker output before accepting it on merge (strict, standard, off; default: standard)' },
   { key: 'fastModeOnLatencyRequest', type: 'bool', flags: ['-F'], help: 'Allow attaching fast-mode only on an explicit human latency request — never as a routing rung (default: true)' },
@@ -34,6 +33,10 @@ export const CONFIG_SCHEMA = [
   // stale, so there is no cadence to re-enumerate. A leftover key in a user's .coaltipple.json is
   // harmless: configure.mjs ignores an unknown flag and the conductor/cascade ignore unknown keys.
   // (Same tombstone-by-removal pattern as hardEnforce / skillUpdateCheckDays in earlier versions.)
+  // TOMBSTONED (round-2 audit — dead-key removal): `ultracodeEnabled` (bool) removed. It was never
+  // read by any consumer — the SKILL.md ultracode top rung gates on `maxConcurrentSubagents` +
+  // `fastModeOnLatencyRequest`, not on this key. Harmless if left in a user's .coaltipple.json
+  // (ignored, same as above); disabling the ultracode rung is done by lowering `maxConcurrentSubagents`.
   { key: 'sensitivePaths', type: 'strArr', flags: ['--sensitive'], help: 'Comma-separated path fragments that force the High/Reasoning tier (e.g. auth, crypto, payments, migrations)' },
   { key: 'excludePaths', type: 'strArr', lower: true, flags: ['-X', '--exclude'], help: 'Comma-separated dirs skipped when grading (default: node_modules, .git, dist, vendor, build)' },
   { key: 'hotKeywords', type: 'strArr', lower: true, flags: ['--keywords'], help: 'LEGACY flat keyword list (prefer the structured `keywords` groups). Still merges as a grade-4 sensitive group. Comma-separated' },

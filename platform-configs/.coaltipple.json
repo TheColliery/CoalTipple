@@ -76,11 +76,6 @@
 
   // ─── levers ───
 
-  // ## Allow the ultracode top rung (max effort + multi-agent fan-out) for genuinely broad, independent work.
-  // # Setting type: Boolean
-  // # Default value: true
-  "ultracodeEnabled": true,
-
   // ## Allow attaching fast-mode only on an explicit human latency request — never as a routing rung.
   // # Setting type: Boolean
   // # Default value: true

@@ -2,6 +2,13 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.0.23] - 2026-07-02
+
+Dead-key removal, from the round-2 CoalBoard audit. **Routing behavior unchanged** — the removed key was never read by any consumer; the shipped `plugin/` dist changes only by the version stamp and the config-schema/factory-config edits.
+
+### Removed
+- **`ultracodeEnabled` — a dead config key** — it appeared only in the schema (`scripts/lib/config-schema.mjs`) and the factory config (`platform-configs/.coaltipple.json`); NO consumer read it. The SKILL.md ultracode top rung gates on `maxConcurrentSubagents` + `fastModeOnLatencyRequest`, not on this key. Removed from the schema (and TOMBSTONED there, matching the `rankingMode`/`rankingRefreshDays` convention) and from the factory config. A leftover key in a user's `.coaltipple.json` is harmless — `configure.mjs` ignores an unknown flag and the conductor/cascade ignore unknown keys. Disabling the ultracode rung is done by lowering `maxConcurrentSubagents`.
+
 ## [1.0.22] - 2026-07-02
 
 Two defects surfaced by the fable-nasa dogfood boards (both reproduced by the boards' judges running the code). **The 3-alias floor and the shipped routing behavior are unchanged**; these harden the deterministic grader and an availability-fallback helper.
