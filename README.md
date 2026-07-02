@@ -126,30 +126,17 @@ Workers start context-fresh. A **memory anchor** file gives a fresh worker proje
 
 ## ⚙️ Configure
 
-Ships zero-config with optimal defaults in `.coaltipple.json`. Precedence: **project override → global config → schema default**.
+Ships zero-config with optimal defaults in `.coaltipple.json`. Precedence: **project override → global config → schema default**. The high-impact keys:
 
-Key settings (see [`scripts/lib/config-schema.mjs`](scripts/lib/config-schema.mjs) for the full SSoT schema):
+| Key | Default | What it does |
+|---|---|---|
+| `enableRouting` | `true` | Master routing switch |
+| `mode` | `auto` | Direction: `delegation` (down) \| `escalation` (up) \| `auto` \| `off` |
+| `qualityBar` | `60` | Quality threshold (0–100) for the staircase — raise (~85) for critical logic, lower (~45) for quick drafts |
+| `delegateMinLines` | `120` | Minimum task size below which down-delegation is skipped (spawn-overhead floor) |
+| `modelTiers` | unset | Optional pins overlaying the alias floor (e.g. `{ "reasoning": ["fable"] }`) — the one human override for a model the agent cannot see; an unavailable pin falls safely down the ladder at spawn-fail |
 
-| Key | Type | Default | What it does |
-|---|---|---|---|
-| `enableRouting` | Boolean | `true` | Master routing switch |
-| `mode` | Enum | `auto` | Direction: `delegation` (down) \| `escalation` (up) \| `auto` \| `off` |
-| `qualityBar` | Integer 0–100 | `60` | Quality threshold for the staircase |
-| `maxTotalAttempts` | Integer 1–5 | `2` | Staircase attempt budget before jumping to top tier |
-| `delegateMinLines` | Integer | `120` | Minimum lines threshold for down-delegation |
-| `qaOnMerge` | Enum | `standard` | Merge verification rigor (`strict` \| `standard` \| `off`) |
-| `modelTiers` | Object | unset | Optional pins overlaying the alias floor (`{ tier: "model" }`) — the one human override for a model the agent cannot see |
-
-An extra or episodic-access model (e.g. a time-boxed preview alias) joins via a `modelTiers` pin — `{ "reasoning": ["fable"] }`, the floor model falls in behind it automatically — never the floor: the floor stays the three stable aliases, and an unavailable pinned model falls safely down the ladder at spawn-fail.
-
-### Configurator CLI
-
-```bash
-node scripts/configure.mjs --list                        # show merged config
-node scripts/configure.mjs --qualityBar 85               # update global qualityBar
-node scripts/configure.mjs --project --mode delegation   # write project override
-node scripts/configure.mjs --help                        # view all schema-driven flags
-```
+Full key reference: every key + default lives in [`scripts/lib/config-schema.mjs`](scripts/lib/config-schema.mjs) and the commented template [`platform-configs/.coaltipple.json`](platform-configs/.coaltipple.json) — or run `node scripts/configure.mjs --help`.
 
 ---
 
