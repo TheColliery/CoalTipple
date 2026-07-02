@@ -2,9 +2,12 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
-## [Unreleased]
+## [1.0.21] - 2026-07-02
 
-CB-audit fixes — **repo-level only (`scripts/` tooling, not in the `plugin/` dist); no version bump.** The installed plugin is byte-identical to v1.0.20.
+Episodic-model pin path documented (docs + factory-config comment) + the earlier CB-audit script fixes roll into this tag. **The 3-alias floor is unchanged BY DESIGN; shipped plugin runtime behavior is unchanged** (the dist changes only by the version stamp).
+
+### Changed
+- **Episodic/extra-model pin path documented** — an episodic-access model (e.g. Fable 5's time-boxed 2026-07 window) joins via a `modelTiers` PIN, never the alias floor: the floor (`haiku < sonnet < opus`) must not rot when access changes, and an unavailable pinned model spawn-fails and falls down the ladder (existing behavior). Factory config: the commented `modelTiers` example is now a valid spawnable pin (`{ "reasoning": ["fable", "opus"] }` — was the display name `"Fable 5"`, which is not a spawn alias) + the honesty note; README Configure carries the same one line. SKILL.md deliberately untouched (Step 0's "alias floor + `modelTiers` pins" already covers it — no resident-token growth for redundancy). No code change needed: `validateModelTiers` has no model-name enum (any non-empty string pins), and the fable pin/fall paths were already test-covered (`classify.test.mjs`).
 
 ### Fixed
 - **`resolveWorker` threw on a scalar `blocked`** — `classify.mjs` `(blocked || []).map` raised a `TypeError` when `blocked` was a string (a model-supplied option), violating the never-throw `{tier,model}|null` contract. Now coerced: `const b = Array.isArray(blocked) ? blocked : [blocked]`. + a test.

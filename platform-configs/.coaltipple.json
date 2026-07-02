@@ -93,9 +93,14 @@
   // ## Routing rides the tier STRUCTURE + the unknown->heavy rule + the spawn-fail-fall, never an exact list.
   // ## Optional pins are the one human override — name a model introspection cannot see (released after a
   // ## model's training cutoff) or correct a tier. A pin front-loads its model(s) into the named tier.
+  // ## An EPISODIC-access model (e.g. Fable 5's time-boxed access window) belongs here as a pin, never in the
+  // ## alias floor (the floor must not rot when access changes); an unavailable pin spawn-fails and falls down
+  // ## the ladder (existing behavior), so a stale pin costs nothing.
   // # Setting type: Object { low | mid | heavy | reasoning : "model" | ["priority", "chain"] }  (cheapest tier is `low`, not `cheap`)
   // # Default value: unset (the alias floor applies; pins overlay it when set)
-  // "modelTiers": { "low": "haiku", "mid": "sonnet", "heavy": "opus", "reasoning": ["Fable 5", "opus"] },
+  // # Worked example — pin ONLY the extra alias; the floor model falls in behind it automatically
+  // # (also listing the floor model would de-dup it OUT of its own tier — pin the newcomer alone):
+  // "modelTiers": { "reasoning": ["fable"] },
 
   // ─── grading scope ───
 

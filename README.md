@@ -138,6 +138,8 @@ Key settings (see [`scripts/lib/config-schema.mjs`](scripts/lib/config-schema.mj
 | `qaOnMerge` | Enum | `standard` | Merge verification rigor (`strict` \| `standard` \| `off`) |
 | `modelTiers` | Object | unset | Optional pins overlaying the alias floor (`{ tier: "model" }`) — the one human override for a model the agent cannot see |
 
+An extra or episodic-access model (e.g. a time-boxed preview alias) joins via a `modelTiers` pin — `{ "reasoning": ["fable"] }`, the floor model falls in behind it automatically — never the floor: the floor stays the three stable aliases, and an unavailable pinned model falls safely down the ladder at spawn-fail.
+
 ### Configurator CLI
 
 ```bash
