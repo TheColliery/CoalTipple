@@ -2,6 +2,15 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.0.22] - 2026-07-02
+
+Two defects surfaced by the fable-nasa dogfood boards (both reproduced by the boards' judges running the code). **The 3-alias floor and the shipped routing behavior are unchanged**; these harden the deterministic grader and an availability-fallback helper.
+
+### Fixed
+- **[routing SAFETY] crypto keyword-family hole** — `keywords.mjs` graded `cryptographically` at 1 / `sensitive:false` (delegate-eligible, routable DOWN) while `cryptography`/`cryptographic` graded 5, because the crypto group listed those two as bare WHOLE-WORDS. A crypto task phrased with the adverb slipped the never-down sensitive gate. Fixed by making `cryptograph*` a STEM (like `encrypt*`/`authenticat*`), so every `cryptograph`-prefixed variant (cryptography/cryptographic/cryptographically/cryptographer) grades 5 / sensitive; bare `crypto` stays whole-word so `cryptocurrency` still does not false-fire. + a test asserting `cryptographically` → grade 5 / `sensitive:true` and `cryptocurrency` stays grade 2.
+- **[defense-in-depth] `resolveWorker` fail-open on an omitted floor** — `classify.mjs` `resolveWorker` collapsed to the cheapest available tier when `floorTier` was omitted; a typo'd floor already failed CLOSED (to `null`), but an omitted floor did not. **Honest severity: MEDIUM, not input-reachable** — `resolveWorker` has NO shipped JS caller (never-down is enforced by the SKILL contract + model discipline), so the collapse requires the model to forget `floorTier` on a sensitive task, which the SKILL tells it not to do. Fixed by adding a `sensitive` flag: `resolveWorker(..., { sensitive: true })` with an omitted `floorTier` now floors at `desiredTier` (fail closed — a forgotten floor on a sensitive task cannot downgrade by omission). An explicit `floorTier` still wins; a non-sensitive task keeps the full availability walk-down (spawn-fail-fall unchanged). + a test.
+- (139 node tests, +2.)
+
 ## [1.0.21] - 2026-07-02
 
 Episodic-model pin path documented (docs + factory-config comment) + the earlier CB-audit script fixes roll into this tag. **The 3-alias floor is unchanged BY DESIGN; shipped plugin runtime behavior is unchanged** (the dist changes only by the version stamp).

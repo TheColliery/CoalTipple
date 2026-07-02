@@ -21,7 +21,7 @@ export const KEYWORD_GROUPS = {
   // Coding — split by what forces the grade: concurrency/crypto are reasoning-hard
   // (5); security/coding are sensitive (4). crypto/security/coding also never-down.
   'concurrency': { grade: 5, words: ['concurrency', 'mutex', 'mutexes', 'race condition', 'deadlock', 'deadlocks', 'thread-saf*', 'atomic'] },
-  'crypto':      { grade: 5, sensitive: true, words: ['crypto', 'cryptographic', 'cryptography', 'timing attack', 'timing-attack', 'constant-time', 'constant time', 'timing-safe', 'side-channel', 'encrypt*', 'decrypt*'] },
+  'crypto':      { grade: 5, sensitive: true, words: ['crypto', 'cryptograph*', 'timing attack', 'timing-attack', 'constant-time', 'constant time', 'timing-safe', 'side-channel', 'encrypt*', 'decrypt*'] },
   'security':    { grade: 4, sensitive: true, words: ['oauth', 'authenticat*', 'authoriz*', 'auth bypass', 'sql injection', 'access control', 'permission*', 'secret', 'secrets', 'token', 'tokens', 'password', 'passwords', 'session', 'sessions'] },
   'coding':      { grade: 4, sensitive: true, words: ['migrat*', 'schema change', 'payment', 'payments', 'billing', 'rate limit', 'optimize query'] },
 

@@ -192,6 +192,14 @@ test('STEM-vs-WHOLE-WORD: genuine stems still match the prefix + all suffixes (n
   assert.equal(grade({ prompt: 'review the cryptographic primitives', sizeUnits: 10 }).grade, 5, 'cryptographic fires');
   assert.equal(grade({ prompt: 'a question about cryptography', sizeUnits: 10 }).grade, 5, 'cryptography fires');
   assert.equal(grade({ prompt: 'add encryption to the payload', sizeUnits: 10 }).grade, 5, 'encrypt* -> encryption');
+  // L2 fix: `cryptograph*` is a STEM so the WHOLE family (incl. the adverb) fires + is sensitive —
+  // pre-fix `cryptographically` matched no bare crypto whole-word -> grade 1 / sensitive:false =
+  // delegate-eligible, the never-down gate bypassed. cryptocurrency (a non-crypto word) must NOT fire.
+  const adverb = grade({ prompt: 'is this cryptographically secure', sizeUnits: 10 });
+  assert.equal(adverb.grade, 5, 'cryptographically fires the crypto stem (L2 hole closed)');
+  assert.equal(adverb.sensitive, true, 'cryptographically is sensitive (never-down)');
+  assert.equal(grade({ prompt: 'a cryptographer reviewed it', sizeUnits: 10 }).grade, 5, 'cryptographer fires the stem');
+  assert.equal(grade({ prompt: 'track the cryptocurrency price', sizeUnits: 50 }).grade, 2, 'cryptograph* stem must NOT re-open the crypto->cryptocurrency FP');
   // NO security keyword regressed to a false-negative: each canonical form fires.
   assert.equal(grade({ prompt: 'check the permissions model', sizeUnits: 10 }).grade, 4, 'permission* -> permissions');
 });

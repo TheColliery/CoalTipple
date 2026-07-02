@@ -201,6 +201,20 @@ test('resolveWorker: floorTier is case-insensitive + fail-safe on an unrecognize
   assert.deepEqual(resolveWorker(ranking, 'HEAVY', { blocked: [] }), { tier: 'heavy', model: 'opus' });
 });
 
+test('resolveWorker (M3 defense-in-depth): sensitive + OMITTED floor fails CLOSED (never downgrades by omission)', () => {
+  const ranking = { tiers: { low: ['haiku'], mid: ['sonnet'], heavy: ['opus'], reasoning: ['fable'] } };
+  // pre-fix: a sensitive task whose caller FORGOT floorTier collapsed to the cheapest available tier.
+  // Now `sensitive:true` with no floorTier floors at the desired tier -> it cannot drop below it.
+  // desired heavy, opus blocked, floor omitted but sensitive -> null (NOT a fall to mid/low).
+  assert.equal(resolveWorker(ranking, 'heavy', { blocked: ['opus'], sensitive: true }), null, 'sensitive + omitted floor + desired blocked -> hand back, never downgrade');
+  // desired heavy, opus AVAILABLE -> still returns opus at the desired tier (no false negative).
+  assert.deepEqual(resolveWorker(ranking, 'heavy', { blocked: [], sensitive: true }), { tier: 'heavy', model: 'opus' }, 'sensitive + available desired tier still routes there');
+  // an EXPLICIT floorTier always wins over the sensitive default (walk reasoning->heavy, stop at heavy).
+  assert.deepEqual(resolveWorker(ranking, 'reasoning', { blocked: ['fable'], sensitive: true, floorTier: 'heavy' }), { tier: 'heavy', model: 'opus' }, 'explicit floorTier overrides the sensitive fail-closed default');
+  // a NON-sensitive task with an omitted floor keeps the full availability walk-down (unchanged).
+  assert.deepEqual(resolveWorker(ranking, 'heavy', { blocked: ['opus', 'sonnet'] }), { tier: 'low', model: 'haiku' }, 'non-sensitive omitted floor still walks down (availability fallback preserved)');
+});
+
 test('resolveWorker DRIVES the spawn-fail-fall loop: each unavailable model accrues, fall reaches a working one then null', () => {
   // The Step-3 driver: spawn errors "unavailable" -> add to blocked -> resolveWorker -> spawn next -> repeat.
   const ranking = { tiers: { low: ['haiku'], mid: ['sonnet'], heavy: ['opus-4.8', 'opus-4.7'], reasoning: ['fable'] } };

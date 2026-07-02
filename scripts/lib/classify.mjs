@@ -119,8 +119,13 @@ export function escalationStep(currentTier, { attemptsLeft = 1, farBelow = false
 // passes floorTier = the safe minimum (e.g. 'heavy'): if nothing at/above it is
 // available, returns null (hand back / wait for reset) rather than breach the
 // never-down gate just because a limit was hit. Returns { tier, model } | null.
+// DEFENSE-IN-DEPTH (M3): if the caller flags `sensitive` but FORGETS `floorTier`, the
+// floor fails CLOSED to `desiredTier` — a forgotten floor on a sensitive task can no
+// longer collapse to the cheapest tier by omission. (An explicit floorTier always
+// wins; a non-sensitive task keeps the full availability walk-down.)
 // Deterministic, pure (Phoenix #8).
-export function resolveWorker(ranking, desiredTier, { blocked = [], floorTier = null, ladder = ESCALATION_LADDER } = {}) {
+export function resolveWorker(ranking, desiredTier, { blocked = [], floorTier = null, sensitive = false, ladder = ESCALATION_LADDER } = {}) {
+  if (sensitive && floorTier == null) floorTier = desiredTier;
   // `blocked` may arrive as a scalar (a model-supplied single option) — normalize to an
   // array so a string never hits `.map` (would throw, breaking the never-fail contract).
   const blockedList = Array.isArray(blocked) ? blocked : (blocked == null ? [] : [blocked]);
