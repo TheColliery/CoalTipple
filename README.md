@@ -144,6 +144,7 @@ Full key reference: every key + default lives in [`scripts/lib/config-schema.mjs
 
 We evaluate the **final output correctness** after the main escalates one rung, and the **token savings** of delegating mechanical bulk down — each dated, on small honest samples, never inlined here so a copied number cannot drift.
 
+* **ON-vs-OFF (paired, 2026-07-03, v1.0.23):** the same 4 tasks at every tier (36 runs, K=3, Haiku 4.5/Sonnet 5/Opus 4.8) — **routing ON scored 4/4 task quality on both baselines; OFF scored 3/4 on both, failing a DIFFERENT task each** (an Opus main fails the boring spec's letter; a Sonnet main fails the sensitive legal nuance). From an Opus main ON is also **~23% cheaper**; from a Sonnet main it is cost-neutral and removes a liability-shifting translation error.
 * **Output quality (per-tier matrix):** on objectively-verifiable tasks every tier (Haiku → Sonnet → Opus) delivers correct → **delegate-down preserves quality** (the cost saving is free); on high-precision *sensitive* work the mid tier reproducibly errs (Sonnet collapses the legal *"to the extent"* carve-out 2/3 of the time, Opus holds) → **escalate-up / never-delegate-sensitive-down is data-justified** (measured on v1.0.20, 2026-06-22; small samples + the honest method caveats — incl. per-cell judge-variance — are in the record).
 * **Routing savings:** delegating a big mechanical task down from Opus to a cheaper tier ran **~70–75% cheaper** — holding only above the `delegateMinLines` floor and never on sensitive work (measured 2026-06-19, version-sensitive rates).
 
