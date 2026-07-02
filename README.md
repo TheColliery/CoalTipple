@@ -51,6 +51,8 @@ You are **main**. CoalTipple decides, per task, whether to:
 
 ## 🚀 Install
 
+**Claude Code only** — routing actuates only where an agent can pick a spawned worker's model + effort, and Claude Code's `Agent`/`Task` tool is the one that takes a `model` parameter. On any other platform (Antigravity, Codex, …) there is no install: a spawned worker inherits the parent model, so routing cannot actuate (other platforms are under monthly review — see [Compatibility](#-compatibility)).
+
 ### Claude Code plugin
 
 ```bash
