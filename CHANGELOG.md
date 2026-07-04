@@ -2,6 +2,11 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [Unreleased]
+
+### Changed
+- Relicensed from MIT to Apache-2.0. `LICENSE` is now the Apache License 2.0 (verbatim); a new `NOTICE` carries the attribution; the `plugin.json` `license` field is `Apache-2.0`. No code or behavior change.
+
 ## [1.0.23] - 2026-07-02
 
 Dead-key removal, from the round-2 CoalBoard audit. **Routing behavior unchanged** — the removed key was never read by any consumer; the shipped `plugin/` dist changes only by the version stamp and the config-schema/factory-config edits.
