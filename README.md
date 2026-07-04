@@ -7,7 +7,7 @@
 **A model/effort router for Claude Code** — delegate a task you *can* do but that is large and cheap *down* to a cheaper tier to save tokens, and hand a task beyond your reach *up* to a stronger tier for quality.
 
 ![version](https://img.shields.io/github/v/tag/TheColliery/CoalTipple?label=version&color=blue)
-![license](https://img.shields.io/badge/license-MIT-blue)
+![license](https://img.shields.io/badge/license-Apache_2.0-blue)
 ![status](https://img.shields.io/badge/status-live-brightgreen)
 ![SKILL.md](https://img.shields.io/badge/SKILL.md-open_standard-success)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-validated-success)
@@ -156,4 +156,4 @@ Full harnesses, per-task scoring, and the dated figures live in the series umbre
 CoalTipple shares its engineering doctrine with [CoalMine](https://github.com/HetCreep/CoalMine), [CoalBoard](https://github.com/TheColliery/CoalBoard), [CoalHearth](https://github.com/TheColliery/CoalHearth) (session warm-resume), and [CoalFace](https://github.com/TheColliery/CoalFace) (fan-out discipline): Phoenix-13 hooks (zero-dependency, no network, fail-silent, no child processes, deterministic), single-source-of-truth config schemas, and a strict no-overkill discipline. Install one and it stands alone; install all and they compose without conflict.
 
 ## 📄 License
-MIT License. See [LICENSE](LICENSE) for details.
+Apache License 2.0. See [LICENSE](LICENSE) for details.
