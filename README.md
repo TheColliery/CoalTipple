@@ -128,7 +128,7 @@ Workers start context-fresh. A **memory anchor** file gives a fresh worker proje
 
 ## ⚙️ Configure
 
-Ships zero-config with optimal defaults in `.coaltipple.json`. Precedence: **project override → global config → schema default**. The high-impact keys:
+Everything is tunable in `.coaltipple.json` — a global `~/.claude/.coaltipple.json` overlaid per key by the project `<gitroot>/.claude/.coaltipple.json` (project wins), so you can **tune or shut off a globally-installed skill per project** (off-switch: `enableRouting: false`). Ships zero-config with optimal defaults. The high-impact keys:
 
 | Key | Default | What it does |
 |---|---|---|
