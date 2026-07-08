@@ -47,8 +47,11 @@ export const CONFIG_SCHEMA = [
   { key: 'updateMode', type: 'enum', values: ['ask', 'auto', 'remind', 'off'], flags: ['-u', '--update-mode'], help: 'Self-update behavior at session start (ask, auto, remind, off; default: ask). Orthogonal to routing — its own off-switch' },
   { key: 'updateCheckDays', type: 'int', min: 1, max: 365, flags: ['-P', '--update-days'], help: 'Days between self-update checks/reminders (range 1-365, default: 14). Short flag -P (uppercase; -p is reserved for --project)' },
   { key: 'modelTiers', type: 'obj', noFlag: true, validate: validateModelTiers, help: 'Optional user pins overriding auto-classification: { low|mid|heavy|reasoning: "model" | ["priority","chain"] }' },
-  { key: 'callFable', type: 'bool', flags: ['--fable'], help: 'Feature-gate Fable as a worker — Fable bills real usage credits outside plan limits, keep off unless you mean to spend. false (default): ladder tops at opus, Fable never spawns, and any modelTiers pin naming it is inert (this gate overrides pins). true: Fable becomes the optional sky rung above opus, then routes normally. Governs worker spawns only — never the main model, which stays whatever the user is already running.' },
 ];
+// Tombstoned keys — do NOT resurrect without their trigger:
+//   'callFable' (shipped 1.1.0, withdrawn 1.1.1 — premature: a SKILL.md flag cannot hard-block a
+//   spawn the way commented-out code blocks execution; returns as the real-money Fable gate,
+//   redesigned [config clamp / PreToolUse level], WHEN Fable billing actually leaves the plan).
 
 // Validate an already-parsed JSON value against a spec.
 // Returns an error message fragment ("must be ...") or null when valid.

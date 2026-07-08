@@ -94,18 +94,8 @@
   // # Setting type: Object { low | mid | heavy | reasoning : "model" | ["priority", "chain"] }  (cheapest tier is `low`, not `cheap`)
   // # Default value: unset (the alias floor applies; pins overlay it when set)
   // # Worked example — pin ONLY the extra alias; the floor model falls in behind it automatically
-  // # (also listing the floor model would de-dup it OUT of its own tier — pin the newcomer alone;
-  // # a pin naming fable also needs callFable: true below, else it stays inert):
+  // # (also listing the floor model would de-dup it OUT of its own tier — pin the newcomer alone):
   // "modelTiers": { "reasoning": ["fable"] },
-
-  // ## Feature-gate for Fable as a worker. Fable bills real usage credits outside plan limits —
-  // ## keep off unless you mean to spend. false = the ladder tops at opus, Fable is NEVER spawned,
-  // ## and any modelTiers pin naming it is inert (this gate overrides pins). true = Fable becomes
-  // ## the optional sky rung above opus, then routes normally. Governs WORKER spawns only — never
-  // ## your own (main) model, which stays whatever the user is already running.
-  // # Setting type: Boolean
-  // # Default value: false
-  "callFable": false,
 
   // ─── grading scope ───
 

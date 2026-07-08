@@ -2,6 +2,13 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.1.1] - 2026-07-08
+
+Same-day withdrawal of the v1.1.0 key. Routing behavior is identical to v1.0.23.
+
+### Removed
+- **`callFable` — withdrawn (shipped prematurely).** A SKILL.md feature flag cannot hard-block a spawn the way commented-out code blocks execution — the owner's requirement is a gate that stays dead no matter what the config says, which needs a config-clamp or PreToolUse-level design. The key is tombstoned in the schema and returns as the redesigned real-money gate WHEN Fable billing actually leaves the subscription plan (it has not yet). A leftover `callFable` in a user's `.coaltipple.json` is harmless (unknown keys are ignored).
+
 ## [1.1.0] - 2026-07-08
 
 **MINOR** — a new user-facing capability (the first minor bump; the v1.0.x line under-bumped features as patches — from here the number matches the magnitude). Routing behavior is unchanged until the user opts in: the new key ships factory-off.

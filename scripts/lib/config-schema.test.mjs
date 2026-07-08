@@ -113,10 +113,6 @@ test('keywords groups are deep-validated (a bad group fails loud, not a silent b
   assert.match(validateValue(spec, { x: { words: ['a'], sensitive: 'yes' } }), /sensitive must be a boolean/); // bad flag type
 });
 
-test('callFable gates Fable as a worker (bool, factory default false — a real-money feature flag)', () => {
-  const spec = specOf('callFable');
-  assert.ok(spec, 'callFable spec exists');
-  assert.equal(validateValue(spec, false), null); // factory default: ladder tops at opus, Fable never spawns
-  assert.equal(validateValue(spec, true), null);  // opt-in: Fable becomes the sky rung above opus
-  assert.match(validateValue(spec, 'true'), /boolean/); // a string is not a boolean, whatever it says
+test('callFable stays tombstoned (withdrawn 1.1.1 — returns only as the redesigned real-money gate)', () => {
+  assert.equal(specOf('callFable'), undefined, 'callFable must not be in the schema');
 });
