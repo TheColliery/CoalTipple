@@ -135,6 +135,7 @@ Ships zero-config with optimal defaults in `.coaltipple.json`. Precedence: **pro
 | `qualityBar` | `60` | Quality threshold (0–100) for the staircase — raise (~85) for critical logic, lower (~45) for quick drafts |
 | `delegateMinLines` | `120` | Minimum task size below which down-delegation is skipped (spawn-overhead floor) |
 | `modelTiers` | unset | Optional pins overlaying the alias floor (e.g. `{ "reasoning": ["fable"] }`) — the one human override for a model the agent cannot see; an unavailable pin falls safely down the ladder at spawn-fail |
+| `callFable` | `false` | Feature-gate for Fable as a worker — bills real usage credits outside plan limits. `false` = ladder tops at opus (Fable never spawns; a `modelTiers` pin naming it is inert). `true` = Fable becomes the optional sky rung above opus |
 
 Full key reference: every key + default lives in [`scripts/lib/config-schema.mjs`](scripts/lib/config-schema.mjs) and the commented template [`platform-configs/.coaltipple.json`](platform-configs/.coaltipple.json) — or run `node scripts/configure.mjs --help`.
 

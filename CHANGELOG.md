@@ -2,7 +2,12 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
-## [Unreleased]
+## [1.1.0] - 2026-07-08
+
+**MINOR** — a new user-facing capability (the first minor bump; the v1.0.x line under-bumped features as patches — from here the number matches the magnitude). Routing behavior is unchanged until the user opts in: the new key ships factory-off.
+
+### Added
+- **`callFable` — feature-gate for Fable as a worker.** New boolean config key, factory `false`. Fable bills real usage credits outside plan limits — keep off unless you mean to spend. `false` (default): the ladder tops at **opus**; Fable is never spawned as a worker, and any `modelTiers` pin naming it is inert (this gate overrides pins — it guards real money, not just a routing preference). `true`: Fable becomes the optional **sky rung** above opus, then routes under the normal rules. Governs worker spawns only — the main model is always whatever the user is already running on their platform; this skill never switches it. Schema + SKILL.md + factory config + README + config-schema tests updated; `configure.mjs` picks it up automatically (schema-driven, no hardcoded key list).
 
 ### Changed
 - Relicensed from MIT to Apache-2.0. `LICENSE` is now the Apache License 2.0 (verbatim); a new `NOTICE` carries the attribution; the `plugin.json` `license` field is `Apache-2.0`. No code or behavior change.
