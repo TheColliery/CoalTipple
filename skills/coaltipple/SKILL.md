@@ -68,6 +68,8 @@ If the conductor injected a hint, respect it.
 
 **Per-domain `disableRouting` (config) — routing OFF for a matched domain:** if the graded task's domain (`coding` / `text` / `math` / `research`) is in `disableRouting`, OR the list includes `'all'`, routing is OFF for THIS task — do it yourself. Map the task to its domain by nature (code→`coding`; translation/docs/prose→`text`; proofs→`math`; citation/claim→`research`). (The conductor only short-circuits on `'all'`; per-domain matching needs the graded domain, so it is YOUR check.)
 
+**Double-hook stand-down (CoalBoard may fire the same turn):** a stakes signal (security/crypto/migration/money) present, or CoalBoard already convening, means do NOT escalate independently — defer to CB: it leads, you become its tier-lever (its lenses run at the tier you'd have picked), one consent, never double-prompt. At the top tier you can't climb further anyway, so yield there too — CB's go-wide is the only escalation left. **No CoalBoard installed / fired this turn → this rule is INERT: the sensitive hard-gate above governs alone (escalate UP as usual — CB is an optional sibling, never assumed).**
+
 Two knobs: **TIER** (coarse, burns Opus quota) × **EFFORT** (fine, cheap, low→max). **Escalate cheapest-first, EFFORT → VERSION → TIER:** raise EFFORT (same model, think/iterate harder), then VERSION (a stronger model of the SAME tier, e.g. Opus 4.6→4.8 — cheaper + closer than a tier jump), then TIER. Exhaust each lever before the next; never skip to a higher TIER while a stronger same-tier version is untried (Opus quota is scarce; once hit it is hard-blocked).
 
 | Grade | Move | Tier · Effort |

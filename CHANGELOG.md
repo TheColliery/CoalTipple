@@ -2,6 +2,17 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.2.0] - 2026-07-09
+
+**MINOR** — the double-hook arbitration lands (the CB↔CT self-conflict fix, designed 2026-07-04, spec `DOUBLE-HOOK-FIX.md`).
+
+### Added
+- **Double-hook stand-down (SKILL.md Step 2):** a stakes signal (security/crypto/migration/money) present, or CoalBoard already convening → CT does NOT escalate independently; it defers to CB as CB's internal tier-lever (one consent, never double-prompt); at the top tier CT yields (CB's go-wide is the only escalation left). **Inert without CoalBoard:** no CB installed / fired this turn → the sensitive hard-gate governs alone (CB = an optional sibling, never assumed — no-external-assumption).
+- **The arbitration cue** appended to the conductor's per-prompt routing forcer: stakes → CoalBoard leads · pure capability gap → CoalTipple · trivial → neither · in doubt WITH a stakes signal → CoalBoard; arbitrate silently, never surface it. **3-tier regression PASS** (haiku/sonnet/opus × 7 tasks: clear cases 100% agreement; the stakes-borderline rate-limiter = CB on every tier — the sonnet-miss the 2026-07-04 test exposed is closed).
+
+### Changed
+- **README repositioned per the differentiation doctrine:** CoalTipple is *not the cheapest router on the market* — it is the **safe, quality-gated router inside Claude Code** (verify staircase, sensitive never-down gate, fail-safe Lock). Benchmark section trimmed to the dated 2026-07-03 record + links (redundant inlined figures removed).
+
 ## [1.1.1] - 2026-07-08
 
 Same-day withdrawal of the v1.1.0 key. Routing behavior is identical to v1.0.23.

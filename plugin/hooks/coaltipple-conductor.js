@@ -234,7 +234,11 @@ function main() {
     // deterministic nudge so the sensitive-gate backstop is not silently lost there.
     // Complements (never replaces) the English hint above.
     const nonEnglish = hasNonLatinScript(prompt) ? ' Non-English prompt -- grade by MEANING and apply the sensitive-gate by intent; the English keyword flags will not fire.' : '';
-    process.stdout.write(`[CoalTipple] Route BEFORE acting on this prompt: apply the coaltipple routing contract (SKILL.md) -- grade the task, then delegate-down (large + cheap), escalate-up (beyond this tier), or keep-on-self, per the rubric. Routing actuates on Claude Code only.${hint}${nonEnglish}`);
+    // Double-hook arbitration cue (CB↔CT coordination, DOUBLE-HOOK-FIX.md): CB's UserPromptSubmit
+    // hook fires on the same turn broadly (error-not-allowed check); this cue lets the model
+    // arbitrate silently rather than act on both / surface a "conflict" (Phoenix #13 zero-noise).
+    const cue = ' If a sibling conductor hook also fired this turn, ARBITRATE silently -- do not act on both and never surface it: stakes signal (security/crypto/migration/money) -> CoalBoard leads (CoalTipple becomes its tier-lever); pure capability gap -> CoalTipple; trivial -> neither; in doubt WITH any stakes signal -> CoalBoard.';
+    process.stdout.write(`[CoalTipple] Route BEFORE acting on this prompt: apply the coaltipple routing contract (SKILL.md) -- grade the task, then delegate-down (large + cheap), escalate-up (beyond this tier), or keep-on-self, per the rubric. Routing actuates on Claude Code only.${hint}${nonEnglish}${cue}`);
     return;
   }
   // SessionStart (and any non-prompt event) -> inject the routing contract, plus the

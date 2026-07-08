@@ -127,6 +127,7 @@ test('UserPromptSubmit always injects the routing forcer (trivial prompt: direct
     assert.match(r.stdout, /Route BEFORE acting/);
     assert.match(r.stdout, /SKILL\.md/);
     assert.doesNotMatch(r.stdout, /Complexity hint/);
+    assert.match(r.stdout, /ARBITRATE/, 'double-hook arbitration cue is always appended to the forcer');
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 });
 

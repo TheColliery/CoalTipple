@@ -6,6 +6,8 @@
 
 **A model/effort router for Claude Code** — delegate a task you *can* do but that is large and cheap *down* to a cheaper tier to save tokens, and hand a task beyond your reach *up* to a stronger tier for quality.
 
+Not the cheapest router on the market — a cross-provider proxy can cut deeper by routing off Claude entirely. CoalTipple is the **safe, quality-gated router *inside* Claude Code**: every delegation clears a verify staircase, sensitive work has a hard never-down gate, and a broken ranking locks routing off rather than guessing.
+
 ![version](https://img.shields.io/github/v/tag/TheColliery/CoalTipple?label=version&color=blue)
 ![license](https://img.shields.io/badge/license-Apache_2.0-blue)
 ![status](https://img.shields.io/badge/status-live-brightgreen)
@@ -142,13 +144,11 @@ Full key reference: every key + default lives in [`scripts/lib/config-schema.mjs
 
 ## 📊 Benchmark
 
-We evaluate the **final output correctness** after the main escalates one rung, and the **token savings** of delegating mechanical bulk down — each dated, on small honest samples, never inlined here so a copied number cannot drift.
+We evaluate the **final output correctness** after the main escalates one rung, and the **token savings** of delegating mechanical bulk down — each dated, on small honest samples, in the linked record so a copied number cannot drift.
 
 * **ON-vs-OFF (paired, 2026-07-03, v1.0.23):** the same 4 tasks at every tier (36 runs, K=3, Haiku 4.5/Sonnet 5/Opus 4.8) — **routing ON scored 4/4 task quality on both baselines; OFF scored 3/4 on both, failing a DIFFERENT task each** (an Opus main fails the boring spec's letter; a Sonnet main fails the sensitive legal nuance). From an Opus main ON is also **~23% cheaper**; from a Sonnet main it is cost-neutral and removes a liability-shifting translation error.
-* **Output quality (per-tier matrix):** on objectively-verifiable tasks every tier (Haiku → Sonnet → Opus) delivers correct → **delegate-down preserves quality** (the cost saving is free); on high-precision *sensitive* work the mid tier reproducibly errs (Sonnet collapses the legal *"to the extent"* carve-out 2/3 of the time, Opus holds) → **escalate-up / never-delegate-sensitive-down is data-justified** (measured on v1.0.20, 2026-06-22; small samples + the honest method caveats — incl. per-cell judge-variance — are in the record).
-* **Routing savings:** delegating a big mechanical task down from Opus to a cheaper tier ran **~70–75% cheaper** — holding only above the `delegateMinLines` floor and never on sensitive work (measured 2026-06-19, version-sensitive rates).
 
-Full harnesses, per-task scoring, and the dated figures live in the series umbrella: [`TheColliery/.github/benchmarks/CoalTipple`](https://github.com/TheColliery/.github/tree/main/benchmarks/CoalTipple) ([output-quality RESULTS](https://github.com/TheColliery/.github/blob/main/benchmarks/CoalTipple/RESULTS.md) · [routing savings](https://github.com/TheColliery/.github/blob/main/benchmarks/CoalTipple/ROUTING-SAVINGS.md)).
+Full harnesses, per-task scoring, the quality-vs-tier matrix, routing-savings history, and every honest-scope caveat live in the series umbrella: [`TheColliery/.github/benchmarks/CoalTipple`](https://github.com/TheColliery/.github/tree/main/benchmarks/CoalTipple) ([RESULTS.md](https://github.com/TheColliery/.github/blob/main/benchmarks/CoalTipple/RESULTS.md) · [ROUTING-SAVINGS.md](https://github.com/TheColliery/.github/blob/main/benchmarks/CoalTipple/ROUTING-SAVINGS.md)).
 
 ---
 
