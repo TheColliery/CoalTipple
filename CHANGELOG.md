@@ -2,6 +2,11 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.2.1] - 2026-07-09
+
+### Fixed
+- **`modelTiers` was effectively global-only — a per-project pin silently wiped the global pin set.** The 2-level config cascade (`loadMergedConfig`) merged shallow per-key, so a project `.coaltipple.json` with `modelTiers: { heavy: "x" }` REPLACED the whole global `modelTiers` object — dropping a global platform-level pin (e.g. `reasoning: fable`, the episodic-access override the agent cannot introspect). `modelTiers` now DEEP-merges per-tier (a project refines one tier's pin over the global base; the others survive). `keywords` (the other obj key) stays shallow by design — its sensitive floor is the built-in factory groups applied downstream, never the config value, so a keyword merge cannot weaken the hard gate. +2 hermetic tests (142). (Board-2 dogfood finding.)
+
 ## [1.2.0] - 2026-07-09
 
 **MINOR** — the double-hook arbitration lands (the CB↔CT self-conflict fix, designed 2026-07-04, spec `DOUBLE-HOOK-FIX.md`).

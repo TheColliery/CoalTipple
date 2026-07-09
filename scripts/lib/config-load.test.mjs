@@ -42,6 +42,26 @@ test('project overrides global per-key; non-overlapping keys from both survive',
   } finally { cleanup(s); }
 });
 
+test('modelTiers deep-merges PER-TIER — a project pin refines one tier, global pins survive', () => {
+  const s = sandbox({
+    global: JSON.stringify({ modelTiers: { reasoning: 'fable', heavy: 'opus' }, qualityBar: 60 }),
+    project: JSON.stringify({ modelTiers: { heavy: 'sonnet' } }),
+  });
+  try {
+    const cfg = loadMergedConfig(s);
+    // project refines `heavy`; the global `reasoning: fable` pin is NOT wiped (the bug was a shallow spread replacing the whole obj)
+    assert.deepEqual(cfg.modelTiers, { reasoning: 'fable', heavy: 'sonnet' });
+    assert.equal(cfg.qualityBar, 60, 'other global keys unaffected');
+  } finally { cleanup(s); }
+});
+
+test('modelTiers from one layer only passes through unchanged', () => {
+  const g = sandbox({ global: JSON.stringify({ modelTiers: { reasoning: 'fable' } }) });
+  try { assert.deepEqual(loadMergedConfig(g).modelTiers, { reasoning: 'fable' }); } finally { cleanup(g); }
+  const p = sandbox({ project: JSON.stringify({ modelTiers: { heavy: 'opus' } }) });
+  try { assert.deepEqual(loadMergedConfig(p).modelTiers, { heavy: 'opus' }); } finally { cleanup(p); }
+});
+
 test('global-only when no project file exists', () => {
   const s = sandbox({ global: JSON.stringify({ qualityBar: 75, mode: 'delegation' }) });
   try {

@@ -76,11 +76,37 @@ export function projectStateDir(cwd = process.cwd()) {
   return path.join(findGitRoot(cwd), '.claude', '.coaltipple');
 }
 
-// Load + merge the cascade. Shallow per-key: project keys overwrite global keys;
-// keys absent from both are simply absent (the schema default applies downstream).
-// Returns {} when neither file exists.
+function isPlainObj(v) {
+  return v && typeof v === 'object' && !Array.isArray(v);
+}
+
+// Load + merge the cascade. Shallow per-key (project keys overwrite global keys),
+// EXCEPT `modelTiers`, which is deep-merged PER-TIER. Keys absent from both are
+// simply absent (the schema default applies downstream). Returns {} when neither
+// file exists.
+//
+// Why modelTiers is special: it is a nested obj of PLATFORM-LEVEL pins (the human
+// override for a model the agent cannot introspect — e.g. an episodic Fable pin on
+// `reasoning`). A shallow spread lets ANY project `modelTiers` REPLACE the whole
+// global pin set — a project pinning only `heavy` would silently drop a global
+// `reasoning: fable` pin. Deep-merging per-tier lets a project REFINE one tier's pin
+// over the global base without wiping the others.
+//
+// `keywords` (the other obj key) stays SHALLOW by design (named divergence): its
+// security FLOOR is the built-in FACTORY groups (crypto/auth/…) applied downstream by
+// mergeKeywordGroups — never the config value — so the sensitive HARD GATE cannot be
+// weakened by a global-vs-project keyword merge. Deep-merging it would touch the
+// sensitive-merge path (the v1.0.18 REPLACE→UNION class) for a non-security
+// customization concern that is not this finding; left as-is deliberately.
 export function loadMergedConfig({ cwd = process.cwd(), home = os.homedir() } = {}) {
   const global = readJsonc(globalConfigPath(home));
   const project = readJsonc(projectConfigPath(cwd));
-  return { ...global, ...project };
+  const merged = { ...global, ...project };
+  if (isPlainObj(global.modelTiers) || isPlainObj(project.modelTiers)) {
+    merged.modelTiers = {
+      ...(isPlainObj(global.modelTiers) ? global.modelTiers : {}),
+      ...(isPlainObj(project.modelTiers) ? project.modelTiers : {}),
+    };
+  }
+  return merged;
 }
