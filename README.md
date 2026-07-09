@@ -96,7 +96,7 @@ Routing adjusts **two independent knobs** (always raise effort before tier):
 
 ## 🛡️ Routing the Work Safely
 
-* **No Down-Delegation for Sensitive Tasks:** Cryptography, auth, payments, and security paths are forced to the `heavy` tier based on keywords. They never fall to cheap tiers, even under quota limits.
+* **No Down-Delegation for Sensitive Tasks:** Cryptography, auth, payments, and security paths are forced to the `heavy` tier based on keywords. They never fall to cheap tiers, even under quota limits — and a `modelTiers` pin naming a known-weaker model (e.g. `haiku`) can never satisfy that floor either.
 * **Overhead Floor:** Tasks below `delegateMinLines` (default 120) stay on main to avoid spawn overhead.
 * **Prose Preservation:** User-facing writing and translation stay on main to protect voice.
 * **Verify, Do Not Eyeball:** Output merges require passing objective checks (`qaOnMerge`: strict/standard/off).

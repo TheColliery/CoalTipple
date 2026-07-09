@@ -112,6 +112,28 @@ export function escalationStep(currentTier, { attemptsLeft = 1, farBelow = false
   return ladder[i + 1];                           // climb one rung
 }
 
+// KNOWN alias families -> capability rank, DERIVED from the alias floor (aliasDefaults)
+// so it never drifts as the floor changes (e.g. a future Fable rung): haiku<sonnet<opus.
+// A family's rank = the highest ESCALATION_LADDER tier it holds in the floor (opus serves
+// heavy AND reasoning -> 3). Assumes the default ladder (the only one resolveWorker uses).
+const FAMILY_RANK = (() => {
+  const floor = aliasDefaults();
+  const rank = {};
+  ESCALATION_LADDER.forEach((t, i) => { for (const m of (floor[t] || [])) rank[String(m).toLowerCase()] = i; });
+  return rank; // { haiku: 0, sonnet: 1, opus: 3 }
+})();
+
+// A SENSITIVE task's floor protects CAPABILITY, not just the tier SLOT (M2): a `modelTiers`
+// pin can slot a KNOWN-weaker alias (haiku/sonnet) into a high tier, so the slot passes the
+// never-down gate while the MODEL is a downgrade. True iff `m` carries a known family token
+// ranking BELOW `floor`. A name with NO known family token is UNKNOWN -> trusted
+// (unknown->strong — the whole reason pins exist, e.g. an episodic fable pin).
+function belowSensitiveFloor(m, floor) {
+  const name = String(m).toLowerCase();
+  for (const fam in FAMILY_RANK) if (FAMILY_RANK[fam] < floor && name.includes(fam)) return true;
+  return false;
+}
+
 // Availability fallback — the LIMIT-HIT resolver (the DOWN move, opposite of
 // escalationStep's quality climb UP). When the desired tier's model is blocked
 // (quota hit / disabled / a spawn that errored), walk DOWN the ladder for the best
@@ -123,6 +145,9 @@ export function escalationStep(currentTier, { attemptsLeft = 1, farBelow = false
 // floor fails CLOSED to `desiredTier` — a forgotten floor on a sensitive task can no
 // longer collapse to the cheapest tier by omission. (An explicit floorTier always
 // wins; a non-sensitive task keeps the full availability walk-down.)
+// CAPABILITY FLOOR (M2): a sensitive route also SKIPS a KNOWN-weaker alias (haiku/sonnet)
+// that a `modelTiers` pin slotted into a high tier — the slot alone must not satisfy the
+// gate while the MODEL is a downgrade; an UNKNOWN pinned name stays trusted (unknown->strong).
 // Deterministic, pure (Phoenix #8).
 export function resolveWorker(ranking, desiredTier, { blocked = [], floorTier = null, sensitive = false, ladder = ESCALATION_LADDER } = {}) {
   if (sensitive && floorTier == null) floorTier = desiredTier;
@@ -147,9 +172,13 @@ export function resolveWorker(ranking, desiredTier, { blocked = [], floorTier = 
   }
   for (let i = di; i >= floor; i--) {                         // walk desired tier -> floor, never below
     const models = Array.isArray(tiers[ladder[i]]) ? tiers[ladder[i]] : [];
-    for (const m of models) if (!blockedSet.has(String(m))) return { tier: ladder[i], model: m };
+    for (const m of models) {
+      if (blockedSet.has(String(m))) continue;
+      if (sensitive && belowSensitiveFloor(m, floor)) continue; // M2: a known-weak pin can't satisfy a sensitive slot
+      return { tier: ladder[i], model: m };
+    }
   }
-  return null;                                                // all blocked down to the floor -> hand back
+  return null;                                                // all blocked / below the sensitive floor -> hand back
 }
 
 // Overlay user pins from .coaltipple.json `modelTiers` onto a tiers object. A pin

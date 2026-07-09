@@ -233,6 +233,57 @@ test('resolveWorker DRIVES the spawn-fail-fall loop: each unavailable model accr
   assert.equal(resolveWorker(ranking, 'reasoning', { blocked }), null);
 });
 
+test('resolveWorker (M2a): a modelTiers pin cannot slip a KNOWN-weaker alias past the SENSITIVE floor', () => {
+  // The finding's exact repro: a pin front-loads haiku into the reasoning tier. The SLOT
+  // (reasoning) passes the never-down gate, but the MODEL (haiku) is a known downgrade.
+  const poisoned = buildFloorRanking([], { reasoning: ['haiku'] });
+  assert.deepEqual(poisoned.tiers.reasoning, ['haiku', 'opus'], 'pre-condition: the pin wins front-of-tier');
+  // a SENSITIVE route must NOT resolve to haiku — it skips the known-weaker alias and returns
+  // the next known-strong candidate in the tier (opus); the gate is GENUINELY satisfied.
+  assert.deepEqual(
+    resolveWorker(poisoned, 'reasoning', { sensitive: true }),
+    { tier: 'reasoning', model: 'opus' },
+    'sensitive: haiku pinned into reasoning is skipped -> opus (the finding, flipped)',
+  );
+  // when a weaker alias is the ONLY model at/above the floor, a sensitive route HANDS BACK
+  // rather than downgrade (never-down holds — same discipline as the quota fail-closed floor).
+  const onlyWeak = { tiers: { low: ['haiku'], mid: ['sonnet'], heavy: ['opus'], reasoning: ['haiku'] } };
+  assert.equal(
+    resolveWorker(onlyWeak, 'reasoning', { sensitive: true, floorTier: 'reasoning' }),
+    null,
+    'sensitive: a reasoning tier holding ONLY a weaker alias -> null (never downgrade)',
+  );
+  // a sensitive task floored at heavy: sonnet slotted into heavy is a downgrade -> skipped -> null.
+  const sonnetInHeavy = { tiers: { low: ['haiku'], mid: ['sonnet'], heavy: ['sonnet'], reasoning: ['opus'] } };
+  assert.equal(
+    resolveWorker(sonnetInHeavy, 'heavy', { sensitive: true, floorTier: 'heavy' }),
+    null,
+    'sensitive: sonnet slotted into heavy does not satisfy a heavy floor',
+  );
+});
+
+test('resolveWorker (M2b): an UNKNOWN pinned name stays TRUSTED on the sensitive path (unknown->strong preserved)', () => {
+  // A model the agent cannot introspect (e.g. an episodic fable) carries no known family token,
+  // so the sensitive floor must NOT skip it — the fix cannot break the pin doctrine.
+  const unknownPin = buildFloorRanking([], { reasoning: ['fable'] });
+  assert.deepEqual(
+    resolveWorker(unknownPin, 'reasoning', { sensitive: true }),
+    { tier: 'reasoning', model: 'fable' },
+    'sensitive: an unknown pinned model is trusted (unknown->strong)',
+  );
+});
+
+test('resolveWorker (M2c): NON-sensitive resolution with the same pin is UNCHANGED (no behavior change off the sensitive path)', () => {
+  // The pin is honored exactly as pre-fix — haiku resolves at the reasoning tier; the M2 guard
+  // is scoped to `sensitive:true` and must never touch the availability walk-down.
+  const poisoned = buildFloorRanking([], { reasoning: ['haiku'] });
+  assert.deepEqual(
+    resolveWorker(poisoned, 'reasoning', {}),
+    { tier: 'reasoning', model: 'haiku' },
+    'non-sensitive: the pin is honored (haiku) — byte-equivalent to pre-fix behavior',
+  );
+});
+
 test('reasoning floor = [opus] (always-available bare floor; fable is plan-gated, reached only by the spawn-fail-fall / a pin)', () => {
   // The bare floor must NOT hardcode a plan-gated model (fable): a fable spawn errors
   // instantly when off-plan, so the floor is opus and resolveWorker / a modelTiers pin
