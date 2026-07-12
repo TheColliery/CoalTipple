@@ -12,7 +12,7 @@ Not the cheapest router on the market — a cross-provider proxy can cut deeper 
 ![license](https://img.shields.io/badge/license-Apache_2.0-blue)
 ![status](https://img.shields.io/badge/status-live-brightgreen)
 ![SKILL.md](https://img.shields.io/badge/SKILL.md-open_standard-success)
-![Claude Code](https://img.shields.io/badge/Claude_Code-validated-success)
+![Claude Code](https://img.shields.io/badge/Claude_Code-validated-brightgreen)
 
 [Benchmark](https://github.com/TheColliery/.github/tree/main/benchmarks/CoalTipple) · [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md) · [Security](SECURITY.md) · [Privacy](PRIVACY.md) · [Releases](https://github.com/TheColliery/CoalTipple/releases)
 
@@ -53,9 +53,9 @@ You are **main**. CoalTipple decides, per task, whether to:
 
 ## 🚀 Install
 
-**Claude Code only** — routing actuates only where an agent can pick a spawned worker's model + effort, and Claude Code's `Agent`/`Task` tool is the one that takes a `model` parameter. On any other platform (Antigravity, Codex, …) there is no install: a spawned worker inherits the parent model, so routing cannot actuate (other platforms are under monthly review — see [Compatibility](#-compatibility)).
+CoalTipple installs on **Claude Code only** — routing actuates only where an agent can pick a spawned worker's model + effort, and Claude Code's `Agent`/`Task` tool is the one that takes a `model` parameter.
 
-### Claude Code plugin
+### Claude Code — plugin
 
 ```bash
 claude plugin marketplace add TheColliery/CoalTipple
@@ -64,6 +64,15 @@ claude plugin install coaltipple@coaltipple
 ```
 
 Optional per-project config override: `<project>/.claude/.coaltipple.json`.
+
+### Other platforms — no install (routing cannot actuate)
+
+There is deliberately **no file-copy or `install.mjs` path** for other agents: a spawned worker inherits the parent model, so CoalTipple has no worker model + effort to route with (see [Compatibility](#-compatibility) for the full reason).
+
+* **Antigravity** — verified non-actuating (2026-06-16): no per-spawn model parameter, no separate effort knob. Copying the files in would only let a weak main *hallucinate* a delegation it cannot perform, so CT does not install here.
+* **Codex · Gemini CLI · Cline · Windsurf** — no worker model-pick → not supported.
+* **Cursor** — reports a worker `model` param but it is **unverified**; a monitored candidate under monthly review (verify the spawn schema first), not a supported install today.
+* **claude.ai** — the ZIP-upload skill path is for read/analyze skills only; CoalTipple actuates model routing, so it does not apply.
 
 ### Verify (from clone)
 
