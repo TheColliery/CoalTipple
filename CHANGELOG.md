@@ -2,6 +2,15 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.2.3] - 2026-07-16
+
+### Changed
+- **HOOK-LEAN — the per-prompt injection is now a pointer, not a re-teach.** The `UserPromptSubmit` forcer shrinks from the full routing rubric (~573 chars on a signal-free turn) to one line pointing at the resident SessionStart contract (~63 chars signal-free); the complexity hint + non-English MEANING note + CB↔CT arbitration cue append only when their signals actually fire (the cue is now CONDITIONAL on a hint/non-Latin signal — those mirror CoalBoard's own seeds, so a signal-free turn has nothing to arbitrate). The resident SessionStart contract (incl. the `:compact` re-inject) is unchanged — rails intact, per-turn token tax cut. Honest caveat carried in-code: on a very long never-compacting session early-context attention can fade; the pointer line is the re-surface net.
+- `verify.mjs` gains the flock `DESC_CAP` gate: every `skills/*/SKILL.md` + `commands/*.md` frontmatter `description` (+ `when_to_use`) must be ≤ 1024 chars — the cross-platform-safe cap (agentskills.io); CC's own listing truncation is 1536 combined (code.claude.com/docs/en/skills, verified 2026-07-16). USER lock 2026-07-16, past/present/future.
+
+### Fixed
+- `conductor-update.test.mjs` still asserted the pre-lean per-turn text (`Route BEFORE acting`) — the anchor synced to the pointer text; the test's intent (self-update never lands on the prompt path) is unchanged.
+
 ## [1.2.2] - 2026-07-09
 
 ### Fixed

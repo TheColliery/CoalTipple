@@ -192,7 +192,7 @@ test('the self-update directive lands ONLY on SessionStart, never on the UserPro
   try {
     const r = run({ hook_event_name: 'UserPromptSubmit', prompt: 'list the files' }, home);
     assert.equal(r.status, 0);
-    assert.match(r.stdout, /Route BEFORE acting/, 'the per-prompt forcer still fires');
+    assert.match(r.stdout, /Route this turn per the resident routing contract/, 'the per-prompt forcer still fires (HOOK-LEAN pointer text)');
     assert.doesNotMatch(r.stdout, /self-update/, 'no self-update directive on the prompt path');
     assert.equal(readStamp(home), null, 'the forcer path never touches the update stamp');
   } finally { fs.rmSync(home, { recursive: true, force: true }); }

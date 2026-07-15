@@ -109,25 +109,25 @@ test('config cascade: global enableRouting:false silences even with no project f
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); }
 });
 
-test('UserPromptSubmit with a hot keyword -> grade-5 hint that feeds grade + qualityBar', () => {
+test('UserPromptSubmit with a hot keyword -> grade-5 hint that feeds grade + qualityBar, cue appended (signal turn)', () => {
   const tmp = mk();
   try {
     const r = run({ hook_event_name: 'UserPromptSubmit', prompt: 'fix the race condition in the mutex' }, tmp);
     assert.equal(r.status, 0);
     assert.match(r.stdout, /grade 5/);
     assert.match(r.stdout, /qualityBar/);
+    assert.match(r.stdout, /ARBITRATE/, 'a hot-keyword hint is a signal turn -> the arbitration cue must be appended');
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 });
 
-test('UserPromptSubmit always injects the routing forcer (trivial prompt: directive, no complexity hint)', () => {
+test('UserPromptSubmit on a signal-free turn -> the lean one-liner, no complexity hint, no arbitration cue (HOOK-LEAN)', () => {
   const tmp = mk();
   try {
     const r = run({ hook_event_name: 'UserPromptSubmit', prompt: 'list the readme files' }, tmp, tmp);
     assert.equal(r.status, 0);
-    assert.match(r.stdout, /Route BEFORE acting/);
-    assert.match(r.stdout, /SKILL\.md/);
+    assert.match(r.stdout, /^\[CoalTipple\] Route this turn per the resident routing contract\.$/);
     assert.doesNotMatch(r.stdout, /Complexity hint/);
-    assert.match(r.stdout, /ARBITRATE/, 'double-hook arbitration cue is always appended to the forcer');
+    assert.doesNotMatch(r.stdout, /ARBITRATE/, 'no hint and no non-Latin signal -> nothing for CoalBoard to arbitrate, cue stays out');
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 });
 
@@ -143,27 +143,29 @@ test('UserPromptSubmit honors enableRouting:false -> fully silent (the always-on
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 });
 
-test('UserPromptSubmit: a non-English (Thai) prompt injects the generic non-English nudge', () => {
+test('UserPromptSubmit: a non-English (Thai) prompt injects the generic non-English nudge + the arbitration cue (signal turn)', () => {
   const tmp = mk();
   try {
     // Thai for "scan for bugs in this code" — matches NO English keyword, so the
     // deterministic sensitive-gate backstop would vanish without this nudge.
     const r = run({ hook_event_name: 'UserPromptSubmit', prompt: 'สแกนหาบั๊กในโค้ดนี้' }, tmp, tmp);
     assert.equal(r.status, 0);
-    assert.match(r.stdout, /Route BEFORE acting/);          // the always-on forcer still fires
+    assert.match(r.stdout, /Route this turn per the resident routing contract/); // the lean one-liner still fires
     assert.match(r.stdout, /Non-English prompt/);            // + the generic non-English nudge
     assert.match(r.stdout, /grade by MEANING/);
+    assert.match(r.stdout, /ARBITRATE/, 'non-Latin script is a signal turn -> the arbitration cue must be appended');
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 });
 
-test('UserPromptSubmit: a plain English prompt does NOT get the non-English nudge (no false trigger on typographic punctuation)', () => {
+test('UserPromptSubmit: a plain English prompt does NOT get the non-English nudge or the arbitration cue (no false trigger on typographic punctuation)', () => {
   const tmp = mk();
   try {
     // Em-dash + smart quotes are English typography (General Punctuation block) -> excluded.
     const r = run({ hook_event_name: 'UserPromptSubmit', prompt: 'refactor the parser — keep it “clean”' }, tmp, tmp);
     assert.equal(r.status, 0);
-    assert.match(r.stdout, /Route BEFORE acting/);
+    assert.match(r.stdout, /Route this turn per the resident routing contract/);
     assert.doesNotMatch(r.stdout, /Non-English prompt/);
+    assert.doesNotMatch(r.stdout, /ARBITRATE/, 'no hint and no non-Latin signal -> cue stays out');
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 });
 
@@ -199,7 +201,7 @@ test('mode:"auto" (default direction) still injects the forcer — only "off" si
     fs.writeFileSync(path.join(tmp, '.claude', '.coaltipple.json'), JSON.stringify({ mode: 'auto' }));
     const r = run({ hook_event_name: 'UserPromptSubmit', prompt: 'list files' }, tmp, tmp);
     assert.equal(r.status, 0);
-    assert.match(r.stdout, /Route BEFORE acting/);
+    assert.match(r.stdout, /Route this turn per the resident routing contract/);
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 });
 

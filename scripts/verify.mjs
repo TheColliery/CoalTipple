@@ -47,6 +47,53 @@ try {
   else fail('SKILL.md frontmatter malformed (need name: coaltipple + description)');
 } catch (e) { fail(`SKILL.md unreadable: ${e.message}`); }
 
+console.log('description length cap (skills + commands):');
+// Skill-listing description cap: gate at 1024 = cross-platform-safe (agentskills.io / agnix);
+// CC's own listing truncation is 1536 chars combined description+when_to_use
+// (code.claude.com/docs/en/skills, verified 2026-07-16). USER standard 2026-07-16: never exceed.
+const DESC_CAP = 1024;
+function frontmatterField(text, key) {
+  const m = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!m) return null;
+  const lines = m[1].split(/\r?\n/);
+  const i = lines.findIndex((l) => l.startsWith(key + ':'));
+  if (i === -1) return null;
+  let v = lines[i].slice(key.length + 1).trim();
+  if (/^[>|][-+]?$/.test(v)) {
+    const parts = [];
+    for (let j = i + 1; j < lines.length && /^\s+\S/.test(lines[j]); j++) parts.push(lines[j].trim());
+    return parts.join(' ');
+  }
+  if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1);
+  return v;
+}
+// Dynamic scan (skills/*/SKILL.md for any dir that has one, commands/*.md) so a
+// new skill/command is covered without editing this gate.
+const descTargets = [];
+const skillsDir = path.join(repo, 'skills');
+if (fs.existsSync(skillsDir)) {
+  for (const d of fs.readdirSync(skillsDir, { withFileTypes: true })) {
+    if (!d.isDirectory()) continue;
+    const smd = path.join(skillsDir, d.name, 'SKILL.md');
+    if (fs.existsSync(smd)) descTargets.push([`skills/${d.name}/SKILL.md`, smd, true]);
+  }
+}
+const commandsDir = path.join(repo, 'commands');
+if (fs.existsSync(commandsDir)) {
+  for (const f of fs.readdirSync(commandsDir)) {
+    if (f.endsWith('.md')) descTargets.push([`commands/${f}`, path.join(commandsDir, f), false]);
+  }
+}
+for (const [label, p, isSkill] of descTargets) {
+  try {
+    const text = fs.readFileSync(p, 'utf8');
+    const len = (frontmatterField(text, 'description') || '').length + (frontmatterField(text, 'when_to_use') || '').length;
+    if (isSkill && len === 0) fail(`${label}: frontmatter description missing/unparsed`);
+    else if (len > DESC_CAP) fail(`${label}: description+when_to_use ${len} chars exceeds the ${DESC_CAP}-char cap`);
+    else ok(`${label}: ${len} chars (cap ${DESC_CAP})`);
+  } catch (e) { fail(`${label} description check: ${e.message}`); }
+}
+
 console.log('config (factory vs schema):');
 try {
   let c = fs.readFileSync(path.join(repo, 'platform-configs', '.coaltipple.json'), 'utf8');

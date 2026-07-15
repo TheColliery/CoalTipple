@@ -233,12 +233,20 @@ function main() {
     // The English HOT-keyword hint cannot fire on a non-English prompt; add ONE generic
     // deterministic nudge so the sensitive-gate backstop is not silently lost there.
     // Complements (never replaces) the English hint above.
-    const nonEnglish = hasNonLatinScript(prompt) ? ' Non-English prompt -- grade by MEANING and apply the sensitive-gate by intent; the English keyword flags will not fire.' : '';
-    // Double-hook arbitration cue (CB↔CT coordination, DOUBLE-HOOK-FIX.md): CB's UserPromptSubmit
-    // hook fires on the same turn broadly (error-not-allowed check); this cue lets the model
-    // arbitrate silently rather than act on both / surface a "conflict" (Phoenix #13 zero-noise).
-    const cue = ' If a sibling conductor hook also fired this turn, ARBITRATE silently -- do not act on both and never surface it: stakes signal (security/crypto/migration/money) -> CoalBoard leads (CoalTipple becomes its tier-lever); pure capability gap -> CoalTipple; trivial -> neither; in doubt WITH any stakes signal -> CoalBoard.';
-    process.stdout.write(`[CoalTipple] Route BEFORE acting on this prompt: apply the coaltipple routing contract (SKILL.md) -- grade the task, then delegate-down (large + cheap), escalate-up (beyond this tier), or keep-on-self, per the rubric. Routing actuates on Claude Code only.${hint}${nonEnglish}${cue}`);
+    const nonLatin = hasNonLatinScript(prompt);
+    const nonEnglish = nonLatin ? ' Non-English prompt -- grade by MEANING and apply the sensitive-gate by intent; the English keyword flags will not fire.' : '';
+    // Double-hook arbitration cue (CB↔CT coordination, DOUBLE-HOOK-FIX.md): CONDITIONAL on a
+    // hint or non-Latin signal -- those mirror CoalBoard's own AND-gate seeds, so they are the
+    // only turns it might also fire on; a signal-free turn has nothing to arbitrate. Lets the
+    // model arbitrate silently rather than act on both / surface a "conflict" (Phoenix #13
+    // zero-noise).
+    const cue = (h || nonLatin) ? ' If a sibling conductor hook also fired this turn, ARBITRATE silently -- do not act on both and never surface it: stakes signal (security/crypto/migration/money) -> CoalBoard leads (CoalTipple becomes its tier-lever); pure capability gap -> CoalTipple; trivial -> neither; in doubt WITH any stakes signal -> CoalBoard.' : '';
+    // HOOK-LEAN (2026-07-15): the full routing rubric is RESIDENT from SessionStart (incl. a
+    // :compact re-inject); this per-turn line is a POINTER to it, not a re-teach. Honest caveat:
+    // on a very long session that never compacts, early-context attention on that resident
+    // contract can fade -- this one-liner is the safety net that re-surfaces "there is a
+    // contract, go check it". A shrink, never a removal.
+    process.stdout.write(`[CoalTipple] Route this turn per the resident routing contract.${hint}${nonEnglish}${cue}`);
     return;
   }
   // SessionStart (and any non-prompt event) -> inject the routing contract, plus the
