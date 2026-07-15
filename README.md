@@ -47,7 +47,7 @@ You are **main**. CoalTipple decides, per task, whether to:
 
 * **Claude Code (validated live across the 2.1.x line):** Built Claude-Code-first and run end-to-end across all model tiers (Haiku, Sonnet, Opus). Routing degrades safe on any CC version — an unfamiliar model classifies strong, a failed spawn falls, and the platform resolves each alias to its current best model at spawn-time (the ranking is the alias floor + pins — nothing to enumerate).
 * **Routing actuates on Claude Code only:** CT needs a platform where an *agent* can pick a spawned worker's model + effort. CC's Agent/Task tool takes a `model` param -- that is the requirement.
-* **Subagent-capable != qualifies:** a platform can spawn workers yet give the agent no model choice (e.g. **Antigravity**, where the worker inherits the parent's model). There CT does **not** cleanly self-degrade -- a weak main hallucinates a delegate-down it cannot perform -- so CT is gated to CC. Other platforms (Cursor, Codex) are under monthly review.
+* **Subagent-capable != qualifies:** a platform can spawn workers yet give the agent no model choice (e.g. **Antigravity**, where the worker inherits the parent's model). There CT does **not** cleanly self-degrade -- a weak main hallucinates a delegate-down it cannot perform -- so CT is gated to CC. Other platforms (Cursor · Zed · OpenCode · Devin · Kiro · Copilot CLI, …) are under monthly review — see Install → Other platforms for the current matrix.
 
 ---
 
@@ -72,6 +72,8 @@ There is deliberately **no file-copy or `install.mjs` path** for other agents: a
 * **Antigravity** — verified non-actuating (2026-06-16): no per-spawn model parameter, no separate effort knob. Copying the files in would only let a weak main *hallucinate* a delegation it cannot perform, so CT does not install here.
 * **Codex · Gemini CLI · Cline · Windsurf** — no worker model-pick → not supported.
 * **Cursor** — reports a worker `model` param but it is **unverified**; a monitored candidate under monthly review (verify the spawn schema first), not a supported install today.
+* **Zed · OpenCode · Devin · Kiro · Copilot CLI** — **candidates — docs-verified 2026-07-13; a live spawn-schema verify on a real install is REQUIRED before any adapter** (the Antigravity burn rule: docs-claimed ≠ actuating). What the docs show: Zed `agent.subagent_model` · OpenCode per-agent `model` (`provider/model-id`) · Devin subagent `model` frontmatter (+ an Adaptive auto-router) · Kiro a subagent model attribute · Copilot CLI **partial** (a profile pin works, but the Task-tool `model` param has an open upstream bug and a cost-guard silently downgrades sub models).
+* **Adapter design, locked ahead of any verify:** pre-provisioned pins — define per-tier pinned subagents (the Codex pattern: per-agent config files carrying a pinned model), so routing = picking the agent, no per-spawn model param needed; it ships only after a live schema verify on a real install.
 * **claude.ai** — the ZIP-upload skill path is for read/analyze skills only; CoalTipple actuates model routing, so it does not apply.
 
 ### Verify (from clone)
