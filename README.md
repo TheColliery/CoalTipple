@@ -139,7 +139,7 @@ Workers start context-fresh. A **memory anchor** file gives a fresh worker proje
 
 ## ⚙️ Configure
 
-Everything is tunable in `.coaltipple.json` — a global `~/.claude/.coaltipple.json` overlaid per key by the project `<gitroot>/.claude/.coaltipple.json` (project wins), so you can **tune or shut off a globally-installed skill per project** (off-switch: `enableRouting: false`). Ships zero-config with optimal defaults. The high-impact keys:
+Everything is tunable in `.coaltipple.json` — a global `~/.claude/.coaltipple.json` overlaid per key by the project `<gitroot>/.claude/.coaltipple.json` (project wins), so you can **tune or shut off a globally-installed skill per project** (off-switch: `enableRouting: false`) — a skill you don't need in a given project stops loading (and burning tokens) there. Ships zero-config with optimal defaults. The high-impact keys:
 
 | Key | Default | What it does |
 |---|---|---|
