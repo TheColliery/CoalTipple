@@ -35,13 +35,35 @@ function cpDir(src, dest) {
   }
 }
 
-// True when `p` is the same path as `base` or nested inside it (lexical resolve-and-
-// contain, matching the installer's existing resolve-based guard idiom; the installer
-// runs on the user's own box, so the threat is an accidental self-target footgun, not a
-// symlink attacker).
+// Is physical path `p` the same as or nested inside physical path `base`? Both args must
+// ALREADY be physicalized (realpath'd) — the self-target guard below realpaths both sides
+// first, because a lexical compare misses a self-target reached through a symlink (macOS
+// /var -> /private/var tmpdirs, a symlinked repo or home) and lets an install/uninstall
+// silently DELETE the source.
 function within(p, base) {
-  const rel = path.relative(path.resolve(base), path.resolve(p));
+  const rel = path.relative(base, p);
   return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+}
+
+// PHYSICAL form of a path that may not exist yet (install has not created <dest>/coaltipple):
+// realpath the deepest EXISTING ancestor, then reattach the missing tail. path.resolve
+// collapses any `..` lexically first; the existing part resolves through every symlink — so a
+// symlinked tmpdir/home/repo (and a `..`-carrying derivation) surfaces at its REAL location for
+// the containment compare. null = nothing on the path resolves -> caller fails closed (refuse).
+// Series idiom (CoalWash class-b.mjs physicalForCreate).
+function physicalForCreate(p) {
+  let cur = path.resolve(p);
+  const tail = []; // ponytail: local, never escapes
+  for (;;) {
+    try {
+      const phys = fs.realpathSync(cur);
+      return tail.length ? path.join(phys, ...tail.reverse()) : phys;
+    } catch { /* not created yet — walk up to the deepest existing ancestor */ }
+    const parent = path.dirname(cur);
+    if (parent === cur) return null;
+    tail.push(path.basename(cur));
+    cur = parent;
+  }
 }
 
 function installSkill(dest) {
@@ -236,8 +258,14 @@ const dest = TARGETS[key] ?? path.resolve(targetArg);
 // shallow: `install.mjs <repo>/skills` makes `<dest>/coaltipple` == the source skill and
 // sailed straight past it, silently deleting the source. Reject any overlap either direction
 // (source inside target OR target inside source), covering install AND uninstall.
+// Compare PHYSICAL paths (realpath both sides, fail closed if either is unresolvable):
+// skillSrc comes from a realpath'd import.meta.url but dest comes from a lexical resolve of
+// argv, so on a symlinked path (macOS /var -> /private/var, a symlinked repo/home) a self-
+// target compared lexically looks DIFFERENT and evades the guard — a live source-wipe hole.
 const mutTarget = path.join(dest, 'coaltipple');
-if (within(mutTarget, skillSrc) || within(skillSrc, mutTarget)) {
+const physTarget = physicalForCreate(mutTarget); // may not exist yet -> deepest-ancestor realpath
+const physSrc = physicalForCreate(skillSrc);     // exists (checked above), symlink-normalize it too
+if (!physTarget || !physSrc || within(physTarget, physSrc) || within(physSrc, physTarget)) {
   console.error(`Target ${mutTarget} overlaps the source skill dir ${skillSrc} — refusing (would delete the source).`);
   process.exit(1);
 }

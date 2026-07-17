@@ -176,6 +176,37 @@ test('H10: install AND uninstall REFUSE a target whose <dir>/coaltipple IS the s
   } finally { fs.rmSync(sb, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); }
 });
 
+test('H10: a self-target reached THROUGH a symlink/junction is refused too (the macOS /private evasion)', (t) => {
+  // The macOS-only CI failure this guards: install.mjs derives skillSrc from a realpath'd
+  // import.meta.url but dest from a LEXICAL resolve of argv, so a self-target under a symlinked
+  // path (macOS /var -> /private/var tmpdirs) compares DIFFERENT lexically and slips past the
+  // guard -> silent source-wipe. Reproduce the asymmetry on ANY OS with a dir junction/symlink:
+  // spawn + target BOTH through the link (entry gets realpath'd to the real dir, arg stays lexical)
+  // -> the exact resolved-source vs unresolved-target split. The guard must realpath both sides.
+  const sb = mkSandboxRepo();
+  const home = mkHome();
+  const link = path.join(path.dirname(sb), path.basename(sb) + '-link');
+  try {
+    try { fs.symlinkSync(sb, link, process.platform === 'win32' ? 'junction' : 'dir'); }
+    catch { t.skip('dir symlink/junction not permitted here (needs the privilege on Windows)'); return; }
+    const srcSkill = path.join(sb, 'skills', 'coaltipple', 'SKILL.md');
+    const env = { ...process.env, USERPROFILE: home, HOME: home, CLAUDE_CONFIG_DIR: undefined };
+    const linkInstall = path.join(link, 'scripts', 'install.mjs');
+    const ri = spawnSync(process.execPath, [linkInstall, path.join(link, 'skills')],
+      { cwd: sb, env, encoding: 'utf8', timeout: 30000 });
+    assert.notEqual(ri.status, 0, `install must REFUSE a symlinked self-target:\n${ri.stdout}${ri.stderr}`);
+    assert.ok(fs.existsSync(srcSkill), 'source intact after a refused symlinked install');
+    const ru = spawnSync(process.execPath, [linkInstall, '--uninstall', path.join(link, 'skills')],
+      { cwd: sb, env, encoding: 'utf8', timeout: 30000 });
+    assert.notEqual(ru.status, 0, `uninstall must REFUSE a symlinked self-target:\n${ru.stdout}${ru.stderr}`);
+    assert.ok(fs.existsSync(srcSkill), 'source intact after a refused symlinked uninstall');
+  } finally {
+    fs.rmSync(sb, { recursive: true, force: true });          // real dir first -> the link now dangles
+    try { fs.unlinkSync(link); } catch { try { fs.rmdirSync(link); } catch { /* dangling link */ } }
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test('H10: a failed reinstall (unreadable source) leaves the existing install intact — stage-first, not delete-then-write', (t) => {
   // chmod 000 only denies reads for a non-root POSIX user; Windows ignores the mode and root
   // bypasses it, so the copy would not fail there. Visible skip per the capability-gate lesson.
