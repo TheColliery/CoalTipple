@@ -35,11 +35,44 @@ function cpDir(src, dest) {
   }
 }
 
+// True when `p` is the same path as `base` or nested inside it (lexical resolve-and-
+// contain, matching the installer's existing resolve-based guard idiom; the installer
+// runs on the user's own box, so the threat is an accidental self-target footgun, not a
+// symlink attacker).
+function within(p, base) {
+  const rel = path.relative(path.resolve(base), path.resolve(p));
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+}
+
 function installSkill(dest) {
   const to = path.join(dest, 'coaltipple');
-  fs.rmSync(to, { recursive: true, force: true }); // clean prior install (clean version transition)
-  cpDir(skillSrc, to);
-  console.log(`  installed skill -> ${to}`);
+  // Stage into a temp sibling then atomically swap, so an interrupt / disk-full during the
+  // copy can never destroy an existing install (the old delete-then-write had NO rollback: a
+  // crash mid-copy left a corrupt, backup-less target). The new copy is built BEFORE the old
+  // install is moved aside; a swap failure restores the old install; the source is never the
+  // delete target. Same "temp sibling + atomic rename" idiom as the conductor's update stamp.
+  // pid-less names are swept at the top of every run so a crashed run self-heals (Phoenix #1).
+  const staging = `${to}.new`;
+  const backup = `${to}.bak`;
+  fs.rmSync(staging, { recursive: true, force: true });
+  fs.rmSync(backup, { recursive: true, force: true });
+  let movedAside = false;
+  try {
+    cpDir(skillSrc, staging);                                    // 1. build the new copy (source untouched)
+    if (fs.existsSync(to)) { fs.renameSync(to, backup); movedAside = true; } // 2. old install aside (atomic)
+    try {
+      fs.renameSync(staging, to);                               // 3. swap in the new copy (atomic)
+    } catch (e) {
+      if (movedAside) { fs.renameSync(backup, to); movedAside = false; } // rollback: restore the old install
+      throw e;
+    }
+    if (movedAside) { fs.rmSync(backup, { recursive: true, force: true }); movedAside = false; } // 4. drop old
+    console.log(`  installed skill -> ${to}`);
+  } finally {
+    // Never leave staging behind (Phoenix #1). NEVER touch backup here — if a rollback itself
+    // failed, backup still holds the only copy of the old install; recovery owns it, not cleanup.
+    fs.rmSync(staging, { recursive: true, force: true });
+  }
 }
 
 // The factory template carries repo-build machinery in its keywords section (the keyword-sync
@@ -198,7 +231,16 @@ if (key === 'all') {
 }
 
 const dest = TARGETS[key] ?? path.resolve(targetArg);
-if (path.resolve(dest) === path.resolve(skillSrc)) { console.error('Target cannot be the source skill dir.'); process.exit(1); }
+// Guard the ACTUAL mutation target — `<dest>/coaltipple`, which installSkill wipes+writes
+// and uninstall removes — NOT `dest`. The old `dest === skillSrc` check was one level too
+// shallow: `install.mjs <repo>/skills` makes `<dest>/coaltipple` == the source skill and
+// sailed straight past it, silently deleting the source. Reject any overlap either direction
+// (source inside target OR target inside source), covering install AND uninstall.
+const mutTarget = path.join(dest, 'coaltipple');
+if (within(mutTarget, skillSrc) || within(skillSrc, mutTarget)) {
+  console.error(`Target ${mutTarget} overlaps the source skill dir ${skillSrc} — refusing (would delete the source).`);
+  process.exit(1);
+}
 
 if (isUninstall) {
   console.log(`\nUninstalling CoalTipple from: ${targetArg}`);

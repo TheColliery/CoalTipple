@@ -2,6 +2,12 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.2.4] - 2026-07-17
+
+### Fixed
+- **[HIGH] Latin-script non-English sensitive-gate coverage.** The per-turn "grade by meaning" nudge fired only on non-Latin scripts (`>0x24F`), so a Latin-script non-English sensitive prompt (Spanish/French/German/Portuguese/Indonesian) got neither the keyword hint nor the nudge — while the SKILL + code claimed the nudge covered all non-English. The all-language grade-by-meaning aid now lives in the always-emitted SessionStart contract (resident, HOOK-LEAN — paid once), and the over-claim is corrected. (The never-down core was already model-enforced; this restores the missing deterministic aid.)
+- **[HIGH] Installer no longer wipes its own source.** The delete guard checked `dest` but the wipe target was `dest/coaltipple` (one level too shallow — copied from CoalMine, wrong for CT's layout), so `install.mjs <repo>/skills` could delete the source; uninstall shared the hole and had no rollback. The guard now checks the mutation target, and install stage+renames (interrupt-safe). Found by a nasa-L3 CoalBoard audit.
+
 ## [1.2.3] - 2026-07-16
 
 ### Changed

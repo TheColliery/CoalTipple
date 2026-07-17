@@ -22,6 +22,22 @@ const projState = (tmp) => path.join(tmp, '.claude', '.coaltipple');
 const globalRanking = (home) => path.join(home, '.claude', '.coaltipple', 'ranking.json');
 const globalCfg = (home) => path.join(home, '.claude', '.coaltipple.json');
 
+// A minimal SANDBOX copy of the repo so the destructive-path tests (H10) run — and their
+// red-proofs (neutralize the fix -> the source IS deleted) — WITHOUT ever touching the REAL
+// source skill. install.mjs derives skillSrc from its own location, so we spawn a COPY of the
+// installer whose source is the sandbox's own skills/coaltipple.
+const REPO = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+function mkSandboxRepo() {
+  const sb = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-sbrepo-'));
+  for (const d of ['scripts', 'platform-configs', 'hooks']) fs.cpSync(path.join(REPO, d), path.join(sb, d), { recursive: true });
+  fs.mkdirSync(path.join(sb, 'skills', 'coaltipple'), { recursive: true });
+  fs.writeFileSync(path.join(sb, 'skills', 'coaltipple', 'SKILL.md'), '# sandbox source skill\n', 'utf8');
+  return sb;
+}
+const runSandbox = (sb, home, ...a) =>
+  spawnSync(process.execPath, [path.join(sb, 'scripts', 'install.mjs'), ...a],
+    { cwd: sb, env: { ...process.env, USERPROFILE: home, HOME: home, CLAUDE_CONFIG_DIR: undefined }, encoding: 'utf8', timeout: 30000 });
+
 test('install to a PATH: copies skill, seeds project config + conductor + the shared global ranking', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-install-'));
   const home = mkHome();
@@ -139,4 +155,51 @@ test('project config preservation: reinstall never overwrites it; a project --re
     assert.doesNotMatch(fs.readFileSync(cfg, 'utf8'), /"qualityBar": 95/, 'project --reset OVERWRITES the project config to factory');
     assert.equal(JSON.parse(fs.readFileSync(rp, 'utf8')).source, 'user-refined', 'a project --reset leaves the GLOBAL ranking alone (reset it with --reset --global)');
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); }
+});
+
+test('H10: install AND uninstall REFUSE a target whose <dir>/coaltipple IS the source skill (no silent source-wipe)', () => {
+  const sb = mkSandboxRepo();
+  const home = mkHome();
+  try {
+    const srcSkill = path.join(sb, 'skills', 'coaltipple', 'SKILL.md');
+    assert.ok(fs.existsSync(srcSkill), 'precondition: sandbox source skill present');
+    // dest = <sb>/skills -> the mutation target <sb>/skills/coaltipple == the source skill.
+    // The old `dest === skillSrc` guard was one level too shallow and let this through.
+    const ri = runSandbox(sb, home, path.join(sb, 'skills'));
+    assert.notEqual(ri.status, 0, `install must REFUSE the self-target:\n${ri.stdout}${ri.stderr}`);
+    assert.ok(fs.existsSync(srcSkill), 'source intact after a refused install');
+    // uninstall has NO stage+rename — the guard is its SOLE protection, so this is the
+    // clean red-proof surface: revert the guard and this rm's the source outright.
+    const ru = runSandbox(sb, home, '--uninstall', path.join(sb, 'skills'));
+    assert.notEqual(ru.status, 0, `uninstall must REFUSE the self-target:\n${ru.stdout}${ru.stderr}`);
+    assert.ok(fs.existsSync(srcSkill), 'source intact after a refused uninstall (the guard, not stage+rename, protects here)');
+  } finally { fs.rmSync(sb, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); }
+});
+
+test('H10: a failed reinstall (unreadable source) leaves the existing install intact — stage-first, not delete-then-write', (t) => {
+  // chmod 000 only denies reads for a non-root POSIX user; Windows ignores the mode and root
+  // bypasses it, so the copy would not fail there. Visible skip per the capability-gate lesson.
+  if (process.platform === 'win32' || typeof process.getuid !== 'function' || process.getuid() === 0) {
+    t.skip('POSIX non-root only (chmod 000 must actually deny reads)');
+    return;
+  }
+  const sb = mkSandboxRepo();
+  const home = mkHome();
+  const dest = path.join(sb, 'target-skills');
+  try {
+    const r1 = runSandbox(sb, home, dest);                       // 1. a clean install = the "existing install"
+    assert.equal(r1.status, 0, `first install must pass:\n${r1.stdout}${r1.stderr}`);
+    const installed = path.join(dest, 'coaltipple', 'SKILL.md');
+    assert.ok(fs.existsSync(installed), 'precondition: existing install present');
+    const before = fs.readFileSync(installed, 'utf8');
+    const srcFile = path.join(sb, 'skills', 'coaltipple', 'SKILL.md');
+    fs.chmodSync(srcFile, 0o000);                                // 2. break the SOURCE -> the reinstall copy fails
+    const r2 = runSandbox(sb, home, dest);
+    fs.chmodSync(srcFile, 0o644);                                //    restore so cleanup can rm the tree
+    assert.notEqual(r2.status, 0, 'a failed copy must surface a non-zero exit');
+    // 3. stage-first: the existing install is UNTOUCHED (delete-then-write would have wiped it first)
+    assert.ok(fs.existsSync(installed), 'existing install survives a failed reinstall');
+    assert.equal(fs.readFileSync(installed, 'utf8'), before, 'existing install content unchanged');
+    assert.ok(!fs.existsSync(path.join(dest, 'coaltipple.new')), 'no staging litter left behind');
+  } finally { fs.rmSync(sb, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); }
 });

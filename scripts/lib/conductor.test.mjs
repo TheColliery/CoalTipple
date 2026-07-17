@@ -39,6 +39,21 @@ test('SessionStart -> injects the routing contract, exit 0, no stderr', () => {
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 });
 
+test('SessionStart contract carries the deterministic multilingual sensitive-gate aid (covers Latin-script non-English too)', () => {
+  const tmp = mk();
+  try {
+    // H9: a Latin-script non-English (Spanish/French/German/…) sensitive prompt trips NEITHER
+    // an English keyword flag NOR the per-turn non-Latin-script nudge (its script is Latin, so
+    // hasNonLatinScript is false). The ONLY deterministic layer that can cover it is the always-
+    // emitted SessionStart contract, which must state the keyword hints are English-only and tell
+    // the model to grade sensitivity by MEANING in any language.
+    const r = run({ hook_event_name: 'SessionStart' }, tmp, tmp);
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /English-only fast-path/, 'contract states the keyword hints are English-only');
+    assert.match(r.stdout, /by MEANING in ANY language/, 'contract tells the model to grade sensitivity by meaning');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
 test('SessionStart honors cfg.language -> directive names the language + keeps the jargon rule', () => {
   const tmp = mk();
   try {

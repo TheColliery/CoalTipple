@@ -158,15 +158,18 @@ function hintFor(prompt) {
   return null;
 }
 
-// The deterministic HOT keyword flags are ENGLISH literals, so a non-English prompt
-// matches NOTHING and the keyword sensitive-gate silently vanishes for it. Detect a
-// non-Latin SCRIPT char — anything outside Basic Latin + Latin-1 Supplement + Latin
-// Extended-A/B (code point <= 0x24F), while excluding the General Punctuation block
-// (0x2000-0x206F: em-dash / smart quotes / ellipsis, common in English text) so an
-// English prompt with typographic punctuation does NOT trigger a false nudge. Catches
-// Thai / CJK / Arabic / Cyrillic / Hebrew / Devanagari / etc. The character class is
-// BUILT from char codes — never a raw high-Unicode literal in source (the tool layer
-// mangles those; this hook must stay deterministic + portable, Phoenix #8/#9).
+// The deterministic HOT keyword flags are ENGLISH literals, so a non-English prompt fires
+// NO flag. This per-turn nudge covers only the part detectable by SCRIPT: a non-Latin char
+// — anything outside Basic Latin + Latin-1 Supplement + Latin Extended-A/B (code point
+// <= 0x24F), while excluding the General Punctuation block (0x2000-0x206F: em-dash / smart
+// quotes / ellipsis, common in English text) so an English prompt with typographic
+// punctuation does NOT trigger a false nudge. Catches Thai / CJK / Arabic / Cyrillic /
+// Hebrew / Devanagari / etc. LATIN-SCRIPT non-English (Spanish/French/German/Portuguese/
+// Indonesian) is INDISTINGUISHABLE from English by script, so it cannot be caught here —
+// the resident SessionStart contract (contract()) carries the all-language "grade
+// sensitivity by MEANING" line as the deterministic aid that covers it. The character
+// class is BUILT from char codes — never a raw high-Unicode literal in source (the tool
+// layer mangles those; this hook must stay deterministic + portable, Phoenix #8/#9).
 const NON_LATIN_RE = (() => {
   const cc = String.fromCharCode;
   const cls = '[^' + cc(0x00) + '-' + cc(0x24f) + cc(0x2000) + '-' + cc(0x206f) + ']';
@@ -193,6 +196,7 @@ function contract(cfg) {
     '- DELEGATE-DOWN a task you can do but is large + cheap, to a lower tier — ONLY with a compact task-contract (goal+constraints+interface+done) AND verify the returned output on merge. Skip it for small tasks (spawn overhead beats the saving).',
     '- ESCALATE-UP a task beyond the current tier for quality. Workers are leaves by policy (routing stays depth-0): give each a bounded task-contract so it RETURNS rather than spawning its own workers; a worker that fails RETURNS its result and the MAIN re-routes.',
     '- Grade by the deterministic rubric, not a model self-assessment. Opus is scarce: cheapest lever first - raise effort, then a stronger same-tier version (e.g. Opus 4.6 -> 4.8), before escalating the tier.',
+    '- Sensitivity is graded by MEANING in ANY language: the keyword/complexity hints are an English-only fast-path, so a non-English prompt (Spanish/French/Thai/CJK - any script) fires NO keyword flag. Never read "no flag" as "not sensitive" - judge crypto/auth/payment/security by intent and keep never-down (delegate-down stays forbidden for sensitive work).',
     '- mode (.coaltipple.json, default auto): auto = route both directions per grade; delegation = delegate-down only (escalate-up suppressed, a budget-saving mode); escalation = escalate-up only (delegate-down suppressed, a quality mode); off = routing off, do it yourself. The sensitive HARD GATE overrides mode (sensitive is still never-down and may always escalate up).',
     '- Honor qualityBar (.coaltipple.json, 0-100, default 60): a result must clear it or climb the model ladder — start at the grade floor, verify vs the contract done-criteria by domain-appropriate means (code: tests/build; text: completeness; research: sourced claims), climb one rung if short, jump to the top tier if far below or out of attempts. 0 = anything passes (cheapest); 100 = climb until best.',
     langLine(cfg),
@@ -230,9 +234,11 @@ function main() {
     const prompt = input.prompt || input.user_prompt || '';
     const h = hintFor(prompt);
     const hint = h ? ` Complexity hint: grade ${h.grade} (${h.why}) -> start tier "${h.tier}"; fold into the grade, then the result must clear qualityBar or routing climbs the ladder.` : '';
-    // The English HOT-keyword hint cannot fire on a non-English prompt; add ONE generic
-    // deterministic nudge so the sensitive-gate backstop is not silently lost there.
-    // Complements (never replaces) the English hint above.
+    // The English HOT-keyword hint cannot fire on a non-English prompt. For a non-LATIN
+    // script (Thai/CJK/…) we detect it here and add a per-turn nudge; a Latin-script
+    // non-English prompt (Spanish/French/…) is undetectable per-turn and is covered by the
+    // resident contract's grade-by-MEANING line instead (see contract() + the NON_LATIN_RE
+    // note above). Complements (never replaces) the English hint above.
     const nonLatin = hasNonLatinScript(prompt);
     const nonEnglish = nonLatin ? ' Non-English prompt -- grade by MEANING and apply the sensitive-gate by intent; the English keyword flags will not fire.' : '';
     // Double-hook arbitration cue (CB↔CT coordination, DOUBLE-HOOK-FIX.md): CONDITIONAL on a
