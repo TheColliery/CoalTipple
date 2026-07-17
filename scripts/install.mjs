@@ -63,10 +63,10 @@ function installSkill(dest) {
     try {
       fs.renameSync(staging, to);                               // 3. swap in the new copy (atomic)
     } catch (e) {
-      if (movedAside) { fs.renameSync(backup, to); movedAside = false; } // rollback: restore the old install
+      if (movedAside) { fs.renameSync(backup, to); } // rollback: restore the old install
       throw e;
     }
-    if (movedAside) { fs.rmSync(backup, { recursive: true, force: true }); movedAside = false; } // 4. drop old
+    if (movedAside) { fs.rmSync(backup, { recursive: true, force: true }); } // 4. drop old
     console.log(`  installed skill -> ${to}`);
   } finally {
     // Never leave staging behind (Phoenix #1). NEVER touch backup here — if a rollback itself
