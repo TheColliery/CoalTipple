@@ -12,7 +12,17 @@ Not the cheapest router on the market — a cross-provider proxy can cut deeper 
 ![license](https://img.shields.io/badge/license-Apache_2.0-blue)
 ![status](https://img.shields.io/badge/status-live-brightgreen)
 ![SKILL.md](https://img.shields.io/badge/SKILL.md-open_standard-success)
+
 ![Claude Code](https://img.shields.io/badge/Claude_Code-validated-brightgreen)
+![Antigravity](https://img.shields.io/badge/Antigravity-non--actuating-lightgrey)
+![Cursor](https://img.shields.io/badge/Cursor-candidate-orange)
+![Codex](https://img.shields.io/badge/Codex-non--actuating-lightgrey)
+![Gemini CLI](https://img.shields.io/badge/Gemini_CLI-non--actuating-lightgrey)
+![Cline](https://img.shields.io/badge/Cline-non--actuating-lightgrey)
+![Copilot CLI](https://img.shields.io/badge/Copilot_CLI-candidate-orange)
+![claude.ai](https://img.shields.io/badge/claude.ai-non--actuating-lightgrey)
+
+*Tier key: **non-actuating** — the platform cannot run the routing (no per-worker model-pick; see the caution below) · **candidate** — a worker model-pick is documented but unverified live (monthly review, not a supported install). Further candidates (Zed · OpenCode · Devin · Kiro) are listed in [Install](#-install).*
 
 [Benchmark](https://github.com/TheColliery/.github/tree/main/benchmarks/CoalTipple) · [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md) · [Security](SECURITY.md) · [Privacy](PRIVACY.md) · [Releases](https://github.com/TheColliery/CoalTipple/releases)
 
@@ -123,7 +133,7 @@ Routing adjusts **two independent knobs** (always raise effort before tier):
 ## 🔒 The Lock — Safe Routing States
 
 The Lock guarantees CoalTipple is only ever in one of two states: *routing correctly* or *routing off*.
-* **Always Buildable:** The ranking is the alias floor `haiku < sonnet < opus` (→ `low/mid/heavy`, reasoning = `opus`) overlaid with your `modelTiers` pins — a constant, no enumeration. Unknown models default to `heavy`.
+* **Always Buildable:** The ranking is the alias floor `haiku < sonnet < opus < fable` (→ `low/mid/heavy/reasoning`; `reasoning` = `fable`, the top rung above opus — a real-money spawn that is consent-gated, see `fableConsent`) overlaid with your `modelTiers` pins — a constant, no enumeration. Unknown models default to `heavy`.
 * **Validity-Gated:** Checks ranking schema, hash, and completeness before writing.
 * **Fails Safe:** Bypasses routing if the model ranking is broken.
 * **Spawn-Time Resolution:** The platform resolves each alias to its current best model at spawn-time, and a failed spawn falls to the next available tier — so the floor never goes stale and there is no refresh cadence.
@@ -147,7 +157,8 @@ Everything is tunable in `.coaltipple.json` — a global `~/.claude/.coaltipple.
 | `mode` | `auto` | Direction: `delegation` (down) \| `escalation` (up) \| `auto` \| `off` |
 | `qualityBar` | `60` | Quality threshold (0–100) for the staircase — raise (~85) for critical logic, lower (~45) for quick drafts |
 | `delegateMinLines` | `120` | Minimum task size below which down-delegation is skipped (spawn-overhead floor) |
-| `modelTiers` | unset | Optional pins overlaying the alias floor (e.g. `{ "reasoning": ["fable"] }`) — the one human override for a model the agent cannot see; an unavailable pin falls safely down the ladder at spawn-fail |
+| `fableConsent` | `false` | Standing consent to route to Fable 5 (the top rung above opus, a real-money spawn) without asking each time. Unset/`false` = ask once per fable escalation (once / always-this-project / no); `no` drops to opus. Set per-project: `configure.mjs --project --fableConsent true` |
+| `modelTiers` | unset | Optional pins overlaying the alias floor (e.g. `{ "reasoning": ["future-top-model"] }`) — the one human override for a model the agent cannot see; an unavailable pin falls safely down the ladder at spawn-fail |
 
 Full key reference: every key + default lives in [`scripts/lib/config-schema.mjs`](scripts/lib/config-schema.mjs) and the commented template [`platform-configs/.coaltipple.json`](platform-configs/.coaltipple.json) — or run `node scripts/configure.mjs --help`.
 

@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   aliasDefaults, modelListHash, validateRanking,
-  loadRanking, writeRankingAtomic, buildFloorRanking, SCHEMA_VER, escalationStep, applyPins, resolveWorker,
+  loadRanking, writeRankingAtomic, buildFloorRanking, SCHEMA_VER, escalationStep, applyPins, resolveWorker, isFableModel,
 } from './classify.mjs';
 
 test('writeRankingAtomic falls back to a direct write on EPERM/EBUSY (#7 Windows) — the update is never lost', () => {
@@ -21,10 +21,11 @@ test('writeRankingAtomic falls back to a direct write on EPERM/EBUSY (#7 Windows
   } finally { mock.restoreAll(); fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('aliasDefaults: the alias floor structure (low<mid<heavy, reasoning=opus, no local/empty)', () => {
+test('aliasDefaults: the alias floor structure (low<mid<heavy<reasoning = haiku<sonnet<opus<fable, no local/empty)', () => {
   // B2: the ranking IS this constant alias floor — routing keys off the tier STRUCTURE,
-  // not an enumerated model list. haiku<sonnet<opus -> low/mid/heavy; reasoning = strongest.
-  assert.deepEqual(aliasDefaults(), { local: [], low: ['haiku'], mid: ['sonnet'], heavy: ['opus'], reasoning: ['opus'] });
+  // not an enumerated model list. haiku<sonnet<opus -> low/mid/heavy; reasoning = fable (the
+  // top rung above opus, consent-gated before spawn).
+  assert.deepEqual(aliasDefaults(), { local: [], low: ['haiku'], mid: ['sonnet'], heavy: ['opus'], reasoning: ['fable'] });
 });
 
 test('buildFloorRanking: ALWAYS the alias floor (B2 — models do not shape tiers, only stamp listHash)', () => {
@@ -35,7 +36,7 @@ test('buildFloorRanking: ALWAYS the alias floor (B2 — models do not shape tier
   assert.deepEqual(r.tiers.low, ['haiku']);
   assert.deepEqual(r.tiers.mid, ['sonnet']);
   assert.deepEqual(r.tiers.heavy, ['opus']);   // strong floor: an unknown model the agent over-provisions to 'heavy' lands here
-  assert.deepEqual(r.tiers.reasoning, ['opus']); // reasoning mirrors heavy (strongest @ max effort)
+  assert.deepEqual(r.tiers.reasoning, ['fable']); // reasoning = fable, the top rung (consent-gated before spawn)
   // The `models` arg is for the listHash fingerprint ONLY — it must NOT inject names into the tiers
   // (no introspection layer; routing rides the structure + unknown->heavy + the spawn-fail-fall).
   const r2 = buildFloorRanking(['Some-New-Model 9', 'Mythos Preview', 'Fable 5']);
@@ -237,13 +238,13 @@ test('resolveWorker (M2a): a modelTiers pin cannot slip a KNOWN-weaker alias pas
   // The finding's exact repro: a pin front-loads haiku into the reasoning tier. The SLOT
   // (reasoning) passes the never-down gate, but the MODEL (haiku) is a known downgrade.
   const poisoned = buildFloorRanking([], { reasoning: ['haiku'] });
-  assert.deepEqual(poisoned.tiers.reasoning, ['haiku', 'opus'], 'pre-condition: the pin wins front-of-tier');
+  assert.deepEqual(poisoned.tiers.reasoning, ['haiku', 'fable'], 'pre-condition: the pin wins front-of-tier (fable is the reasoning floor)');
   // a SENSITIVE route must NOT resolve to haiku — it skips the known-weaker alias and returns
-  // the next known-strong candidate in the tier (opus); the gate is GENUINELY satisfied.
+  // the next known-strong candidate in the tier (fable, now the reasoning floor); the gate is GENUINELY satisfied.
   assert.deepEqual(
     resolveWorker(poisoned, 'reasoning', { sensitive: true }),
-    { tier: 'reasoning', model: 'opus' },
-    'sensitive: haiku pinned into reasoning is skipped -> opus (the finding, flipped)',
+    { tier: 'reasoning', model: 'fable' },
+    'sensitive: haiku pinned into reasoning is skipped -> fable (the finding, flipped)',
   );
   // when a weaker alias is the ONLY model at/above the floor, a sensitive route HANDS BACK
   // rather than downgrade (never-down holds — same discipline as the quota fail-closed floor).
@@ -263,12 +264,13 @@ test('resolveWorker (M2a): a modelTiers pin cannot slip a KNOWN-weaker alias pas
 });
 
 test('resolveWorker (M2b): an UNKNOWN pinned name stays TRUSTED on the sensitive path (unknown->strong preserved)', () => {
-  // A model the agent cannot introspect (e.g. an episodic fable) carries no known family token,
-  // so the sensitive floor must NOT skip it — the fix cannot break the pin doctrine.
-  const unknownPin = buildFloorRanking([], { reasoning: ['fable'] });
+  // A model the agent cannot introspect (no known family token) must NOT be skipped by the
+  // sensitive floor — the M2 fix cannot break the pin doctrine. (Fable is now a KNOWN top rung,
+  // so a truly unseeable name stands in for the unknown-pin case here.)
+  const unknownPin = buildFloorRanking([], { reasoning: ['mythos-9-unreleased'] });
   assert.deepEqual(
     resolveWorker(unknownPin, 'reasoning', { sensitive: true }),
-    { tier: 'reasoning', model: 'fable' },
+    { tier: 'reasoning', model: 'mythos-9-unreleased' },
     'sensitive: an unknown pinned model is trusted (unknown->strong)',
   );
 });
@@ -284,12 +286,39 @@ test('resolveWorker (M2c): NON-sensitive resolution with the same pin is UNCHANG
   );
 });
 
-test('reasoning floor = [opus] (always-available bare floor; fable is plan-gated, reached only by the spawn-fail-fall / a pin)', () => {
-  // The bare floor must NOT hardcode a plan-gated model (fable): a fable spawn errors
-  // instantly when off-plan, so the floor is opus and resolveWorker / a modelTiers pin
-  // is what introduces fable when it IS available.
+test('reasoning floor = [fable] — fable is the EXPLICIT top rung (haiku<sonnet<opus<fable), heavy = opus', () => {
+  // Fable 5 is live, so the floor now names it as the top rung (first-class identity, not
+  // merely unknown->strong). opus drops to heavy only; a consent-ask + the spawn-fail-fall
+  // guard the real-money spawn.
   const a = buildFloorRanking([]); // no models, no pins -> pure alias floor
-  assert.deepEqual(a.tiers.reasoning, ['opus']);
+  assert.deepEqual(a.tiers.reasoning, ['fable']);
   assert.deepEqual(a.tiers.heavy, ['opus']);
-  assert.equal(a.tiers.reasoning.includes('fable'), false);
+  assert.equal(a.tiers.reasoning.includes('fable'), true);
+});
+
+test('fable qualifies for a SENSITIVE slot by CAPABILITY (known-strong top rung; never-down holds)', () => {
+  // Task #3: the sensitive gate is unchanged — fable, being the top known rung (FAMILY_RANK
+  // fable=3), is never skipped as "below floor" at any floor, so a sensitive route resolves to it.
+  const r = buildFloorRanking([]); // reasoning = ['fable'], heavy = ['opus']
+  assert.deepEqual(resolveWorker(r, 'reasoning', { sensitive: true }), { tier: 'reasoning', model: 'fable' });
+  assert.deepEqual(resolveWorker(r, 'reasoning', { sensitive: true, floorTier: 'reasoning' }), { tier: 'reasoning', model: 'fable' });
+  // opus still satisfies a heavy-floored sensitive task (its FAMILY_RANK dropped 3->2 but heavy floor = 2).
+  assert.deepEqual(resolveWorker(r, 'heavy', { sensitive: true, floorTier: 'heavy' }), { tier: 'heavy', model: 'opus' });
+});
+
+test('isFableModel: the consent-ask TRIGGER — matches the fable alias + a pinned fable id, not the other tiers', () => {
+  for (const m of ['fable', 'Fable 5', 'claude-fable-5']) assert.equal(isFableModel(m), true, m);
+  for (const m of ['opus', 'haiku', 'sonnet', 'opus-4.8']) assert.equal(isFableModel(m), false, m);
+});
+
+test('fable consent: a reasoning route lands on fable -> ASK; on `no`, blocking fable falls to opus (the top non-fable tier)', () => {
+  const r = buildFloorRanking([]); // reasoning = ['fable'], heavy = ['opus']
+  // the resolved top-rung worker IS fable -> the agent must ASK before spawning (isFableModel = the trigger).
+  const w = resolveWorker(r, 'reasoning', {});
+  assert.deepEqual(w, { tier: 'reasoning', model: 'fable' });
+  assert.equal(isFableModel(w.model), true, 'fable route -> consent-ask fires');
+  // `no` = stay on the highest NON-fable tier: block fable and the EXISTING spawn-fail-fall lands on opus (heavy).
+  assert.deepEqual(resolveWorker(r, 'reasoning', { blocked: ['fable'] }), { tier: 'heavy', model: 'opus' });
+  // a route that lands on opus is NOT a fable route -> no ask.
+  assert.equal(isFableModel('opus'), false);
 });

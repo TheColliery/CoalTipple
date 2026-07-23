@@ -83,19 +83,28 @@
 
   // ─── model ranking ───
 
-  // ## The ranking is the alias floor (haiku<sonnet<opus -> low/mid/heavy, reasoning=opus) overlaid with
-  // ## the pins below — a constant the platform resolves to its current best model, so it never goes stale.
+  // ## The ranking is the alias floor (haiku<sonnet<opus<fable -> low/mid/heavy/reasoning; reasoning = fable,
+  // ## the TOP rung, consent-gated before spawn — see fableConsent) overlaid with the pins below — a constant
+  // ## the platform resolves to its current best model, so it never goes stale.
   // ## Routing rides the tier STRUCTURE + the unknown->heavy rule + the spawn-fail-fall, never an exact list.
   // ## Optional pins are the one human override — name a model introspection cannot see (released after a
   // ## model's training cutoff) or correct a tier. A pin front-loads its model(s) into the named tier.
-  // ## An EPISODIC-access model (e.g. Fable 5's time-boxed access window) belongs here as a pin, never in the
-  // ## alias floor (the floor must not rot when access changes); an unavailable pin spawn-fails and falls down
-  // ## the ladder (existing behavior), so a stale pin costs nothing.
+  // ## (Fable is now a built-in top rung, no longer a pin — pins are for OTHER models the agent cannot see.)
+  // ## An unavailable pin spawn-fails and falls down the ladder (existing behavior), so a stale pin costs nothing.
   // # Setting type: Object { low | mid | heavy | reasoning : "model" | ["priority", "chain"] }  (cheapest tier is `low`, not `cheap`)
   // # Default value: unset (the alias floor applies; pins overlay it when set)
   // # Worked example — pin ONLY the extra alias; the floor model falls in behind it automatically
   // # (also listing the floor model would de-dup it OUT of its own tier — pin the newcomer alone):
-  // "modelTiers": { "reasoning": ["fable"] },
+  // "modelTiers": { "reasoning": ["future-top-model"] },
+
+  // ## Standing consent to route to Fable 5 (the top rung above opus) WITHOUT asking each time. Fable is a
+  // ## real-money spawn, so unless this is true the agent asks ONCE per fable escalation (once / always-this-
+  // ## project / no); "no" drops to the top non-fable tier (opus). "always-this-project" writes true HERE (in
+  // ## the project override: `node scripts/configure.mjs --project --fableConsent true`). No cost math, no
+  // ## money-gate — one worker, one ask. Sensitive work keeps its never-down floor (a "no" stops at opus).
+  // # Setting type: Boolean
+  // # Default value: false (ask each time)
+  "fableConsent": false,
 
   // ─── grading scope ───
 

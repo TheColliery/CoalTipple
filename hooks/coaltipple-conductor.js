@@ -191,7 +191,7 @@ function langLine(cfg) {
 }
 function contract(cfg) {
   return [
-    '[CoalTipple] Model/effort routing active. Before delegating, ensure a valid model-tier ranking exists (it is the alias floor haiku<sonnet<opus + your modelTiers pins; rebuild it via the coaltipple skill if missing/corrupt). Then:',
+    '[CoalTipple] Model/effort routing active. Before delegating, ensure a valid model-tier ranking exists (it is the alias floor haiku<sonnet<opus<fable + your modelTiers pins; fable = the top rung, a real-money spawn you ASK before using [once/always-this-project/no], else opus; rebuild it via the coaltipple skill if missing/corrupt). Then:',
     '- Routing degrades safe on any Claude Code version: an unfamiliar model classifies as a strong tier, a failed spawn falls to the next available, and the platform resolves each alias to its current best model at spawn-time (verified across the 2.1.x line).',
     '- DELEGATE-DOWN a task you can do but is large + cheap, to a lower tier — ONLY with a compact task-contract (goal+constraints+interface+done) AND verify the returned output on merge. Skip it for small tasks (spawn overhead beats the saving).',
     '- ESCALATE-UP a task beyond the current tier for quality. Workers are leaves by policy (routing stays depth-0): give each a bounded task-contract so it RETURNS rather than spawning its own workers; a worker that fails RETURNS its result and the MAIN re-routes.',

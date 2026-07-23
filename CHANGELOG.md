@@ -2,6 +2,12 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.3.0] - 2026-07-23
+
+### Added
+- **Fable 5 is now a first-class top routing rung, consent-gated.** The alias floor becomes `haiku < sonnet < opus < fable` — `reasoning` = `fable` (the top rung), `heavy` = `opus`. Fable gains first-class identity in the derived `FAMILY_RANK` (`fable = 3`, `opus = 2`), no longer merely "unknown → strong". When routing SELECTS fable (a grade-5 `reasoning` start, or a `qualityBar` climb/jump to the top), the agent ASKS the user once before spawning — **once** · **always-this-project** · **no**. On `no` it routes to the top NON-fable tier (opus) via the existing degrade-safe re-route (`resolveWorker` falls fable→opus — no new block/fall code). New config key **`fableConsent`** (bool, default `false` = ask) persists the "always-this-project" choice; set it per-project with `node scripts/configure.mjs --project --fableConsent true`. No cost math, no money-gate — one worker, one ask.
+- The sensitive never-down gate is UNCHANGED: fable qualifies for a sensitive slot by CAPABILITY (top known rung), opus still satisfies a `heavy` floor (its rank dropped 3→2 but the heavy floor = 2), and a `no` on a sensitive fable route stops at opus — never below. Supersedes the withdrawn 1.1.0 `callFable` flag (a SKILL-only flag couldn't gate a spawn): fable is now a real routable rung with a config-backed consent gate.
+
 ## [1.2.4] - 2026-07-17
 
 ### Fixed

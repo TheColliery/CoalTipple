@@ -113,6 +113,15 @@ test('keywords groups are deep-validated (a bad group fails loud, not a silent b
   assert.match(validateValue(spec, { x: { words: ['a'], sensitive: 'yes' } }), /sensitive must be a boolean/); // bad flag type
 });
 
-test('callFable stays tombstoned (withdrawn 1.1.1 — returns only as the redesigned real-money gate)', () => {
+test('fableConsent is a boolean gate (standing consent for the top fable rung)', () => {
+  const spec = specOf('fableConsent');
+  assert.ok(spec, 'fableConsent spec exists');
+  assert.equal(spec.type, 'bool');
+  assert.equal(validateValue(spec, true), null);       // consent granted (always-this-project)
+  assert.equal(validateValue(spec, false), null);      // ask each time (default / unset)
+  assert.match(validateValue(spec, 'yes'), /boolean/); // a non-bool is rejected loud
+});
+
+test('callFable stays tombstoned (withdrawn 1.1.1 — the fable rung is now a real routable tier + fableConsent gate)', () => {
   assert.equal(specOf('callFable'), undefined, 'callFable must not be in the schema');
 });

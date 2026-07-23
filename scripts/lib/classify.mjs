@@ -1,7 +1,8 @@
 // The ranking LOCK. Routing is gated on a valid ranking; this module guarantees
-// one is always obtainable. The ranking IS the alias floor (haiku<sonnet<opus ->
-// low/mid/heavy, reasoning=opus) overlaid with the user's `modelTiers` pins — a
-// constant the platform resolves to its current best model, never stale. Routing
+// one is always obtainable. The ranking IS the alias floor (haiku<sonnet<opus<fable ->
+// low/mid/heavy/reasoning; reasoning = fable, the top rung, consent-gated before spawn)
+// overlaid with the user's `modelTiers` pins — a constant the platform resolves to its
+// current best model, never stale. Routing
 // rides this tier STRUCTURE + the agent's unknown->heavy rule + the spawn-fail-fall
 // (resolveWorker), NOT an auto-introspected exact model list. These functions are
 // the deterministic substrate: the floor builder, the validity gate, atomic state
@@ -18,11 +19,13 @@ const STATE_FILE = 'ranking.json';
 const nameOf = (m) => (typeof m === 'string' ? m : (m && m.name) || '');
 
 // Claude-family alias tiers — always available, never stale (the platform
-// resolves the alias to the current model). reasoning = strongest @ max effort.
-// This IS the ranking floor: routing keys off the tier STRUCTURE, not an exact
-// enumerated model list, so a vendor model-list shuffle never breaks it.
+// resolves the alias to the current model). The ladder is haiku < sonnet < opus <
+// fable: opus serves `heavy`, fable is `reasoning` — the TOP rung (a real-money
+// spawn, consent-gated before use; SKILL.md Step 2). This IS the ranking floor:
+// routing keys off the tier STRUCTURE, not an exact enumerated model list, so a
+// vendor model-list shuffle never breaks it.
 export function aliasDefaults() {
-  return { local: [], low: ['haiku'], mid: ['sonnet'], heavy: ['opus'], reasoning: ['opus'] };
+  return { local: [], low: ['haiku'], mid: ['sonnet'], heavy: ['opus'], reasoning: ['fable'] };
 }
 
 export function modelListHash(models = []) {
@@ -113,14 +116,15 @@ export function escalationStep(currentTier, { attemptsLeft = 1, farBelow = false
 }
 
 // KNOWN alias families -> capability rank, DERIVED from the alias floor (aliasDefaults)
-// so it never drifts as the floor changes (e.g. a future Fable rung): haiku<sonnet<opus.
-// A family's rank = the highest ESCALATION_LADDER tier it holds in the floor (opus serves
-// heavy AND reasoning -> 3). Assumes the default ladder (the only one resolveWorker uses).
+// so it never drifts as the floor changes: haiku < sonnet < opus < fable. A family's
+// rank = the highest ESCALATION_LADDER tier it holds in the floor (opus = heavy -> 2,
+// fable = reasoning the top rung -> 3). fable now has FIRST-CLASS identity here (it is no
+// longer merely unknown->strong). Assumes the default ladder (the only one resolveWorker uses).
 const FAMILY_RANK = (() => {
   const floor = aliasDefaults();
   const rank = {};
   ESCALATION_LADDER.forEach((t, i) => { for (const m of (floor[t] || [])) rank[String(m).toLowerCase()] = i; });
-  return rank; // { haiku: 0, sonnet: 1, opus: 3 }
+  return rank; // { haiku: 0, sonnet: 1, opus: 2, fable: 3 }
 })();
 
 // A SENSITIVE task's floor protects CAPABILITY, not just the tier SLOT (M2): a `modelTiers`
@@ -132,6 +136,18 @@ function belowSensitiveFloor(m, floor) {
   const name = String(m).toLowerCase();
   for (const fam in FAMILY_RANK) if (FAMILY_RANK[fam] < floor && name.includes(fam)) return true;
   return false;
+}
+
+// Fable is the top routable rung (reasoning), but spawning it bills real money, so the
+// agent ASKS the user before spawning a fable worker — once / always-this-project (persists
+// the `fableConsent` config key) / no (SKILL.md Step 2). This is the deterministic TRIGGER:
+// does the resolved worker land on fable? On "no", the agent adds fable to `blocked` and
+// re-resolves, taking the SAME spawn-fail-fall a blocked/unavailable fable already takes —
+// landing on the top NON-fable tier (opus). No new fall code. The substring match mirrors
+// belowSensitiveFloor's family detection: catches the alias `fable` and a pinned id like
+// `claude-fable-5`. Pure (Phoenix #8).
+export function isFableModel(model) {
+  return String(model).toLowerCase().includes('fable');
 }
 
 // Availability fallback — the LIMIT-HIT resolver (the DOWN move, opposite of
@@ -204,15 +220,15 @@ export function applyPins(tiers, modelTiers = {}) {
 
 // A complete floor ranking ready to persist (install seed; rebuilt on the spot
 // whenever the validity gate rejects the cached one). The ranking is ALWAYS the
-// alias floor (haiku<sonnet<opus -> low/mid/heavy) with reasoning mirroring heavy
-// (strongest @ max effort); the user's `modelTiers` pins overlay LAST — they are
-// the one human override (a model released after a model's training cutoff that
+// alias floor (haiku<sonnet<opus<fable -> low/mid/heavy/reasoning; reasoning = fable,
+// the top rung, consent-gated before spawn); the user's `modelTiers` pins overlay LAST —
+// they are the one human override (a model released after a model's training cutoff that
 // introspection cannot see). `models` is accepted only to stamp the `listHash`
 // (the freshness fingerprint) — it does NOT shape the tiers: routing rides the
 // tier STRUCTURE + unknown->heavy + the spawn-fail-fall, not an exact model list.
 export function buildFloorRanking(models = [], modelTiers = {}) {
   const tiers = aliasDefaults();
-  if (!tiers.reasoning || !tiers.reasoning.length) tiers.reasoning = tiers.heavy.slice();
+  if (!tiers.reasoning || !tiers.reasoning.length) tiers.reasoning = tiers.heavy.slice(); // safety net: reasoning must never be empty
   const pinned = applyPins(tiers, modelTiers);
   return { schemaVer: SCHEMA_VER, listHash: modelListHash(models), complete: true, source: 'alias-floor', tiers: pinned };
 }

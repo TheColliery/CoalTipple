@@ -55,6 +55,19 @@ test('modelTiers deep-merges PER-TIER — a project pin refines one tier, global
   } finally { cleanup(s); }
 });
 
+test('fableConsent persists as a project override (the "always-this-project" consent write)', () => {
+  // "always-this-project" writes fableConsent=true to the PROJECT config; the cascade must read it back.
+  const s = sandbox({
+    global: JSON.stringify({ qualityBar: 60 }),
+    project: JSON.stringify({ fableConsent: true }),
+  });
+  try {
+    const cfg = loadMergedConfig(s);
+    assert.equal(cfg.fableConsent, true, 'the project consent is read back (persisted)');
+    assert.equal(cfg.qualityBar, 60, 'global keys unaffected');
+  } finally { cleanup(s); }
+});
+
 test('modelTiers from one layer only passes through unchanged', () => {
   const g = sandbox({ global: JSON.stringify({ modelTiers: { reasoning: 'fable' } }) });
   try { assert.deepEqual(loadMergedConfig(g).modelTiers, { reasoning: 'fable' }); } finally { cleanup(g); }

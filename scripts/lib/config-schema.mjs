@@ -47,6 +47,7 @@ export const CONFIG_SCHEMA = [
   { key: 'updateMode', type: 'enum', values: ['ask', 'auto', 'remind', 'off'], flags: ['-u', '--update-mode'], help: 'Self-update behavior at session start (ask, auto, remind, off; default: ask). Orthogonal to routing — its own off-switch' },
   { key: 'updateCheckDays', type: 'int', min: 1, max: 365, flags: ['-P', '--update-days'], help: 'Days between self-update checks/reminders (range 1-365, default: 14). Short flag -P (uppercase; -p is reserved for --project)' },
   { key: 'modelTiers', type: 'obj', noFlag: true, validate: validateModelTiers, help: 'Optional user pins overriding auto-classification: { low|mid|heavy|reasoning: "model" | ["priority","chain"] }' },
+  { key: 'fableConsent', type: 'bool', flags: ['-f'], help: 'Standing consent to route to Fable 5 (the top rung above opus, a real-money spawn) WITHOUT asking each time: true = spawn fable whenever routing selects it; false/unset = ask once per fable escalation (once / always-this-project / no). Set per-project with --project. Default: false (ask)' },
 ];
 // Tombstoned keys — do NOT resurrect without their trigger:
 //   'callFable' (shipped 1.1.0, withdrawn 1.1.1 — premature: a SKILL.md flag cannot hard-block a
