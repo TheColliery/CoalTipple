@@ -311,13 +311,15 @@ test('isFableModel: the consent-ask TRIGGER — matches the fable alias + a pinn
   for (const m of ['opus', 'haiku', 'sonnet', 'opus-4.8']) assert.equal(isFableModel(m), false, m);
 });
 
-test('fable consent: a reasoning route lands on fable -> ASK; on `no`, blocking fable falls to opus (the top non-fable tier)', () => {
+test('fable consent: a reasoning route lands on fable -> ASK; on `no`, the cap is the rung below fable (the top non-fable tier the ranking resolves — opus today)', () => {
   const r = buildFloorRanking([]); // reasoning = ['fable'], heavy = ['opus']
   // the resolved top-rung worker IS fable -> the agent must ASK before spawning (isFableModel = the trigger).
   const w = resolveWorker(r, 'reasoning', {});
   assert.deepEqual(w, { tier: 'reasoning', model: 'fable' });
   assert.equal(isFableModel(w.model), true, 'fable route -> consent-ask fires');
-  // `no` = stay on the highest NON-fable tier: block fable and the EXISTING spawn-fail-fall lands on opus (heavy).
+  // `no` = don't climb into fable, cap at the rung below it (the top non-fable tier — opus/heavy in THIS
+  // fixture, read from the ranking not hardcoded). Mechanically that rung is where a blocked fable re-resolves
+  // (the SAME fall an unavailable fable takes): resolveWorker(reasoning, blocked:[fable]) -> heavy/opus.
   assert.deepEqual(resolveWorker(r, 'reasoning', { blocked: ['fable'] }), { tier: 'heavy', model: 'opus' });
   // a route that lands on opus is NOT a fable route -> no ask.
   assert.equal(isFableModel('opus'), false);

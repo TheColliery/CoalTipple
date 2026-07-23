@@ -2,6 +2,11 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.3.1] - 2026-07-23
+
+### Changed
+- **The fable-decline (`no`) rail now caps the climb at the CURRENT tier — future-proof, no hardcoded `opus`.** `no` = don't climb the escalation step INTO the real-money fable rung; **stay put** at the rung below fable (the top non-fable tier the ranking resolves — `opus`/`heavy` today, READ from the ranking, never hardcoded so a future model landing between opus and fable becomes the cap with no rail edit), and accept that tier's result even if `qualityBar` is unmet. The prior wording framed `no` as a downward re-resolve DOWN to the literally-named opus. **Not breaking — identical money-gate behavior** (fable never spawns without consent; the worker still lands on the top non-fable tier, opus today), only sharper + rot-proof wording. The `isFableModel` substring trigger and the block-the-resolved-name anti-re-serve guard (a pinned `claude-fable-5` still trips the ask) are unchanged; rail prose only — `classify.mjs` logic untouched.
+
 ## [1.3.0] - 2026-07-23
 
 ### Added

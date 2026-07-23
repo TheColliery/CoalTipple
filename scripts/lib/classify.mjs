@@ -141,9 +141,10 @@ function belowSensitiveFloor(m, floor) {
 // Fable is the top routable rung (reasoning), but spawning it bills real money, so the
 // agent ASKS the user before spawning a fable worker — once / always-this-project (persists
 // the `fableConsent` config key) / no (SKILL.md Step 2). This is the deterministic TRIGGER:
-// does the resolved worker land on fable? On "no", the agent adds fable to `blocked` and
-// re-resolves, taking the SAME spawn-fail-fall a blocked/unavailable fable already takes —
-// landing on the top NON-fable tier (opus). No new fall code. The substring match mirrors
+// does the resolved worker land on fable? On "no", the agent does NOT climb into fable — it
+// caps at the rung below fable (the top NON-fable tier the ranking resolves — opus today, never
+// hardcoded), taking the SAME spawn-fail-fall a blocked/unavailable fable takes (block the
+// resolved model, re-resolve). No new fall code. The substring match mirrors
 // belowSensitiveFloor's family detection: catches the alias `fable` and a pinned id like
 // `claude-fable-5`. Pure (Phoenix #8).
 export function isFableModel(model) {
