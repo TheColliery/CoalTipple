@@ -2,6 +2,14 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.3.2] - 2026-07-24
+
+Doc/comment-only follow-up to v1.3.0/v1.3.1 — routing, the fable gate, and the decline rail are unchanged.
+
+### Fixed
+- **README `fableConsent` row still named the decline cap as hardcoded `opus`.** The v1.3.1 rail-wording fix (ranking-read, rot-proof cap) landed in the SKILL.md rail text but missed the README Configure table, which still read "`no` drops to opus." Reworded to match: `no` caps the climb at the top non-fable rung (opus today — read from the ranking).
+- **`callFable` tombstone comment in `config-schema.mjs` was stale.** It still described the real-money Fable gate as a future redesign pending Fable billing leaving the plan; the gate SHIPPED as `fableConsent` in v1.3.0. Comment now points at the shipped key and warns against resurrecting `callFable`.
+
 ## [1.3.1] - 2026-07-23
 
 ### Changed

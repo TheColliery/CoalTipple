@@ -51,8 +51,8 @@ export const CONFIG_SCHEMA = [
 ];
 // Tombstoned keys — do NOT resurrect without their trigger:
 //   'callFable' (shipped 1.1.0, withdrawn 1.1.1 — premature: a SKILL.md flag cannot hard-block a
-//   spawn the way commented-out code blocks execution; returns as the real-money Fable gate,
-//   redesigned [config clamp / PreToolUse level], WHEN Fable billing actually leaves the plan).
+//   spawn the way commented-out code blocks execution. The real-money Fable gate SHIPPED as
+//   'fableConsent' in v1.3.0 — do NOT resurrect 'callFable'; the consent ask is the gate).
 
 // Validate an already-parsed JSON value against a spec.
 // Returns an error message fragment ("must be ...") or null when valid.
