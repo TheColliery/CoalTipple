@@ -165,6 +165,16 @@ Full key reference: every key + default lives in [`scripts/lib/config-schema.mjs
 
 ---
 
+## 🔑 Permissions
+
+* **Reads** its own config/ranking and your project; **writes** only its own scratch state (a ranking cache, an update-check stamp) — never a target file.
+* **The one defining right:** picking the model a spawned worker runs at — the whole mechanism. A worker gets strictly LESS: a bounded task contract, no re-spawning, no shell/network of its own.
+* **Never** network, exec, or delete by itself; **always asks** before spending real money (the `fableConsent` gate before Fable 5) or anything else beyond read+scratch — you, main, execute it on your own tools.
+
+Full series matrix + the must-fail set: [Permission Matrix](https://github.com/TheColliery/.github/blob/main/PERMISSION-MATRIX.md)
+
+---
+
 ## 📊 Benchmark
 
 We evaluate the **final output correctness** after the main escalates one rung, and the **token savings** of delegating mechanical bulk down — each dated, on small honest samples, in the linked record so a copied number cannot drift.
