@@ -14,7 +14,7 @@ To report a security issue in the skill, the conductor hook, or the installer:
 
 ## 🔑 Commit & Tag Signatures
 
-Every **release tag** and **maintainer commit** is SSH-signed (`gpg.format=ssh`); GitHub shows the Verified badge on them. Automated **Dependabot / CI** commits are unsigned by design (they carry no maintainer key), so verify a signed **release tag** — the artifact a release consumer trusts:
+Every **release tag** and **maintainer commit** is SSH-signed (`gpg.format=ssh`); GitHub shows the Verified badge on them. Automated **Dependabot / CI** commits are not signed with the maintainer key (GitHub signs these with its own), so verify a signed **release tag** — the artifact a release consumer trusts:
 ```bash
 echo "* ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEtqTWGKhX1Dk9nZP8ns13Wl5zsO1Cz3VlTS6m1p2fP9" > coaltipple_signers
 git config gpg.ssh.allowedSignersFile ./coaltipple_signers

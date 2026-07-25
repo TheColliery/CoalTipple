@@ -19,6 +19,7 @@ Not the cheapest router on the market — a cross-provider proxy can cut deeper 
 ![Codex](https://img.shields.io/badge/Codex-non--actuating-lightgrey)
 ![Gemini CLI](https://img.shields.io/badge/Gemini_CLI-non--actuating-lightgrey)
 ![Cline](https://img.shields.io/badge/Cline-non--actuating-lightgrey)
+![Windsurf](https://img.shields.io/badge/Windsurf-non--actuating-lightgrey)
 ![Copilot CLI](https://img.shields.io/badge/Copilot_CLI-candidate-orange)
 ![claude.ai](https://img.shields.io/badge/claude.ai-non--actuating-lightgrey)
 
@@ -70,7 +71,7 @@ CoalTipple installs on **Claude Code only** — routing actuates only where an a
 ```bash
 claude plugin marketplace add TheColliery/CoalTipple
 claude plugin install coaltipple@coaltipple
-# Restart Claude Code to load the /coaltipple commands (stats | off | memory)
+# Restart Claude Code to load the /coaltipple commands (stats | off | memory | update)
 ```
 
 Optional per-project config override: `<project>/.claude/.coaltipple.json`.

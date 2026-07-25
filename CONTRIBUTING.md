@@ -14,7 +14,7 @@ CoalTipple is the model/effort router of the [TheColliery](https://github.com/Th
 
 ## 💻 Developing & Testing
 
-CoalTipple is **zero-dependency** (built using Node.js built-ins only, Node 18+). No `npm install` is required.
+CoalTipple is **zero-dependency** (built using Node.js built-ins only, Node 22+). No `npm install` is required.
 
 Keep the verification gates green before and after making edits:
 
@@ -30,7 +30,7 @@ node scripts/test.mjs           # runs the zero-dependency test runner (node --t
 * **`keywords.mjs` is the Single Source of Truth:** Edit keywords there, run `node scripts/build-plugin.mjs` to re-sync the conductor, then `node scripts/build-dist.mjs` to compile the distribution. Do not hand-edit hooks directly.
 * **Synchronize `plugin/`:** Rebuild the plugin distribution after modifying the core skill, hooks, or manifest.
 * **Add Unit Tests:** Every shared helper should have a corresponding `*.test.mjs` test file.
-* **Keep Hooks Phoenix-Pure:** Hooks must have zero dependencies, fail-silent execution (wrap in try/catch, never exit non-zero), and run 100% locally.
+* **Keep Hooks Phoenix-Pure:** Hooks must have zero dependencies, fail-silent execution (wrap in try/catch, never exit non-zero), and run 100% locally; hooks ship a hermetic spawn test (hooks-safety.md §7).
 * **Language & Tone:** Shipped source files and documentations must stay in English.
 
 ---

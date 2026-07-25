@@ -2,6 +2,20 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.3.3] - 2026-07-25
+
+Pattern-conform sweep vs `.github/SKILL-REPO-PATTERN.md` — verify-gate coverage hardened + prose/comment accuracy fixed across scripts, docs, and CI. No routing behavior, config key, or user-facing capability changed.
+
+### Fixed
+- **`verify.mjs` was missing 2 of the pattern's Layer-4 checks.** Added a `marketplace.json` `plugins[0].source === "./plugin"` assertion (ported from CoalMine's verify.mjs, written with CT's own BOM-strip idiom) so a future hand-edit of the marketplace source can no longer ship silently. Widened the manifest version regex to accept a pre-release/build suffix (flock-canonical form, matching CoalHearth/CoalFace/CoalWash/CoalLedger) — a strict `x.y.z`-only regex once rejected a beta tag at release time on a sibling; CT ships stable-only today (latent) but conforms anyway. The paired CHANGELOG-heading capture regex a few lines below widened the same way, so a future pre-release version doesn't pass the manifest check only to fail the very next one.
+- **`build-plugin.mjs` header now names its divergence from the flock.** Unlike CoalMine/CoalBoard/CoalHearth, where `build-plugin.mjs` regenerates the shipped `plugin/` dist, CT's script only syncs shared-region markers (hot-keywords, factory-config blocks) from `keywords.mjs` — the actual dist-regenerator is `build-dist.mjs`. A header comment now names this so `node scripts/build-plugin.mjs` alone is never mistaken for a full rebuild (rename deferred — bigger blast, `release-gate.ps1` already runs both in order).
+- **SKILL.md platform-gate callout used the wrong GFM alert type.** `[!WARNING]` → `[!CAUTION]` on the Claude-Code-only platform gate, matching the flock's own exemplar for this class of hard platform lock (source `skills/coaltipple/SKILL.md` + its `plugin/` dist mirror).
+- **`/coaltipple update` was missing from both command enumerations**, though the command itself has shipped since Self-Updating (v1.0.13). Added to the SKILL.md rail's command list and README's post-install restart comment.
+- **README's platform-support badge row was missing Windsurf.** Added a `Windsurf: non-actuating` badge, matching its already-documented "NO" status in the platform matrix (MEMORY.md / SKILL.md) alongside Antigravity/Codex/Gemini CLI/Cline/claude.ai.
+- **CONTRIBUTING.md understated the dev floor and the hook-test bar.** `Node 18+` → `Node 22+` (matches the CI matrix); the Phoenix-Pure hooks bullet now names the hermetic-spawn-test requirement (`hooks-safety.md` §7).
+- **SECURITY.md's Dependabot/CI commit-signing line was imprecise.** "Unsigned by design" reworded to "not signed with the maintainer key (GitHub signs these with its own)" — those commits ARE signed, just not by the maintainer key a verifier would check against.
+- **`ci.yml`'s `actions/setup-node` SHA-pin comment was stale.** The pinned SHA was already the real v7.0.0 commit (Dependabot bumped it from 6.4.0), but the trailing label still read `# v6`; corrected to `# v7.0.0`. The SHA itself was never wrong — only the human-readable comment.
+
 ## [1.3.2] - 2026-07-24
 
 Doc/comment-only follow-up to v1.3.0/v1.3.1 — routing, the fable gate, and the decline rail are unchanged.

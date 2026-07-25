@@ -28,9 +28,14 @@ console.log('plugin (manifest vs CHANGELOG):');
 try {
   const pj = JSON.parse(fs.readFileSync(path.join(repo, '.claude-plugin', 'plugin.json'), 'utf8'));
   if (pj.name === 'coaltipple') ok("plugin.json name = 'coaltipple'"); else fail(`plugin.json name = '${pj.name}' (want 'coaltipple')`);
-  if (/^\d+\.\d+\.\d+$/.test(pj.version || '')) {
+  // Semver accepting a pre-release/build suffix (flock-canonical form, e.g. CoalHearth/CoalFace
+  // verify.mjs) — a strict x.y.z-only regex once rejected a beta tag at release time on a sibling.
+  // CT ships stable-only today (latent), but the CHANGELOG-heading capture below must accept the
+  // same grammar or a future beta would pass this check and fail the very next one.
+  const SEMVER_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+  if (SEMVER_RE.test(pj.version || '')) {
     const cl = fs.readFileSync(path.join(repo, 'CHANGELOG.md'), 'utf8');
-    const top = (cl.match(/^##\s*\[(\d+\.\d+\.\d+)\]/m) || [])[1];
+    const top = (cl.match(/^##\s*\[(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)\]/m) || [])[1];
     if (top === pj.version) ok(`version ${pj.version} matches top CHANGELOG entry`);
     else fail(`plugin.json version ${pj.version} != top CHANGELOG [${top || 'none'}] — bump bookkeeping out of sync`);
   } else fail(`plugin.json version '${pj.version}' not semver`);
@@ -38,6 +43,13 @@ try {
   const hj = fs.readFileSync(path.join(repo, 'hooks', 'hooks.json'), 'utf8');
   if (hj.includes('${CLAUDE_PLUGIN_ROOT}/hooks/coaltipple-conductor.js')) ok('hooks.json wires the conductor via ${CLAUDE_PLUGIN_ROOT}');
   else fail('hooks.json does not wire the conductor under ${CLAUDE_PLUGIN_ROOT}');
+  // marketplace.json must serve the conformed dist, not the raw repo (ported from CoalMine verify.mjs).
+  let mktRaw = fs.readFileSync(path.join(repo, '.claude-plugin', 'marketplace.json'), 'utf8');
+  if (mktRaw.charCodeAt(0) === 0xFEFF) mktRaw = mktRaw.slice(1); // same BOM-strip idiom as the config check above
+  const mkt = JSON.parse(mktRaw);
+  const srcField = mkt.plugins?.[0]?.source;
+  if (srcField === './plugin') ok('marketplace serves ./plugin (conformed dist)');
+  else fail(`marketplace plugins[0].source is ${JSON.stringify(srcField)} — must be "./plugin" so installs get conformed skills`);
 } catch (e) { fail(`plugin manifest: ${e.message}`); }
 
 console.log('skill:');

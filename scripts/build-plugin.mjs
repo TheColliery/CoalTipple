@@ -3,6 +3,14 @@
 // their source of truth, so the portable hook can never drift from the libs.
 // Today: the hot-keyword lists (from keywords.mjs). Run after editing keywords.mjs;
 // verify.mjs FAILs if a region is out of sync. Node built-ins only.
+//
+// NAMING NOTE (pattern-conform audit, 2026-07-25): unlike CoalMine/CoalBoard/CoalHearth,
+// where `build-plugin.mjs` regenerates the shipped `plugin/` dist, THIS script does NOT —
+// it only does the shared-region sync above. CT's dist-regenerator is `build-dist.mjs`
+// (assembles plugin/ from skills+hooks+commands+manifest; verify.mjs's checkDist() gates
+// it). Run BOTH after a skill/hook/keywords.mjs edit — release-gate.ps1 already does; a
+// bare `build-plugin.mjs` run alone leaves `plugin/` stale. Rename deferred (bigger blast,
+// touches CI/docs/muscle-memory) — this comment is the interim fix.
 
 import fs from 'node:fs';
 import path from 'node:path';

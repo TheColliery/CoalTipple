@@ -6,7 +6,7 @@ description: >-
 
 # CoalTipple — routing contract
 
-> [!WARNING]
+> [!CAUTION]
 > **PLATFORM GATE -- actuates on Claude Code ONLY.** Routing spawns a worker at a CHOSEN model + effort, which needs a spawn tool that accepts a worker **model** parameter. **Works: Claude Code** (`Agent`/`Task` takes `model`). **BROKEN: Antigravity** -- `invoke_subagent`/`define_subagent` expose no model param + no effort knob (low/mid/high are model *names*), so a worker silently runs the parent's model. On any platform without an agent-selectable worker model, **do NOT pretend to delegate-down or escalate-up** -- the spawn cannot change tier; routing is a silent no-op. Not on Claude Code -> this skill does not apply. (Reviewed monthly.)
 
 > **Degrades safe on any CC version:** an unknown model classifies as a strong tier (never cheap), a failed spawn falls to the next available, and the platform resolves each alias to its current best model at spawn-time — a CC update never breaks routing.
@@ -112,4 +112,4 @@ These run only on a specific, infrequent path — keep the rules out of the per-
 
 ## Always
 
-Honor the MERGED config (every value is tunable): global `~/.claude/.coaltipple.json` (your defaults) overlaid by project `.claude/.coaltipple.json` (per-key override; a project file is OPTIONAL — absent = global + schema defaults). Consent-gate token spend — never fan out costly work silently. **Respond in the user's language** (auto-detect, or the `language` config): translate the prose, but **never translate technical terms** — commands, paths, identifiers, tier/model names, severity labels, config keys stay verbatim. `/coaltipple off` turns routing off; `/coaltipple stats` shows approximate savings (an estimate — there is no cost API); `/coaltipple memory [on|off|set <file>]` sets up or disables the memory anchor.
+Honor the MERGED config (every value is tunable): global `~/.claude/.coaltipple.json` (your defaults) overlaid by project `.claude/.coaltipple.json` (per-key override; a project file is OPTIONAL — absent = global + schema defaults). Consent-gate token spend — never fan out costly work silently. **Respond in the user's language** (auto-detect, or the `language` config): translate the prose, but **never translate technical terms** — commands, paths, identifiers, tier/model names, severity labels, config keys stay verbatim. `/coaltipple off` turns routing off; `/coaltipple stats` shows approximate savings (an estimate — there is no cost API); `/coaltipple memory [on|off|set <file>]` sets up or disables the memory anchor; `/coaltipple update` checks for a newer version.
