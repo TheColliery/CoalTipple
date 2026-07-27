@@ -52,6 +52,12 @@ function readCfgFile(file) {
 // scripts/lib/config-load.mjs (used by configure.mjs --list), not duplicated here dead.
 // Index 0 = safest. Keep in sync with config-load.mjs's SAFER_ENUM (same ordering rationale).
 const SAFER_ENUM = { mode: ['off', 'delegation', 'escalation', 'auto'], updateMode: ['off', 'remind', 'ask', 'auto'] };
+// R2 (hooks-safety.md §9, corrected 2026-07-27): an ABSENT global is the SCHEMA DEFAULT,
+// not "nothing to clamp" -- matches config-load.mjs's SCHEMA_DEFAULT_ENUM (mode's default
+// 'auto' is a no-op ceiling; updateMode's 'ask' genuinely protects a zero-customization
+// install). fableConsent has no entry here at all (see the header comment above), so it
+// never needed this and isn't part of the discussion the config-load.mjs comment records.
+const SCHEMA_DEFAULT_ENUM = { mode: 'auto', updateMode: 'ask' };
 let _cfg;
 function loadCfg() {
   if (_cfg !== undefined) return _cfg;
@@ -62,13 +68,14 @@ function loadCfg() {
   // Merge only when something loaded; keep null (= "no config") if neither did, so
   // the existing `if (cfg && ...)` guards in main() behave exactly as before.
   const merged = global || project ? { ...(global || {}), ...(project || {}) } : null;
-  if (merged && global && project) {
+  if (merged && project) {
     for (const [key, order] of Object.entries(SAFER_ENUM)) {
-      if (global[key] === undefined || project[key] === undefined) continue;
-      const gi = order.indexOf(String(global[key]).toLowerCase());
+      if (project[key] === undefined) continue;
+      const effectiveGlobal = (global && global[key] !== undefined) ? global[key] : SCHEMA_DEFAULT_ENUM[key];
+      const gi = order.indexOf(String(effectiveGlobal).toLowerCase());
       const pi = order.indexOf(String(project[key]).toLowerCase());
       if (gi === -1 || pi === -1) continue; // unknown value: leave the shallow-merge result
-      merged[key] = pi <= gi ? project[key] : global[key]; // project may not move PAST global toward the weaker end
+      merged[key] = pi <= gi ? project[key] : effectiveGlobal; // project may not move PAST the effective global toward the weaker end
     }
   }
   _cfg = merged;

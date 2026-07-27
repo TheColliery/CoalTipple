@@ -102,23 +102,39 @@ const SAFER_ENUM = {
 // Fable spawn; true = standing consent, no per-instance gate. (Opposite direction from
 // CoalWash's `localOnly`, whose safe value is true — the safe end depends on the key.)
 const SAFER_FALSE = ['fableConsent'];
+// R2 (hooks-safety.md §9, corrected 2026-07-27): the FACTORY DEFAULT is the user's
+// effective stance even with NO global file (the common case) — matches platform-configs/
+// .coaltipple.json (the shipped factory template) + config-schema.mjs's documented
+// defaults. `mode`'s default ('auto') is already the top/least-safe index of its own
+// ordering, so it substitutes as a no-op ceiling; `updateMode` genuinely gains protection
+// an absent global previously left wide open.
+const SCHEMA_DEFAULT_ENUM = { mode: 'auto', updateMode: 'ask' };
 
-// Constrain `merged` in place per SAFER_ENUM/SAFER_FALSE, given the two RAW (pre-merge)
-// layers. Only fires when the GLOBAL layer made an EXPLICIT choice (key absent = the
-// factory default applies, and the project is free to set anything — matches the
-// CoalMine/CoalWash precedent: an unset global is not a "deliberate choice" to protect).
+// DELIBERATE NON-EXTENSION, found + reasoned through this session (do not "fix" this into
+// matching SAFER_ENUM's absent-global substitution -- that was tried and it breaks a
+// shipped feature; see the failing-test history in git blame before changing it again):
+// fableConsent's ONLY persistence path is a PROJECT-level write -- SKILL.md's "always"
+// option runs `configure.mjs --project --fableConsent true`, with NO global-write
+// counterpart (unlike updateMode's ask-flow, which writes GLOBAL). Substituting the
+// schema default (false) for an absent global would clamp that legitimate write back to
+// false on every subsequent read, silently breaking "always-this-project" and forcing a
+// re-ask on every fable route. So fableConsent clamps ONLY against an EXPLICIT global
+// `false` (a user's deliberate machine-wide stance) -- an absent global leaves a bare
+// project `true` alone, because that bare value IS how a legitimate per-project consent
+// persists, not just how an attacker's clone would look.
 function applySaferValueWins(merged, global, project) {
   for (const [key, order] of Object.entries(SAFER_ENUM)) {
-    if (global[key] === undefined || project[key] === undefined) continue;
+    if (project[key] === undefined) continue;
+    const effectiveGlobal = global[key] !== undefined ? global[key] : SCHEMA_DEFAULT_ENUM[key];
     // Case-fold: config-schema.mjs's enum validation is case-insensitive, so a project
     // 'AUTO'/'Off' must not evade the lookup via case and fall through to plain project-wins.
-    const gi = order.indexOf(String(global[key]).toLowerCase());
+    const gi = order.indexOf(String(effectiveGlobal).toLowerCase());
     const pi = order.indexOf(String(project[key]).toLowerCase());
     if (gi === -1 || pi === -1) continue; // unknown value: leave the shallow-merge result (schema clamps it downstream)
-    merged[key] = pi <= gi ? project[key] : global[key]; // project may not move PAST global toward the weaker end
+    merged[key] = pi <= gi ? project[key] : effectiveGlobal; // project may not move PAST the effective global toward the weaker end
   }
   for (const key of SAFER_FALSE) {
-    if (global[key] === false) merged[key] = false; // project cannot turn a global FALSE (safe) into TRUE (escalated)
+    if (global[key] === false) merged[key] = false; // project cannot turn an EXPLICIT global false into true (absent global: see the comment above)
   }
   return merged;
 }

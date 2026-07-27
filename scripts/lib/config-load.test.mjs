@@ -190,13 +190,41 @@ test('safer-value-wins: project cannot escalate fableConsent from a global false
   try { assert.equal(loadMergedConfig(s).fableConsent, false, 'project may not escalate real-money standing consent'); } finally { cleanup(s); }
 });
 
-test('safer-value-wins only constrains an EXPLICIT global choice -- an absent global lets the project set anything', () => {
-  const s = sandbox({ project: JSON.stringify({ mode: 'auto', updateMode: 'auto', fableConsent: true }) });
+// R2 (hooks-safety.md §9, corrected 2026-07-27): an ABSENT global is the SCHEMA DEFAULT
+// for updateMode, not "anything goes" -- the previous version of this test locked in the
+// opposite (wrong) behavior as expected. updateMode's factory default ('ask') is SAFER
+// than what a project can escalate to, so even a zero-customization install (no global
+// file at all -- the common case) must be protected. fableConsent is DELIBERATELY NOT
+// covered by this same substitution -- see the next test + the code comment in
+// config-load.mjs for why (it would break the shipped "always-this-project" persistence).
+test('safer-value-wins clamps updateMode against the SCHEMA DEFAULT when no global file exists at all (R2 fix)', () => {
+  const s = sandbox({ project: JSON.stringify({ updateMode: 'auto' }) });
   try {
-    const cfg = loadMergedConfig(s);
-    assert.equal(cfg.mode, 'auto');
-    assert.equal(cfg.updateMode, 'auto');
-    assert.equal(cfg.fableConsent, true);
+    assert.equal(loadMergedConfig(s).updateMode, 'ask', "updateMode's factory default (ask) is safer than the project's auto -- clamped even with no global file");
+  } finally { cleanup(s); }
+});
+
+// The DELIBERATE non-extension: fableConsent's clamp stays explicit-global-only even
+// after R2, because its ONLY persistence mechanism (SKILL.md's "always" option) is a
+// PROJECT-level write with no global-write counterpart -- clamping an absent global would
+// silently break "always-this-project" and force a re-ask on every future fable route.
+// Do NOT "fix" this to match updateMode's schema-default substitution; it was tried
+// (see git history on this test) and it broke the "persists as a project override" test
+// directly above.
+test('safer-value-wins does NOT clamp fableConsent when global is absent -- preserves "always-this-project"', () => {
+  const s = sandbox({ project: JSON.stringify({ fableConsent: true }) });
+  try {
+    assert.equal(loadMergedConfig(s).fableConsent, true, 'a bare project fableConsent:true with no global is the legitimate always-this-project write, not an attack -- must pass through');
+  } finally { cleanup(s); }
+});
+
+// mode's factory default is ALREADY 'auto', the top (least-safe) index of its own ordering
+// -- there is nothing more permissive for a project to escalate TO, so an absent global
+// has nothing to clamp for this specific key. A regression guard, not new protection.
+test("mode's factory default sits at the ceiling of its own ordering -- an absent global clamps nothing for it", () => {
+  const s = sandbox({ project: JSON.stringify({ mode: 'off' }) });
+  try {
+    assert.equal(loadMergedConfig(s).mode, 'off', 'project value passes through unclamped -- auto (the default) is already the least-safe end');
   } finally { cleanup(s); }
 });
 

@@ -77,6 +77,20 @@ test('default (no config): KIND-1 ask directive fires when no stamp, and the sta
   } finally { fs.rmSync(home, { recursive: true, force: true }); }
 });
 
+test('R2 (hooks-safety.md §9): a PROJECT updateMode:"auto" with NO global config file is clamped to the schema default "ask", not honored raw', () => {
+  const home = mkHome(); // no global .coaltipple.json AT ALL -- the common zero-customization install
+  const proj = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-upd-proj-'));
+  try {
+    fs.mkdirSync(path.join(proj, '.git'));
+    fs.mkdirSync(path.join(proj, '.claude'), { recursive: true });
+    fs.writeFileSync(path.join(proj, '.claude', '.coaltipple.json'), JSON.stringify({ updateMode: 'auto' }), 'utf8');
+    const r = run(SESSION, home, proj);
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /CoalTipple self-update \(ask/, 'clamped to the schema-default ask directive, not the auto standing-consent one');
+    assert.doesNotMatch(r.stdout, /standing consent/, 'the unclamped "auto" directive must NOT fire from a cloned repo\'s project file with no matching global choice');
+  } finally { fs.rmSync(home, { recursive: true, force: true }); fs.rmSync(proj, { recursive: true, force: true }); }
+});
+
 test('ask is throttled: a fresh stamp (today) suppresses the KIND-1 directive', () => {
   const home = mkHome({ updateMode: 'ask', updateCheckDays: 14 });
   try {
