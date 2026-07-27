@@ -108,6 +108,7 @@ Routing adjusts **two independent knobs** (always raise effort before tier):
 * TIER tracks **difficulty/sensitivity**; EFFORT tracks **output size**. A short cryptographic function wants a high tier but low effort. A large mechanical template wants a cheap tier but high effort.
 
 ### The qualityBar Staircase
+
 `qualityBar` (0–100, default **60**) defines the acceptable quality threshold:
 1. The task's **grade** picks the starting tier (cheapest possible).
 2. The worker runs, and output is verified against the task contract.
@@ -125,6 +126,7 @@ Routing adjusts **two independent knobs** (always raise effort before tier):
 * **Workers are Leaves:** By policy a worker is given a bounded task contract and returns to main rather than spawning its own workers — routing stays depth-0 whether or not the platform allows nesting.
 
 ### Damage Control
+
 * **Isolation:** Uses git worktree-isolation (or local `.claude/.coaltipple/proposed/` sandbox with `state.json` journaling) to protect files from mid-run failures.
 * **Rate Limits:** Automatically falls back to the next available tier on limit-hits, but never below a sensitive task's minimum tier.
 * **Side Effects:** Commands with external side-effects (e.g. bash mutations, commits) are never delegated.
@@ -142,6 +144,7 @@ The Lock guarantees CoalTipple is only ever in one of two states: *routing corre
 ---
 
 ## 🧠 Memory Anchor
+
 Workers start context-fresh. A **memory anchor** file gives a fresh worker project context.
 * If `contextFiles` is empty, CoalTipple auto-loads `CLAUDE.md` / `AGENTS.md`.
 * Offers once to set up an anchor on new projects. Manage manually via `/coaltipple memory`.
@@ -215,4 +218,5 @@ That doctrine: Phoenix-13 hooks (zero-dependency, no network, fail-silent, no ch
 Zero-dependency, offline, no API keys.
 
 ## 📄 License
+
 Apache License 2.0. See [LICENSE](LICENSE) for details.
