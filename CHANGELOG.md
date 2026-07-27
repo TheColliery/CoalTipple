@@ -2,6 +2,15 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.3.6] - 2026-07-27
+
+Doc-only, README `## 🧭 Part of TheColliery` block reshaped to DOC-PATTERN.md's newly-locked row-10 shape. Line discipline, not new claims — every sibling link, role and doctrine word is the one that was already there. No routing behavior, config key, or user-facing capability changed.
+
+### Fixed
+- **The block shipped as one unbroken 701-character paragraph.** Six sibling links, the compose promise and the shared doctrine were welded into a single line — the last thing a visitor reads before the License, and unscannable on a phone. It is now the locked four-part shape: one sentence, a sibling LIST (one per line, `[Name] — role`), the compose promise, then the doctrine + series pointer. Every URL was re-verified live against the GitHub API (CoalMine is `HetCreep/CoalMine`, the other five are org repos); the role words are this README's own, taken verbatim from its header sibling line.
+- **No blank line after the `## 🧭 Part of TheColliery` heading**, the one divergence from the flock DOC-PATTERN.md names for this repo; the file's own dominant style has one.
+- **The block was missing its closing `Zero-dependency, offline, no API keys.` line and the series pointer** that the locked shape ends on. Nothing new is claimed by restoring them: the shipped plugin carries no `package.json`, no network code and no API-key surface, and `SECURITY.md` already states "Zero Dependencies & No Network: Runs 100% locally".
+
 ## [1.3.5] - 2026-07-27
 
 Doc-only, README `## Commands` section required by DOC-PATTERN.md's newly-locked spine (row 6) + the `## Commands`/`## Permissions` grep-anchor rule. No routing behavior, config key, or user-facing capability changed.

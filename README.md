@@ -198,7 +198,21 @@ Full harnesses, per-task scoring, the quality-vs-tier matrix, routing-savings hi
 ---
 
 ## 🧭 Part of TheColliery
-CoalTipple shares its engineering doctrine with [CoalMine](https://github.com/HetCreep/CoalMine), [CoalBoard](https://github.com/TheColliery/CoalBoard), [CoalHearth](https://github.com/TheColliery/CoalHearth) (session warm-resume), [CoalFace](https://github.com/TheColliery/CoalFace) (fan-out discipline), [CoalWash](https://github.com/TheColliery/CoalWash) (memory defrag), and [CoalLedger](https://github.com/TheColliery/CoalLedger) (docs health): Phoenix-13 hooks (zero-dependency, no network, fail-silent, no child processes, deterministic), single-source-of-truth config schemas, and a strict no-overkill discipline. Install one and it stands alone; install all and they compose without conflict.
+
+CoalTipple is the series' model/effort router, and it shares its engineering doctrine with six siblings:
+
+* [CoalMine](https://github.com/HetCreep/CoalMine) — quality canaries
+* [CoalBoard](https://github.com/TheColliery/CoalBoard) — consensus & debate board
+* [CoalHearth](https://github.com/TheColliery/CoalHearth) — session warm-resume
+* [CoalFace](https://github.com/TheColliery/CoalFace) — fan-out discipline
+* [CoalWash](https://github.com/TheColliery/CoalWash) — memory defrag
+* [CoalLedger](https://github.com/TheColliery/CoalLedger) — docs health
+
+Install one, it stands alone; install all, they compose without conflict.
+
+That doctrine: Phoenix-13 hooks (zero-dependency, no network, fail-silent, no child processes, deterministic), single-source-of-truth config schemas, and a strict no-overkill discipline — full series at [TheColliery](https://github.com/TheColliery).
+
+Zero-dependency, offline, no API keys.
 
 ## 📄 License
 Apache License 2.0. See [LICENSE](LICENSE) for details.
