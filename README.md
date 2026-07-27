@@ -148,6 +148,18 @@ Workers start context-fresh. A **memory anchor** file gives a fresh worker proje
 
 ---
 
+## Commands
+
+| Command | What it does |
+|---|---|
+| `/coaltipple` | Manually load the routing contract for this turn (routing is normally automatic via the hook; useful after `/coaltipple off`) |
+| `/coaltipple stats` | Approximate token savings + delegate-down / escalate-up activity this session |
+| `/coaltipple off` | Turn routing off for this session — work as a normal single agent |
+| `/coaltipple memory [on\|off\|set <file>]` | Set up or change the memory anchor a fresh worker reads |
+| `/coaltipple update` | Check for a newer CoalTipple version and offer to apply it, or set how updates are handled |
+
+---
+
 ## ⚙️ Configure
 
 Everything is tunable in `.coaltipple.json` — a global `~/.claude/.coaltipple.json` overlaid per key by the project `<gitroot>/.claude/.coaltipple.json` (project wins), so you can **tune or shut off a globally-installed skill per project** (off-switch: `enableRouting: false`) — a skill you don't need in a given project stops loading (and burning tokens) there. Ships zero-config with optimal defaults. The high-impact keys:
@@ -165,7 +177,7 @@ Full key reference: every key + default lives in [`scripts/lib/config-schema.mjs
 
 ---
 
-## 🔑 Permissions
+## Permissions
 
 * **Reads** its own config/ranking and your project; **writes** only its own scratch state (a ranking cache, an update-check stamp) — never a target file.
 * **The one defining right:** picking the model a spawned worker runs at — the whole mechanism. A worker gets strictly LESS: a bounded task contract, no re-spawning, no shell/network of its own.

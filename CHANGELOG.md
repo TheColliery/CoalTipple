@@ -2,6 +2,14 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.3.5] - 2026-07-27
+
+Doc-only, README `## Commands` section required by DOC-PATTERN.md's newly-locked spine (row 6) + the `## Commands`/`## Permissions` grep-anchor rule. No routing behavior, config key, or user-facing capability changed.
+
+### Fixed
+- **README had no `## Commands` table.** All 5 real user-invocable entries — the `coaltipple` skill itself plus the 4 `commands/*.md` files (`stats`, `off`, `memory`, `update`) — are now listed with their verbatim invocation form, cross-checked against the live `plugin/` dist rather than assumed from memory.
+- **`## 🔑 Permissions` carried an emoji, breaking the flock-wide grep anchor.** `## Commands` and `## Permissions` are now both bare headings (no icon) per DOC-PATTERN.md's amendment — a cross-repo `grep -n "^## Permissions"` needs one spelling, not each repo's own icon.
+
 ## [1.3.4] - 2026-07-27
 
 Config-security hardening from `hooks-safety.md` §9's one-flock sweep (station-3 review, 2 rounds — the first round's own overclaim is corrected in this entry, not silently rewritten). A consent-escalation clamp (now covering BOTH the code merge path and the agent's own SKILL.md-instructed read), a factory-default fix, and a prototype-pollution guard. No routing behavior, config key, or user-facing capability changed.
