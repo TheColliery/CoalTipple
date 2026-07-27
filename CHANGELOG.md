@@ -2,6 +2,14 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.3.4] - 2026-07-27
+
+Two config-security hardenings from `hooks-safety.md` §9's one-flock sweep: a consent-escalation clamp and a prototype-pollution guard, both closing CT's last gap vs the other 6 rooms. No routing behavior, config key, or user-facing capability changed.
+
+### Security
+- **A cloned repo's project config could ESCALATE consent/spend past the user's global choice.** The 2-level cascade (`{ ...global, ...project }`) let a project `.coaltipple.json` — arriving untrusted with a cloned repo — flip a deliberate global `mode:"off"` to `"auto"`, or `updateMode:"off"` to `"auto"` (standing consent to network + spend tokens nobody agreed to for that project), or `fableConsent:false` (ask before every real-money Fable spawn) to `true` (silent standing consent). Added a safer-value-wins clamp (`hooks-safety.md` §9): a project may only move `mode`/`updateMode`/`fableConsent` toward the safer end, never past an explicit global choice — quietening is always allowed, escalating never is. Applied in both places that merge the cascade: `scripts/lib/config-load.mjs` (`loadMergedConfig`, used by `configure.mjs`) and the standalone conductor hook (`hooks/coaltipple-conductor.js`, Phoenix #9 — its own inline copy, `mode`/`updateMode` only, since it never reads `fableConsent`). Verified: this room's audit against `.github/hooks-safety.md` §9 (which listed CT as unguarded from an un-verified board finding, not a direct source check) — the source check confirmed the gap was real.
+- **CT was the one room in the flock parsing project config with no `__proto__`/`constructor`/`prototype` guard.** `scripts/lib/jsonc.mjs` gains `parseJsonc` (a `JSON.parse` reviver dropping the three keys — the exact flock-canonical shape CoalFace/CoalHearth/CoalWash/CoalLedger already ported FROM this file, never back-ported here) and both `config-load.mjs` and the conductor's inline copy now use it. Verified precisely: CT's merge is spread-based (`{...global, ...project}`), which does NOT propagate to the global `Object.prototype` the way an `Object.assign`/bracket-loop merge would (confirmed empirically) — so this closes a narrower, still-real risk (a `__proto__`-named key surviving as a literal own key on the merged config object, which could confuse a future assignment-style consumer) and brings CT's parse in line with the documented series standard (`SKILL-REPO-PATTERN.md` Layer 3), not an active RCE in this code today.
+
 ## [1.3.3] - 2026-07-25
 
 Pattern-conform sweep vs `.github/SKILL-REPO-PATTERN.md` — verify-gate coverage hardened + prose/comment accuracy fixed across scripts, docs, and CI. No routing behavior, config key, or user-facing capability changed.

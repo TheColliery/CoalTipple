@@ -39,10 +39,19 @@ function readCfgFile(file) {
     // ending in a literal backslash terminates the string correctly instead of
     // leaking escape state into the next token and mis-stripping a later comment.
     const cleanJson = content.replace(/"(?:\\.|[^"\\])*"|\/\/.*|\/\*[\s\S]*?\*\//g, (m) => (m[0] === '"' ? m : ''));
-    const parsed = JSON.parse(cleanJson);
+    // Prototype-pollution guard (OWASP Node.js; flock-canonical -- CoalMine/CoalBoard's own
+    // conductors carry the same reviver inline for the identical Phoenix #9 standalone reason).
+    const parsed = JSON.parse(cleanJson, (k, v) => (k === '__proto__' || k === 'constructor' || k === 'prototype' ? undefined : v));
     return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
   } catch { return null; }
 }
+// SAFER-VALUE-WINS (hooks-safety.md §9): a project .coaltipple.json arrives WITH A
+// CLONED REPO -- untrusted. Only the keys THIS hook actually reads+branches on need the
+// clamp (mode gates routingOff below; updateMode gates the self-update nudge) --
+// fableConsent is agent-executed / never read by this hook, so its clamp lives only in
+// scripts/lib/config-load.mjs (used by configure.mjs --list), not duplicated here dead.
+// Index 0 = safest. Keep in sync with config-load.mjs's SAFER_ENUM (same ordering rationale).
+const SAFER_ENUM = { mode: ['off', 'delegation', 'escalation', 'auto'], updateMode: ['off', 'remind', 'ask', 'auto'] };
 let _cfg;
 function loadCfg() {
   if (_cfg !== undefined) return _cfg;
@@ -52,7 +61,17 @@ function loadCfg() {
   const project = readCfgFile(path.join(findGitRoot(process.cwd()), '.claude', '.coaltipple.json'));
   // Merge only when something loaded; keep null (= "no config") if neither did, so
   // the existing `if (cfg && ...)` guards in main() behave exactly as before.
-  _cfg = global || project ? { ...(global || {}), ...(project || {}) } : null;
+  const merged = global || project ? { ...(global || {}), ...(project || {}) } : null;
+  if (merged && global && project) {
+    for (const [key, order] of Object.entries(SAFER_ENUM)) {
+      if (global[key] === undefined || project[key] === undefined) continue;
+      const gi = order.indexOf(String(global[key]).toLowerCase());
+      const pi = order.indexOf(String(project[key]).toLowerCase());
+      if (gi === -1 || pi === -1) continue; // unknown value: leave the shallow-merge result
+      merged[key] = pi <= gi ? project[key] : global[key]; // project may not move PAST global toward the weaker end
+    }
+  }
+  _cfg = merged;
   return _cfg;
 }
 

@@ -145,6 +145,66 @@ test('project config anchors at the GIT ROOT, not raw cwd — a subdir cwd reads
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
+test('a poisoned project config cannot smuggle __proto__/constructor/prototype as literal keys into the merged config', () => {
+  // Raw JSON string, NOT JSON.stringify on an object literal -- `{__proto__: x}` sets the
+  // PROTOTYPE at construction time and never serializes as an own key at all. A literal
+  // string is required to produce a genuine own "__proto__" key on parse, matching how a
+  // malicious cloned-repo's .coaltipple.json would actually arrive on disk.
+  const s = sandbox({
+    global: JSON.stringify({ qualityBar: 60 }),
+    project: '{"__proto__":{"polluted":true},"constructor":{"x":1},"prototype":{"y":2},"qualityBar":90}',
+  });
+  try {
+    const cfg = loadMergedConfig(s);
+    assert.equal(cfg.qualityBar, 90, 'the real key still merges normally');
+    assert.equal(Object.prototype.hasOwnProperty.call(cfg, '__proto__'), false, 'no own __proto__ key on the merged config');
+    assert.equal(Object.prototype.hasOwnProperty.call(cfg, 'constructor'), false, 'no own constructor key on the merged config');
+    assert.equal(Object.prototype.hasOwnProperty.call(cfg, 'prototype'), false, 'no own prototype key on the merged config');
+  } finally { cleanup(s); }
+});
+
+test('safer-value-wins (hooks-safety.md §9): project cannot escalate mode from an explicit global off to auto', () => {
+  const s = sandbox({ global: JSON.stringify({ mode: 'off' }), project: JSON.stringify({ mode: 'auto' }) });
+  try { assert.equal(loadMergedConfig(s).mode, 'off', 'project may not escalate mode past the global choice'); } finally { cleanup(s); }
+});
+
+test('safer-value-wins: project MAY quieten mode from a global auto to off (the allowed direction)', () => {
+  const s = sandbox({ global: JSON.stringify({ mode: 'auto' }), project: JSON.stringify({ mode: 'off' }) });
+  try { assert.equal(loadMergedConfig(s).mode, 'off', 'project quietening is allowed'); } finally { cleanup(s); }
+});
+
+test('safer-value-wins: delegation-only (spend-reducing) outranks escalation (spend-increasing) in mode', () => {
+  const s1 = sandbox({ global: JSON.stringify({ mode: 'delegation' }), project: JSON.stringify({ mode: 'escalation' }) });
+  try { assert.equal(loadMergedConfig(s1).mode, 'delegation', 'escalation may not override a global delegation-only choice'); } finally { cleanup(s1); }
+  const s2 = sandbox({ global: JSON.stringify({ mode: 'delegation' }), project: JSON.stringify({ mode: 'off' }) });
+  try { assert.equal(loadMergedConfig(s2).mode, 'off', 'off is still safer than delegation, always allowed'); } finally { cleanup(s2); }
+});
+
+test('safer-value-wins: project cannot escalate updateMode from a global off to auto (mirrors the CoalMine v3.9.3 precedent)', () => {
+  const s = sandbox({ global: JSON.stringify({ updateMode: 'off' }), project: JSON.stringify({ updateMode: 'auto' }) });
+  try { assert.equal(loadMergedConfig(s).updateMode, 'off'); } finally { cleanup(s); }
+});
+
+test('safer-value-wins: project cannot escalate fableConsent from a global false (ask) to true (standing real-money consent)', () => {
+  const s = sandbox({ global: JSON.stringify({ fableConsent: false }), project: JSON.stringify({ fableConsent: true }) });
+  try { assert.equal(loadMergedConfig(s).fableConsent, false, 'project may not escalate real-money standing consent'); } finally { cleanup(s); }
+});
+
+test('safer-value-wins only constrains an EXPLICIT global choice -- an absent global lets the project set anything', () => {
+  const s = sandbox({ project: JSON.stringify({ mode: 'auto', updateMode: 'auto', fableConsent: true }) });
+  try {
+    const cfg = loadMergedConfig(s);
+    assert.equal(cfg.mode, 'auto');
+    assert.equal(cfg.updateMode, 'auto');
+    assert.equal(cfg.fableConsent, true);
+  } finally { cleanup(s); }
+});
+
+test('safer-value-wins clamp is case-insensitive (a project "AUTO" must not evade the lookup via case)', () => {
+  const s = sandbox({ global: JSON.stringify({ mode: 'off' }), project: JSON.stringify({ mode: 'AUTO' }) });
+  try { assert.equal(loadMergedConfig(s).mode, 'off'); } finally { cleanup(s); }
+});
+
 test('CLAUDE_CONFIG_DIR redirects the GLOBAL paths (#6); comma-list -> first entry; project paths unaffected', () => {
   const saved = process.env.CLAUDE_CONFIG_DIR;
   try {

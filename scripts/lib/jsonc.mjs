@@ -13,3 +13,16 @@
 export function stripJsonc(content) {
   return content.replace(/"(?:\\.|[^"\\])*"|\/\/.*|\/\*[\s\S]*?\*\//g, (m) => (m[0] === '"' ? m : ''));
 }
+
+// Prototype-pollution guard (OWASP Node.js; flock-canonical shape — CoalFace/CoalHearth/
+// CoalWash/CoalLedger all ported this verbatim FROM this file, but the guard itself was
+// never back-ported here). A poisoned project .coaltipple.json (e.g. shipped by an
+// untrusted cloned repo) with a `__proto__` / `constructor` / `prototype` key would
+// pollute Object.prototype through the `{ ...global, ...project }` spread merge in
+// config-load.mjs. Drop those keys at parse (the reviver runs over the tree before
+// anything uses it). stripJsonc stays exported for verify.mjs (reads the repo's OWN
+// trusted committed factory template, not untrusted input — matches every sibling).
+const PROTO_GUARD_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+export function parseJsonc(content) {
+  return JSON.parse(stripJsonc(content), (k, v) => (PROTO_GUARD_KEYS.has(k) ? undefined : v));
+}

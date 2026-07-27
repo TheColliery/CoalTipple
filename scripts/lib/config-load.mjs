@@ -20,15 +20,17 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { stripJsonc } from './jsonc.mjs';
+import { parseJsonc } from './jsonc.mjs';
 
 // Read one JSONC file into an object. Returns {} for any failure mode
 // (missing file, unreadable, malformed JSON, non-object top-level) — never throws.
+// parseJsonc drops __proto__/constructor/prototype at parse (proto-pollution guard,
+// SKILL-REPO-PATTERN.md Layer 3 — flock-canonical; this file was the one room missing it).
 function readJsonc(file) {
   try {
     let content = fs.readFileSync(file, 'utf8');
     if (content.charCodeAt(0) === 0xfeff) content = content.slice(1); // BOM-safe
-    const parsed = JSON.parse(stripJsonc(content));
+    const parsed = parseJsonc(content);
     return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
   } catch {
     return {};
@@ -80,6 +82,47 @@ function isPlainObj(v) {
   return v && typeof v === 'object' && !Array.isArray(v);
 }
 
+// SAFER-VALUE-WINS (hooks-safety.md §9, "Config-cascade clamp"): a project
+// .coaltipple.json arrives WITH A CLONED REPO — untrusted. A plain project-wins overlay
+// would let it ESCALATE a consent/spend-bearing key past what the user chose globally
+// (e.g. flip a global `mode:'off'` to `'auto'`, or `updateMode:'off'` to `'auto'` —
+// standing consent to network + spend tokens nobody agreed to for THIS project). The
+// project layer may only QUIETEN a value toward the safe end, never escalate past it.
+// Every other key stays plain project-wins (unchanged).
+// Index 0 = SAFEST. `updateMode` mirrors CoalMine's v3.9.3 precedent verbatim. `mode`
+// has no direct sibling precedent (CT-only key) — ordered by the axis this rule actually
+// cares about (spend), not routing quality: off = no routing at all (safest) ->
+// delegation = DOWN-only (spend-REDUCING, still safe) -> escalation = UP-only
+// (spend-INCREASING, up to a real-money Fable ask) -> auto = both directions.
+const SAFER_ENUM = {
+  mode: ['off', 'delegation', 'escalation', 'auto'],
+  updateMode: ['off', 'remind', 'ask', 'auto'],
+};
+// A bool whose SAFE value is false: fableConsent:false = ask before every real-money
+// Fable spawn; true = standing consent, no per-instance gate. (Opposite direction from
+// CoalWash's `localOnly`, whose safe value is true — the safe end depends on the key.)
+const SAFER_FALSE = ['fableConsent'];
+
+// Constrain `merged` in place per SAFER_ENUM/SAFER_FALSE, given the two RAW (pre-merge)
+// layers. Only fires when the GLOBAL layer made an EXPLICIT choice (key absent = the
+// factory default applies, and the project is free to set anything — matches the
+// CoalMine/CoalWash precedent: an unset global is not a "deliberate choice" to protect).
+function applySaferValueWins(merged, global, project) {
+  for (const [key, order] of Object.entries(SAFER_ENUM)) {
+    if (global[key] === undefined || project[key] === undefined) continue;
+    // Case-fold: config-schema.mjs's enum validation is case-insensitive, so a project
+    // 'AUTO'/'Off' must not evade the lookup via case and fall through to plain project-wins.
+    const gi = order.indexOf(String(global[key]).toLowerCase());
+    const pi = order.indexOf(String(project[key]).toLowerCase());
+    if (gi === -1 || pi === -1) continue; // unknown value: leave the shallow-merge result (schema clamps it downstream)
+    merged[key] = pi <= gi ? project[key] : global[key]; // project may not move PAST global toward the weaker end
+  }
+  for (const key of SAFER_FALSE) {
+    if (global[key] === false) merged[key] = false; // project cannot turn a global FALSE (safe) into TRUE (escalated)
+  }
+  return merged;
+}
+
 // Load + merge the cascade. Shallow per-key (project keys overwrite global keys),
 // EXCEPT `modelTiers`, which is deep-merged PER-TIER. Keys absent from both are
 // simply absent (the schema default applies downstream). Returns {} when neither
@@ -108,5 +151,5 @@ export function loadMergedConfig({ cwd = process.cwd(), home = os.homedir() } = 
       ...(isPlainObj(project.modelTiers) ? project.modelTiers : {}),
     };
   }
-  return merged;
+  return applySaferValueWins(merged, global, project);
 }

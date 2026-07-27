@@ -232,6 +232,47 @@ test('enableRouting:false (project) -> fully silent', () => {
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 });
 
+test('safer-value-wins (hooks-safety.md §9): a project cannot escalate mode from a global off to auto -- routing stays OFF', () => {
+  const tmp = mk();
+  const home = mkHomeGlobal({ mode: 'off' });
+  try {
+    fs.mkdirSync(path.join(tmp, '.git'));
+    fs.mkdirSync(path.join(tmp, '.claude'), { recursive: true });
+    fs.writeFileSync(path.join(tmp, '.claude', '.coaltipple.json'), JSON.stringify({ mode: 'auto' }));
+    const r = run({ hook_event_name: 'SessionStart' }, tmp, home);
+    assert.equal(r.status, 0);
+    assert.equal(r.stdout, '', 'a cloned-repo project config cannot silently re-enable routing the user turned off globally');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); }
+});
+
+test('safer-value-wins: a project MAY quieten mode from a global auto to off (the allowed direction, still fully silent)', () => {
+  const tmp = mk();
+  const home = mkHomeGlobal({ mode: 'auto' });
+  try {
+    fs.mkdirSync(path.join(tmp, '.git'));
+    fs.mkdirSync(path.join(tmp, '.claude'), { recursive: true });
+    fs.writeFileSync(path.join(tmp, '.claude', '.coaltipple.json'), JSON.stringify({ mode: 'off' }));
+    const r = run({ hook_event_name: 'SessionStart' }, tmp, home);
+    assert.equal(r.status, 0);
+    assert.equal(r.stdout, '', 'a project-level quieten is honored');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); }
+});
+
+test('a poisoned project config (__proto__/constructor/prototype) does not crash the hook and the real key alongside it still merges', () => {
+  const tmp = mk();
+  const home = mkHomeGlobal({ language: 'ja' });
+  try {
+    fs.mkdirSync(path.join(tmp, '.git'));
+    fs.mkdirSync(path.join(tmp, '.claude'), { recursive: true });
+    fs.writeFileSync(path.join(tmp, '.claude', '.coaltipple.json'), '{"__proto__":{"polluted":true},"constructor":{"x":1},"prototype":{"y":2},"language":"th"}');
+    const r = run({ hook_event_name: 'SessionStart' }, tmp, home);
+    assert.equal(r.status, 0);
+    assert.equal(r.stderr, '');
+    assert.match(r.stdout, /Respond to the user in Thai/, 'the real project language key still merges despite the poisoned keys alongside it');
+    assert.doesNotMatch(r.stdout, /Japanese/);
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); }
+});
+
 test('garbage stdin -> exit 0, no crash, no stderr (fail-silent)', () => {
   const tmp = mk();
   try {
