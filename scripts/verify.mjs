@@ -163,6 +163,26 @@ try {
   }
 } catch (e) { fail(`config-region check: ${e.message}`); }
 
+console.log('SKILL.md keyword floors (Step 1 restatement vs keywords.mjs SSoT):');
+try {
+  // keywords.mjs is under scripts/, unshipped to the installed plugin (build-dist.mjs
+  // DIST_ITEMS), so SKILL.md Step 1 restates each factory group's grade/flag in prose for
+  // the agent to read on every install. A 4th sibling of the 3 shared-region checks above
+  // (conductor hot-keywords, factory-config keywords/sensitivePaths/excludePaths) --
+  // fragment-adjacency, not a full splice-region, since this text sits inside a hand-written
+  // sentence with a per-group aside (coding's), not a machine-generated block.
+  const kw = await import(pathToFileURL(path.join(repo, 'scripts', 'lib', 'keywords.mjs')).href);
+  const md = fs.readFileSync(path.join(repo, 'skills', 'coaltipple', 'SKILL.md'), 'utf8');
+  let bad = 0;
+  for (const [name, g] of Object.entries(kw.KEYWORD_GROUPS)) {
+    const flag = g.sensitive ? ' (sensitive' : g.preserveVoice ? ' (preserveVoice' : '';
+    const frag = `\`${name}\` ${g.grade}${flag}`;
+    if (md.includes(frag)) ok(`${name} floor ${g.grade}${g.sensitive ? ' sensitive' : g.preserveVoice ? ' preserveVoice' : ''} present in SKILL.md`);
+    else { fail(`${name} floor DRIFTED from keywords.mjs — SKILL.md Step 1 must contain '${frag}'`); bad++; }
+  }
+  if (!bad) ok(`all ${Object.keys(kw.KEYWORD_GROUPS).length} keyword floors match keywords.mjs`);
+} catch (e) { fail(`SKILL.md keyword-floor check: ${e.message}`); }
+
 console.log('config-path sync (conductor + configure inline vs config-load SSoT):');
 try {
   // The project-config path lives under .claude in config-load.mjs (the SSoT). The
