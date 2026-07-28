@@ -4,6 +4,10 @@
 // extends these PER GROUP (add/remove a word, change a grade); the conductor's
 // hot-keyword region is SYNCED from the derived HOT5/HOT4 flats below by
 // build-plugin.mjs (edit HERE, never the conductor block — verify.mjs fails on drift).
+// ⚠ The GRADE FLOORS (and sensitive/preserveVoice flags) are RESTATED in prose in
+// skills/coaltipple/SKILL.md Step 1 — scripts/ is not shipped, so the installed copy
+// has no readable source for them. Changing a group's grade/flags here MUST sweep that
+// SKILL.md line (+ dist rebuild); no verify gate covers this pair yet (manual sync).
 //
 // Each group: { grade (1-5 floor), sensitive? (never-delegate-down), preserveVoice?
 // (never delegate the user-facing deliverable), words: [...] }. Use specific phrases
