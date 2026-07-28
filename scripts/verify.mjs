@@ -175,10 +175,20 @@ try {
   const md = fs.readFileSync(path.join(repo, 'skills', 'coaltipple', 'SKILL.md'), 'utf8');
   let bad = 0;
   for (const [name, g] of Object.entries(kw.KEYWORD_GROUPS)) {
-    const flag = g.sensitive ? ' (sensitive' : g.preserveVoice ? ' (preserveVoice' : '';
-    const frag = `\`${name}\` ${g.grade}${flag}`;
-    if (md.includes(frag)) ok(`${name} floor ${g.grade}${g.sensitive ? ' sensitive' : g.preserveVoice ? ' preserveVoice' : ''} present in SKILL.md`);
-    else { fail(`${name} floor DRIFTED from keywords.mjs — SKILL.md Step 1 must contain '${frag}'`); bad++; }
+    const base = `\`${name}\` ${g.grade}`;
+    const bi = md.indexOf(base);
+    if (bi === -1) { fail(`${name} floor DRIFTED from keywords.mjs — SKILL.md Step 1 must contain '${base}'`); bad++; continue; }
+    // Check the flag boundary EXPLICITLY in both directions, not just via .includes() on the
+    // flagged fragment: an unflagged fragment is a PREFIX of the flagged one, so .includes()
+    // alone is blind to a REMOVED flag (keywords.mjs drops `sensitive` but SKILL.md still says
+    // "(sensitive)" -- verified 2026-07-28, reviewer finding, red-proofed both ways below).
+    const after = md.slice(bi + base.length, bi + base.length + 20);
+    const hasSensitive = after.startsWith(' (sensitive');
+    const hasPreserveVoice = after.startsWith(' (preserveVoice');
+    if (g.sensitive && !hasSensitive) { fail(`${name}: keywords.mjs marks it sensitive but SKILL.md's '${base}' has no '(sensitive' — DRIFTED`); bad++; }
+    else if (g.preserveVoice && !hasPreserveVoice) { fail(`${name}: keywords.mjs marks it preserveVoice but SKILL.md's '${base}' has no '(preserveVoice' — DRIFTED`); bad++; }
+    else if (!g.sensitive && !g.preserveVoice && (hasSensitive || hasPreserveVoice)) { fail(`${name}: keywords.mjs has no flag but SKILL.md's '${base}' still shows one — DRIFTED`); bad++; }
+    else ok(`${name} floor ${g.grade}${g.sensitive ? ' sensitive' : g.preserveVoice ? ' preserveVoice' : ''} present in SKILL.md`);
   }
   if (!bad) ok(`all ${Object.keys(kw.KEYWORD_GROUPS).length} keyword floors match keywords.mjs`);
 } catch (e) { fail(`SKILL.md keyword-floor check: ${e.message}`); }
