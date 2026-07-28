@@ -6,7 +6,7 @@ description: >-
 
 # CoalTipple — routing contract
 
-**THE FRAME — ALWAYS-ON, THREE OUTCOMES.** This contract applies to EVERY prompt (the conductor injects a routing forcer each turn; there is no trigger condition to meet): every task is ROUTED, and routing returns exactly one of three outcomes — **SELF** (do it yourself, tier pinned + effort tuned — the most common result), **delegate-DOWN**, or **escalate-UP** — UNLESS a structural off-state is already declared: the platform gate below, `enableRouting:false`, `mode:'off'`, or a matched `disableRouting` domain (exactly four states, never a fifth you invent). Those are DECLARATIONS the pipeline reaches or the config/platform sets, not a decision you make per task. **"The skill doesn't apply" is never a decision YOU make because a task looks small or out of scope:** a task too small to delegate still passes Step 1 (grade) and Step 2's sensitive HARD GATE, then lands on SELF. Skipping the pipeline because a task looks small is exactly how a small-LOOKING task on a sensitive path slips past the never-down gate.
+**THE FRAME — ALWAYS-ON, THREE OUTCOMES.** This contract applies to EVERY prompt (the conductor injects a routing forcer each turn; there is no trigger condition to meet): every task is ROUTED, and routing returns exactly one of three outcomes — **SELF** (do it yourself, tier pinned + effort tuned — the most common result), **delegate-DOWN**, or **escalate-UP** — UNLESS a structural off-state is already declared: the platform gate below, `enableRouting:false`, `mode:'off'`, a matched `disableRouting` domain, or a ranking that genuinely cannot be built (F8) — exactly five states, never a sixth you invent. Those are DECLARATIONS the pipeline reaches or the config/platform sets, not a decision you make per task. **"The skill doesn't apply" is never a decision YOU make because a task looks small or out of scope:** a task too small to delegate still passes Step 1 (grade) and Step 2's sensitive HARD GATE, then lands on SELF. Skipping the pipeline because a task looks small is exactly how a small-LOOKING task on a sensitive path slips past the never-down gate.
 
 > [!CAUTION]
 > **PLATFORM GATE -- actuates on Claude Code ONLY.** Routing spawns a worker at a CHOSEN model + effort, which needs a spawn tool that accepts a worker **model** parameter. **Works: Claude Code** (`Agent`/`Task` takes `model`). **BROKEN: Antigravity** -- `invoke_subagent`/`define_subagent` expose no model param + no effort knob (low/mid/high are model *names*), so a worker silently runs the parent's model. On any platform without an agent-selectable worker model, **do NOT pretend to delegate-down or escalate-up** -- the spawn cannot change tier; routing is a silent no-op. Not on Claude Code -> routing is OFF, one of THE FRAME's four declared structural off-states, never a per-task decision — the skill still degrades safely. (Reviewed monthly.)
@@ -69,14 +69,14 @@ A recovery move inside a Step or a reference and not listed here is that step's 
 
 ### Files — the on-disk set (a near-twin pair, declared once)
 
-A dot-FILE is CONFIG, a dot-DIR is STATE — the pair exists at both levels; do not read one as a typo of the other.
+A dot-FILE is CONFIG, a dot-DIR is STATE — the pair exists at both levels; do not read one as a typo of the other. This is the complete set a ROUTE touches. The conductor's own update-check stamp (`~/.claude/.coaltipple-update-check`) belongs to the SessionStart self-update channel, not to this contract.
 
 - **Config (read on every route):** global `~/.claude/.coaltipple.json` overlaid by project `<gitroot>/.claude/.coaltipple.json` — every bare "`.coaltipple.json`" in this file means this MERGED pair (merge rules in **Always**).
 - **State:** `~/.claude/.coaltipple/` (global dir) holds `ranking.json` — READ at spawn-time only (a SELF route never reads it), WRITTEN only on a rare rebuild, atomically (F8) · `<gitroot>/.claude/.coaltipple/` (project dir) holds `proposed/` (the delegation sandbox workers write proposals into) + `state.json` (the subtask journal) — written only during a delegation (F10).
 - **Writes driven by asks:** ASK 1's "always" persists `fableConsent: true` into the PROJECT config FILE (`<gitroot>/.claude/.coaltipple.json` — edit the key directly; `scripts/` ships only with the repo source, not the installed plugin, so `node scripts/configure.mjs --project --fableConsent true` is a convenience for a source checkout, never the only path) · ASK 3 may create/choose a memory-anchor file (the user's own file — append, never clobber, P17) and persists `contextFiles` / `memoryOffer`.
 - **A SELF route writes NO CoalTipple artifact** — the edit lands in the user's files directly; `proposed/` is the DELEGATION recovery net, not self's (self recovery = your platform's normal undo / git).
 
-### Config — the knob set (defaults; full reference = README Configure / `config-schema.mjs`)
+### Config — the knob set (defaults; full reference = README Configure / `config-schema.mjs`) — all 24 config keys in 23 rows (`updateMode`·`updateCheckDays` share one).
 
 | key | default | gates |
 |---|---|---|
@@ -104,7 +104,7 @@ A dot-FILE is CONFIG, a dot-DIR is STATE — the pair exists at both levels; do 
 | `updateMode` · `updateCheckDays` | ask · 14 | the conductor's self-update channel (SessionStart — not a rail of this file) |
 | `gitRecoveryBoundary` | auto | git commits as an extra recovery boundary (damage-control) |
 
-### References — when each loads
+### References — when each loads — these two are the complete reference set.
 
 | reference | when |
 |---|---|
@@ -134,7 +134,7 @@ Grade 1–5 by the rubric — **size + sensitive-path + keyword**, never "it fee
 | 4 | >3 files / ≥1000 lines / **sensitive path (auth, crypto, payments, migrations) — forces ≥4 even at 1 file** |
 | 5 | concurrency / mutex / race / crypto-logic / timing-attack / proof — **forces 5 regardless of size** |
 
-**Every signal is a FLOOR and the grade is the HIGHEST floor fired — deterministic, no tiebreak judgment** (the rubric composes size + sensitive-path + keyword floors with max, as `grade.mjs` does): a 1-file edit (floor 2) whose prompt matches a grade-4 group grades 4. **Grade 1 is the no-signal base** — no file in scope to edit and no keyword match (a pure read/search/format answered in place); editing even ONE file floors the grade at 2.
+**Every signal is a FLOOR and the grade is the HIGHEST floor fired — deterministic, no tiebreak judgment** (the rubric composes size + sensitive-path + keyword floors with max, as `grade.mjs` does): a 1-file edit (floor 2) whose prompt matches a grade-4 group grades 4. **Grade 1 is the no-signal base** — no file in scope to edit, no content produced (`sizeUnits`), and no keyword match (a pure read/search/format answered in place); editing even ONE file floors the grade at 2.
 
 **Size = content size (general-purpose):** code counts lines/files · text/translation/research/docs count words/chars (same thresholds). **Difficulty (keyword/sensitive) ALWAYS overrides size** — a tiny-but-hard task (1 line of crypto, a short legal-contract translation) = high grade.
 
