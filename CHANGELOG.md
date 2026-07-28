@@ -2,6 +2,25 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [Unreleased]
+
+The enumerability carve (variance-walk lab, `TheColliery/scratchpad/longrun/SKILL-VARIANCE-WALK.md` Run 2): SKILL.md rails rehoused into countable ledgers so every "how many / which ones" question has a transcribable answer. No routing mechanic changed — the additions make existing behavior explicit + countable and close the nine walker-measured ambiguities. Version moves once the 3-lane variance walk (route-to-self · escalate-up · sensitive/never-down) passes.
+
+### Changed
+- **SKILL.md declares its ALWAYS-ON frame first** — the conductor applies this contract to EVERY prompt; routing returns one of THREE outcomes (SELF / delegate-down / escalate-up); "the skill didn't fire" is not an outcome. The frontmatter description now says the same (6 of 9 lab walkers read the old "Use when…" as a trigger condition and skipped the whole pipeline, sensitive HARD GATE included — the file's most dangerous measured defect).
+- **New `## The ledgers` section — the countable rails (TRANSCRIBE, never re-count):** ASKS exactly 3 (fable · fan-out · memory anchor) + ONE standing OFFER (self error-report) + a NOT-asks boundary line (a single non-fable spawn = standing consent via `mode` + the visible `[model·effort]` label; the self-update ask belongs to the conductor's SessionStart channel) · absolute prohibitions **P1–P17** + boundary sentence · fail routes **F1–F11** + boundary sentence · the on-disk **Files** set (the dot-FILE config vs dot-DIR state near-twin pair declared once; a SELF route writes NO CoalTipple artifact) · the **Config** knob table (defaults per `config-schema.mjs`) · a **References** table (lock.md on-demand only; damage-control.md mandatory at its moments).
+- **Grade tiebreak stated:** every signal is a FLOOR and the grade is the HIGHEST floor fired (matches `grade.mjs`'s max-composition); grade 1 = the no-signal base — editing even ONE file floors the grade at 2.
+- **Factory keyword-group floors now IN the body** (`scripts/` is not shipped, so an installed copy had no readable source for them): `concurrency` 5 · `crypto` 5 sensitive · `security` 4 sensitive · `coding` 4 sensitive · `audit` 4 · `math` 5 · `knowledge` 3 · `domain` 4 sensitive · `creative` 2 preserveVoice — plus the words-not-domain clarifier (the `coding` group fires on its migration/payment/billing-class WORDS, not on "any code") and the never-weaken rule (a config may raise a built-in group's floor, never lower it; built-in `sensitive`/`preserveVoice` flags cannot be stripped — matching `mergeKeywordGroups`).
+- **Grade-table effort column no longer contradicts the effort rubric** — the column carries the tier ceiling only (header: effort is set by OUTPUT SIZE, never by the grade); the old `med→max` cell read as effort-by-grade.
+- **Step 0 reconciled with `references/lock.md`:** the ranking is READ at spawn-time, never per prompt — a SELF route reads nothing; an idle session pays nothing.
+- **Project-config path written ONE way everywhere:** `<gitroot>/.claude/.coaltipple.json` (matches `config-load.mjs`, the conductor, and `configure.mjs`); bare `.coaltipple.json` mentions are now DEFINED as the merged global+project pair by the Files ledger instead of reading as a third location.
+- **SELF-route rules made explicit:** a SELF result faces the same qualityBar + domain-appropriate check, sized to the change (P7 binds the main too); below the bar the staircase applies to the main (raise effort, then escalate — F3). SELF edits land in the user's files in place; `proposed/` is declared the DELEGATION recovery net, not self's.
+- **Sensitive-scope ruling written into P1:** sensitivity keys on the PATH + the task's MEANING, never the edit type — a "comments-only" edit on an auth/crypto/payment path is still sensitive; DOWN stays forbidden, SELF stays allowed.
+- **Fan-out consent made countable (ASK 2):** spawning more than one worker in one move states the plan (N × tier × effort) and gets a yes — a precision of the existing "never fan out costly work silently" rail; a SINGLE non-fable worker needs no per-instance ask (standing consent = the `mode` config; transparency = the spawn label).
+
+### Notes
+- Body ratchet baseline moves 26,720 → 41,596 chars — the rise is countable-home structure per the variance-walk ruling (enumerable FIRST, lean only after zero variance; skill-authoring.md §3b/§5). Re-derive live with `wc -c skills/coaltipple/SKILL.md`; never quote this number later.
+
 ## [1.3.4] - 2026-07-27
 
 Config-security hardening from `hooks-safety.md` §9's one-flock sweep (station-3 review, 2 rounds — the first round's own overclaim is corrected in this entry, not silently rewritten). A consent-escalation clamp (now covering BOTH the code merge path and the agent's own SKILL.md-instructed read), a factory-default fix, and a prototype-pollution guard. No routing behavior, config key, or user-facing capability changed.
