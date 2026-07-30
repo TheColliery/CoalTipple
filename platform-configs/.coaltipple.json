@@ -1,6 +1,8 @@
 {
   // CoalTipple — routing config. Every value is tunable. // and /* */ comments are allowed.
-  // Every key is validated against scripts/lib/config-schema.mjs (verify.mjs checks it — a typo'd key = fail loud).
+  // Every key is validated against scripts/lib/config-schema.mjs. verify.mjs fails loud on this SHIPPED template
+  // at repo build/CI time — but YOUR own edited copy is not re-validated at runtime: a typo'd/unrecognized key
+  // here is silently ignored by the conductor and CLI (config-schema.mjs's own comment on that behavior).
 
   // ─── master ───
 
@@ -109,7 +111,8 @@
   // ─── grading scope ───
 
   // ## Path fragments that force the High/Reasoning tier even at a single file. Shipped POPULATED
-  // ## (edit/add/delete directly); set to [] to fall back to the built-ins. Generated from keywords.mjs SENSITIVE.
+  // ## (edit/add/delete directly) — UNIONS with the code's built-in list, NEVER replaces it (grade.mjs); [] here
+  // ## still leaves the built-ins in effect. Generated from keywords.mjs SENSITIVE.
   // # Setting type: String[] (array of fragments)
 // <coaltipple-shared: sensitivePaths>
   "sensitivePaths": ["auth", "crypto", "payment", "billing", "migration", "secret", "token", "password", "session", "security"],
