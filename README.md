@@ -23,7 +23,7 @@ Not the cheapest router on the market — a cross-provider proxy can cut deeper 
 ![Copilot CLI](https://img.shields.io/badge/Copilot_CLI-candidate-orange)
 ![claude.ai](https://img.shields.io/badge/claude.ai-non--actuating-lightgrey)
 
-*Tier key: **non-actuating** — the platform cannot run the routing (no per-worker model-pick; see the caution below) · **candidate** — a worker model-pick is documented but unverified live (monthly review, not a supported install). Further candidates (Zed · OpenCode · Devin · Kiro) are listed in [Install](#-install).*
+*Tier key: **non-actuating** — the platform cannot run CT's routing AS SHIPPED (most have no per-worker model-pick at all; Antigravity is the one exception with a real per-spawn tier pick that still doesn't map onto CT's design — see the caution below) · **candidate** — a worker model-pick is documented but unverified live (monthly review, not a supported install). Further candidates (Zed · OpenCode · Devin · Kiro) are listed in [Install](#-install).*
 
 [Benchmark](https://github.com/TheColliery/.github/tree/main/benchmarks/CoalTipple) · [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md) · [Security](SECURITY.md) · [Privacy](PRIVACY.md) · [Releases](https://github.com/TheColliery/CoalTipple/releases)
 
@@ -34,7 +34,7 @@ Not the cheapest router on the market — a cross-provider proxy can cut deeper 
 ---
 
 > [!CAUTION]
-> **Claude Code only.** CoalTipple's routing only actuates where an agent can pick a spawned worker's model + effort. Today that is **Claude Code**. **Antigravity does NOT work** -- its subagents inherit the parent's model (no per-spawn model parameter, no separate effort knob), so routing cannot actuate there. Other platforms (Codex, Cursor, ...) are under monthly review.
+> **Claude Code only.** CoalTipple's routing only actuates where an agent can pick a spawned worker's model + effort. Today that is **Claude Code**. **Antigravity does NOT ship CT** -- `invoke_subagent` DOES take a per-spawn `Model` tier (proven by a live spawn, 2026-08-04), but that tier selects a GOOGLE model regardless of the parent's vendor, and no effort knob exists anywhere in its schema. CT's never-down gate, qualityBar staircase, and Claude alias floor don't map onto a cross-vendor Google tier ladder -- a different, unbuilt product, not a missing spawn param. Other platforms (Codex, Cursor, ...) are under monthly review.
 
 ---
 
@@ -58,7 +58,7 @@ You are **main**. CoalTipple decides, per task, whether to:
 
 * **Claude Code (validated live across the 2.1.x line):** Built Claude-Code-first and run end-to-end across all model tiers (Haiku, Sonnet, Opus). Routing degrades safe on any CC version — an unfamiliar model classifies strong, a failed spawn falls, and the platform resolves each alias to its current best model at spawn-time (the ranking is the alias floor + pins — nothing to enumerate).
 * **Routing actuates on Claude Code only:** CT needs a platform where an *agent* can pick a spawned worker's model + effort. CC's Agent/Task tool takes a `model` param -- that is the requirement.
-* **Subagent-capable != qualifies:** a platform can spawn workers yet give the agent no model choice (e.g. **Antigravity**, where the worker inherits the parent's model). There CT does **not** cleanly self-degrade -- a weak main hallucinates a delegate-down it cannot perform -- so CT is gated to CC. Other platforms (Cursor · Zed · OpenCode · Devin · Kiro · Copilot CLI, …) are under monthly review — see Install → Other platforms for the current matrix.
+* **Subagent-capable != qualifies:** a model choice alone isn't enough either -- **Antigravity** DOES let the agent pick a per-spawn model tier (`invoke_subagent`'s `Model` field, proven live 2026-08-04), but that tier is a cross-vendor Google model regardless of the parent's own vendor, and carries no effort knob. CT's never-down gate, qualityBar staircase, and Claude alias floor don't map onto that shape -- a different, unbuilt product, not a missing spawn param -- so CT is gated to CC. Other platforms (Cursor · Zed · OpenCode · Devin · Kiro · Copilot CLI, …) are under monthly review — see Install → Other platforms for the current matrix.
 
 ---
 
@@ -78,9 +78,9 @@ Optional per-project config override: `<project>/.claude/.coaltipple.json`.
 
 ### Other platforms — no install (routing cannot actuate)
 
-There is deliberately **no file-copy or `install.mjs` path** for other agents: a spawned worker inherits the parent model, so CoalTipple has no worker model + effort to route with (see [Compatibility](#-compatibility) for the full reason).
+There is deliberately **no file-copy or `install.mjs` path** for other agents: none gives CT what it needs to ship as designed -- most have no worker model-pick at all, and the one exception (Antigravity) picks a cross-vendor tier with no effort knob (see [Compatibility](#-compatibility) for the full reason).
 
-* **Antigravity** — verified non-actuating (2026-06-16): no per-spawn model parameter, no separate effort knob. Copying the files in would only let a weak main *hallucinate* a delegation it cannot perform, so CT does not install here.
+* **Antigravity** — **does not ship CT, but not for the reason previously stated here.** The 2026-06-16 note that AG has "no per-spawn model parameter" was wrong, or went stale -- we cannot tell which from here. Re-verified 2026-08-04 by reading the live tool schema and running a real spawn: `invoke_subagent`'s `Model` field (`inherit` / `flash_lite` / `flash` / `pro`) DOES let the agent pick a per-spawn tier at invocation time (the earlier check only looked at `define_subagent`, which has no such field) -- a Claude Opus 4.6 parent spawned a Gemini 2.0 Flash child by naming `Model: "flash"`. What IS still true, confirmed the same day: **no effort knob exists anywhere in the schema.** CT still does not install here: the `Model` enum selects a GOOGLE tier regardless of the parent's own vendor -- a cross-vendor handoff, not a cheaper same-family worker -- and CT's never-down gate, qualityBar staircase, and Claude alias floor (haiku<sonnet<opus<fable) don't map onto that shape. A tier-only, cross-vendor AG lane would be a different, unbuilt product under CT's name, not a missing install step.
 * **Codex · Gemini CLI · Cline · Windsurf** — no worker model-pick → not supported.
 * **Cursor** — reports a worker `model` param but it is **unverified**; a monitored candidate under monthly review (verify the spawn schema first), not a supported install today.
 * **Zed · OpenCode · Devin · Kiro · Copilot CLI** — **candidates — docs-verified 2026-07-13; a live spawn-schema verify on a real install is REQUIRED before any adapter** (the Antigravity burn rule: docs-claimed ≠ actuating). What the docs show: Zed `agent.subagent_model` · OpenCode per-agent `model` (`provider/model-id`) · Devin subagent `model` frontmatter (+ an Adaptive auto-router) · Kiro a subagent model attribute · Copilot CLI **partial** (a profile pin works, but the Task-tool `model` param has an open upstream bug and a cost-guard silently downgrades sub models).
