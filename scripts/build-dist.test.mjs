@@ -44,3 +44,43 @@ test('checkDist catches a TOP-LEVEL stray with no DIST_ITEM (the cruft guard)', 
     assert.ok(checkDist(tmp).some((d) => d.includes('orphan top-level')), 'expected a top-level orphan finding');
   });
 });
+
+// board #59: a dist copy that differs from source ONLY by CRLF-vs-LF line
+// endings (board #47's `.gitattributes` conform lets two checkouts of ONE
+// commit differ this way for byte-identical content) must NOT read as stale.
+test('a dist copy differing from source only by CRLF-vs-LF on a TEXT_EXTS file reads as in sync', () => {
+  withTempDist((tmp) => {
+    buildDist(tmp);
+    const rel = path.join('skills', 'coaltipple', 'SKILL.md');
+    const srcBytes = fs.readFileSync(path.join(tmp, rel));
+    const srcText = srcBytes.toString('latin1');
+    // Flip relative to whatever this checkout's actual line ending is — do
+    // not assume a direction, this must pass whether the box is CRLF or LF.
+    const flippedText = srcBytes.includes(Buffer.from('\r\n'))
+      ? srcText.replace(/\r\n/g, '\n')
+      : srcText.replace(/\n/g, '\r\n');
+    const flipped = Buffer.from(flippedText, 'latin1');
+    assert.notDeepEqual(flipped, srcBytes, 'fixture setup: the flip must actually change the bytes');
+    fs.writeFileSync(path.join(tmp, rel), flipped);
+    const drift = checkDist(tmp);
+    assert.ok(!drift.some((d) => d.includes(rel)), `expected no stale entry for ${rel}, got: ${JSON.stringify(drift)}`);
+  });
+});
+
+// board #59: a REAL content edit made under CRLF line endings must still
+// fail loud. INSERTION-shaped deliberately (a token the original does not
+// have, on its own new line) — a delete/replace-shaped fixture can pass a
+// sabotaged length-only or removal-only predicate; an insertion is the
+// shape that actually catches a broken equality check.
+test('a real content INSERTION under CRLF line endings still fails loud (stale, not silently accepted)', () => {
+  withTempDist((tmp) => {
+    buildDist(tmp);
+    const rel = path.join('skills', 'coaltipple', 'SKILL.md');
+    const srcBytes = fs.readFileSync(path.join(tmp, rel));
+    const eol = srcBytes.includes(Buffer.from('\r\n')) ? '\r\n' : '\n';
+    const withInsertion = Buffer.from(srcBytes.toString('latin1') + `BOARD-59-CANARY-INSERTION${eol}`, 'latin1');
+    fs.writeFileSync(path.join(tmp, rel), withInsertion);
+    const drift = checkDist(tmp);
+    assert.ok(drift.some((d) => d.startsWith('stale') && d.includes(rel)), `expected a stale entry for ${rel}, got: ${JSON.stringify(drift)}`);
+  });
+});
