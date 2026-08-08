@@ -36,17 +36,19 @@ const factoryCfg = path.join(repo, 'platform-configs', '.coaltipple.json');
 // Namespace campaign (#69+#39): write-new-then-drop-old. Unlike CoalWash (no
 // project-config writer at all, read-only migration), CT DOES write per-project
 // config here -- so this is the room's real move-on-write implementation. Target
-// = the first candidate that already EXISTS among the new-shape dirs; if none of
-// those exist but the LEGACY file does, write to own-dir and flag the legacy
-// file for removal (move on write); a genuinely fresh project writes straight to
-// own-dir with nothing to remove.
+// = the first candidate that already EXISTS among the new-shape dirs, else
+// own-dir. legacyToRemove fires WHENEVER the legacy file exists at write time --
+// not only in the legacy-only case: a shadowed legacy (new-shape AND legacy both
+// present, e.g. an interrupted prior migration) is just as much a leftover the
+// no-old-version-leftover rule bans (INSPECT Finding 5, 2026-08-08). One flag,
+// independent of which candidate is the actual write target.
 function projectWriteTarget(cwd) {
   const candidates = projectConfigCandidates(cwd);
   const legacy = candidates[candidates.length - 1];
   const newCandidates = candidates.slice(0, -1);
-  for (const c of newCandidates) if (fs.existsSync(c)) return { target: c, legacyToRemove: null };
-  if (fs.existsSync(legacy)) return { target: newCandidates[0], legacyToRemove: legacy }; // found only at legacy -> move on write
-  return { target: newCandidates[0], legacyToRemove: null }; // fresh project -> own-dir
+  const legacyToRemove = fs.existsSync(legacy) ? legacy : null;
+  const target = newCandidates.find((c) => fs.existsSync(c)) || newCandidates[0];
+  return { target, legacyToRemove };
 }
 
 function printHelp() {
@@ -221,7 +223,14 @@ function main() {
   }
   if (!edits.length) { console.error('Error: no settings given. Try --help.'); process.exitCode = 1; return; }
 
-  // Load the existing JSONC text, or seed from the factory (preserving its comments).
+  // Load the existing JSONC text, or seed it. Three cases: the target already
+  // exists (normal edit) -> read it. The target is absent but the LEGACY file
+  // holds the user's real config (move-on-write) -> seed from THAT, never from
+  // the factory template -- seeding from factory here silently replaced every
+  // customization with defaults, then deleted the only copy (Finding 1,
+  // INSPECT 2026-08-08: mode:"off" came back "auto", fableConsent's
+  // always-this-project record was destroyed). Neither exists (genuinely fresh
+  // project) -> seed from factory, unchanged from before.
   let text;
   try {
     try {
@@ -229,8 +238,14 @@ function main() {
       parseConfig(text); // validate it parses before we touch it
     } catch (readErr) {
       if (readErr.code !== 'ENOENT') throw readErr; // real read/parse failure -> fail loud below
-      text = fs.readFileSync(factoryCfg, 'utf8');
-      console.log(`No ${toProject ? 'project' : 'global'} config at ${configPath} — seeding from factory then applying your edits.`);
+      if (toProject && writeTarget.legacyToRemove) {
+        text = fs.readFileSync(writeTarget.legacyToRemove, 'utf8');
+        parseConfig(text); // same parse-before-touch guarantee as the normal path
+        console.log(`Migrating ${writeTarget.legacyToRemove} -> ${configPath}, applying your edits.`);
+      } else {
+        text = fs.readFileSync(factoryCfg, 'utf8');
+        console.log(`No ${toProject ? 'project' : 'global'} config at ${configPath} — seeding from factory then applying your edits.`);
+      }
     }
   } catch (e) {
     console.error(`Error: cannot read/parse config: ${e.message}`); process.exitCode = 1; return;

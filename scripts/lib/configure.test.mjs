@@ -233,16 +233,49 @@ test('structural: configure.mjs DOES call fs.rmSync on a legacy path inside its 
   assert.match(src, /fs\.rmSync\(\s*writeTarget\.legacyToRemove/, 'expected the move-on-write drop-old call to still be present');
 });
 
-test('move-on-write: an existing LEGACY project config is migrated to the own-dir shape on the next --project write, and the legacy file is gone', () => {
+// INSPECT Finding 1 (2026-08-08, CRITICAL, empirically reproduced): the ORIGINAL
+// fixture here seeded { mode: "auto", qualityBar: 60 } -- BOTH values identical to
+// the factory template's defaults -- so it could not distinguish "content carried
+// over from the legacy file" from "content came from factory". The bug (seeding
+// from factoryCfg instead of the legacy file in the ENOENT branch) passed this
+// test for the wrong reason. Fixture now uses values that DIFFER from factory
+// (fableConsent: true vs factory false; mode: "off" vs factory "auto") and
+// asserts those SPECIFIC values survive at the new location.
+test('move-on-write: an existing LEGACY project config with REAL customizations survives the migration -- content carried over, not replaced by factory defaults', () => {
   const p = freshProject();
   try {
     const legacy = path.join(p.dir, '.claude', '.coaltipple.json');
     fs.mkdirSync(path.dirname(legacy), { recursive: true });
-    fs.writeFileSync(legacy, '{\n  // keep me\n  "mode": "auto",\n  "qualityBar": 60\n}\n', 'utf8');
-    const r = run(p, '--project', '--qualityBar', '77');
+    fs.writeFileSync(legacy, '{\n  // keep me\n  "fableConsent": true,\n  "mode": "off",\n  "qualityBar": 90\n}\n', 'utf8');
+    const r = run(p, '--project', '--updateCheckDays', '30');
     assert.equal(r.status, 0, r.stderr);
     assert.ok(fs.existsSync(projectPath(p.dir)), 'the new own-dir config must exist after the write');
-    assert.equal(stripJsonc(fs.readFileSync(projectPath(p.dir), 'utf8')).qualityBar, 77, 'the edit landed at the NEW location');
+    const migrated = stripJsonc(fs.readFileSync(projectPath(p.dir), 'utf8'));
+    assert.equal(migrated.fableConsent, true, 'fableConsent (non-factory value) survived the migration -- the always-this-project consent record must not be destroyed');
+    assert.equal(migrated.mode, 'off', 'mode:"off" (non-factory value) survived -- must NOT come back as the factory "auto" (a silent consent escalation)');
+    assert.equal(migrated.qualityBar, 90, 'qualityBar (non-factory value) survived');
+    assert.equal(migrated.updateCheckDays, 30, 'the edit itself still landed at the NEW location');
     assert.ok(!fs.existsSync(legacy), 'the LEGACY file must be gone -- moved, not duplicated');
+    assert.doesNotMatch(r.stdout, /seeding from factory/, 'must not narrate a migration as if it were a fresh-project factory seed');
+  } finally { cleanup(p); }
+});
+
+// INSPECT Finding 5 (LOW): a shadowed legacy (new-shape file already exists AND
+// the legacy also exists) must still be dropped on the next write, even though
+// the write target is the new-shape file, not the legacy one.
+test('shadowed legacy: a legacy file coexisting with an already-migrated new-shape config is dropped on the next --project write', () => {
+  const p = freshProject();
+  try {
+    const legacy = path.join(p.dir, '.claude', '.coaltipple.json');
+    fs.mkdirSync(path.dirname(legacy), { recursive: true });
+    fs.writeFileSync(legacy, JSON.stringify({ mode: 'delegation' }), 'utf8');
+    fs.mkdirSync(path.dirname(projectPath(p.dir)), { recursive: true });
+    fs.writeFileSync(projectPath(p.dir), JSON.stringify({ qualityBar: 80 }), 'utf8');
+    const r = run(p, '--project', '--qualityBar', '81');
+    assert.equal(r.status, 0, r.stderr);
+    const kept = stripJsonc(fs.readFileSync(projectPath(p.dir), 'utf8'));
+    assert.equal(kept.qualityBar, 81, 'the edit landed at the already-migrated new-shape file (the correct target all along)');
+    assert.ok(!('mode' in kept), 'the shadowed legacy content must NOT leak into the new-shape file -- the new file was the read source, not the legacy');
+    assert.ok(!fs.existsSync(legacy), 'the shadowed legacy file must be dropped, not left behind forever');
   } finally { cleanup(p); }
 });
