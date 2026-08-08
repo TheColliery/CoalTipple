@@ -23,7 +23,9 @@ const run = (cwd, home, ...a) =>
 // so its OWN source needed no edit; only this test's fixture path did.
 const projCfg = (tmp) => path.join(tmp, '.claude', 'coal', 'coaltipple.json');
 const projState = (tmp) => path.join(tmp, '.claude', '.coaltipple');
-const globalRanking = (home) => path.join(home, '.claude', '.coaltipple', 'ranking.json');
+// Namespace campaign (#69+#39 part 2): the shared ranking home moved too.
+const globalRanking = (home) => path.join(home, '.claude', 'coal', 'coaltipple', 'ranking.json');
+const oldGlobalRanking = (home) => path.join(home, '.claude', '.coaltipple', 'ranking.json');
 const globalCfg = (home) => path.join(home, '.claude', '.coaltipple.json');
 
 // A minimal SANDBOX copy of the repo so the destructive-path tests (H10) run — and their
@@ -102,6 +104,39 @@ test('GLOBAL install (--global): seeds the global config + shared ranking, NO pr
     // No-clutter: a global install must NOT create any project file (config / ranking).
     assert.ok(!fs.existsSync(projCfg(tmp)), 'no project config from a global install');
     assert.ok(!fs.existsSync(path.join(projState(tmp), 'ranking.json')), 'no project ranking from a global install');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); }
+});
+
+// Namespace campaign (#69+#39 part 2): the shared ranking home moved under coal/.
+test('ranking migration: an OLD-location ranking is moved to the NEW location on install, and the old file is gone', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-global-'));
+  const home = mkHome();
+  try {
+    fs.mkdirSync(path.dirname(oldGlobalRanking(home)), { recursive: true });
+    const oldRanking = { schemaVer: 1, complete: true, listHash: 'x', tiers: { local: [], low: ['haiku'], mid: ['sonnet'], heavy: ['opus'], reasoning: ['fable'] }, source: 'old-format' };
+    fs.writeFileSync(oldGlobalRanking(home), JSON.stringify(oldRanking), 'utf8');
+    const r = run(tmp, home, '--global', path.join(home, '.claude', 'skills'));
+    assert.equal(r.status, 0, `global install must pass:\n${r.stdout}${r.stderr}`);
+    assert.ok(fs.existsSync(globalRanking(home)), 'new-location ranking must exist after migration');
+    const migrated = JSON.parse(fs.readFileSync(globalRanking(home), 'utf8'));
+    assert.equal(migrated.source, 'old-format', 'migrated content matches the OLD ranking, not a fresh floor');
+    assert.ok(!fs.existsSync(oldGlobalRanking(home)), 'the OLD ranking file must be gone after migration');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); }
+});
+
+test('ranking migration: a NEW-location ranking already present is left untouched, and an old one (if present too) is left alone', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-global-'));
+  const home = mkHome();
+  try {
+    fs.mkdirSync(path.dirname(globalRanking(home)), { recursive: true });
+    fs.writeFileSync(globalRanking(home), JSON.stringify({ listHash: 'new', tiers: {}, source: 'already-migrated' }), 'utf8');
+    fs.mkdirSync(path.dirname(oldGlobalRanking(home)), { recursive: true });
+    fs.writeFileSync(oldGlobalRanking(home), JSON.stringify({ listHash: 'old', tiers: {}, source: 'old-format' }), 'utf8');
+    const r = run(tmp, home, '--global', path.join(home, '.claude', 'skills'));
+    assert.equal(r.status, 0, `global install must pass:\n${r.stdout}${r.stderr}`);
+    const kept = JSON.parse(fs.readFileSync(globalRanking(home), 'utf8'));
+    assert.equal(kept.source, 'already-migrated', 'an existing new-location ranking must be preserved, not overwritten');
+    assert.ok(fs.existsSync(oldGlobalRanking(home)), 'migration only fires when the new location is ABSENT -- an already-migrated setup leaves the old file alone');
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); }
 });
 

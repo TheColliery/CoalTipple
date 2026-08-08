@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { loadMergedConfig, globalConfigPath, globalStateDir, projectConfigPath, projectConfigCandidates, projectStateDir, claudeBaseDir, findGitRoot } from './config-load.mjs';
+import { loadMergedConfig, globalConfigPath, globalStateDir, oldGlobalStateDir, projectConfigPath, projectConfigCandidates, projectStateDir, claudeBaseDir, findGitRoot } from './config-load.mjs';
 
 // Build a sandbox with optional global/project file bodies; returns { home, cwd }.
 function sandbox({ global, project } = {}) {
@@ -239,7 +239,7 @@ test('CLAUDE_CONFIG_DIR redirects the GLOBAL paths (#6); comma-list -> first ent
     const custom = path.join(os.tmpdir(), 'ct-cfgdir-test');
     process.env.CLAUDE_CONFIG_DIR = custom;
     assert.equal(globalConfigPath(), path.join(custom, '.coaltipple.json'), 'global config under $CLAUDE_CONFIG_DIR');
-    assert.equal(globalStateDir(), path.join(custom, '.coaltipple'), 'global state under $CLAUDE_CONFIG_DIR');
+    assert.equal(globalStateDir(), path.join(custom, 'coal', 'coaltipple'), 'global state under $CLAUDE_CONFIG_DIR');
     assert.equal(claudeBaseDir(), custom);
     process.env.CLAUDE_CONFIG_DIR = `${custom},${path.join(os.tmpdir(), 'other')}`; // multi-account comma-list
     assert.equal(claudeBaseDir(), custom, 'first entry of a comma-list');
@@ -327,4 +327,11 @@ test('clamp-unchanged regression: safer-value-wins applies identically no matter
     fs.writeFileSync(ownDir, JSON.stringify({ mode: 'auto' }), 'utf8');
     assert.equal(loadMergedConfig(s).mode, 'off', 'a project may not escalate past a deliberate global off, regardless of which candidate file the value came from -- only the ADDRESS moved, the clamp semantics did not');
   } finally { cleanup(s); }
+});
+
+// Namespace campaign (#69+#39 part 2): the machine-global scratch state (ranking.json)
+// moves under coal/ too; oldGlobalStateDir is the pre-campaign location, kept for install.mjs's migration read.
+test('globalStateDir/oldGlobalStateDir return the two distinct expected paths', () => {
+  assert.equal(globalStateDir('/h'), path.join('/h', '.claude', 'coal', 'coaltipple'));
+  assert.equal(oldGlobalStateDir('/h'), path.join('/h', '.claude', '.coaltipple'));
 });

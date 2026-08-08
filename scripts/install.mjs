@@ -16,8 +16,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { TARGETS, detectPresentAgents } from './lib/targets.mjs';
-import { buildFloorRanking, writeRankingAtomic } from './lib/classify.mjs';
-import { globalConfigPath, projectConfigPath, globalStateDir, projectStateDir, findGitRoot } from './lib/config-load.mjs';
+import { buildFloorRanking, writeRankingAtomic, loadRanking } from './lib/classify.mjs';
+import { globalConfigPath, projectConfigPath, globalStateDir, oldGlobalStateDir, projectStateDir, findGitRoot } from './lib/config-load.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const skillSrc = path.join(repo, 'skills', 'coaltipple');
@@ -128,14 +128,32 @@ function seedGlobalConfig(force = false) {
 // platform-level (the same models across every project), so it lives ONCE globally
 // and is shared; any install ensures it exists. Create-if-absent (it self-heals via
 // the validity gate on a model-list change); --reset --global re-seeds the floor.
+// Namespace campaign (#69+#39 part 2): the shared ranking home moved under coal/.
+// A pre-campaign ranking.json at the OLD location is MIGRATED (parsed + rewritten
+// through the same atomic-write path, not byte-copied) rather than left stranded,
+// so an existing user's ranking isn't silently re-seeded from the floor. --reset
+// (force) also best-effort drops any old-location file, so a reset doesn't leave a
+// stale old-format copy sitting around.
 function seedGlobalRanking(force = false) {
   try {
     const stateDir = globalStateDir();
     const rankingPath = path.join(stateDir, 'ranking.json');
+    const oldRankingPath = path.join(oldGlobalStateDir(), 'ranking.json');
+    if (!force && !fs.existsSync(rankingPath) && fs.existsSync(oldRankingPath)) {
+      const old = loadRanking(oldGlobalStateDir());
+      if (old.ok) {
+        writeRankingAtomic(stateDir, old.ranking);
+        try { fs.rmSync(oldRankingPath, { force: true }); } catch {}
+        console.log(`  migrated ranking from old location -> ${rankingPath}`);
+        return;
+      }
+      // old location unreadable/corrupt -- fall through to fresh-seed below.
+    }
     if (force || !fs.existsSync(rankingPath)) {
       const ranking = buildFloorRanking([]);
       ranking.source = 'install-floor';
       writeRankingAtomic(stateDir, ranking);
+      if (force) { try { fs.rmSync(oldRankingPath, { force: true }); } catch {} }
       console.log(`  ${force ? 'RESET ranking to floor' : 'seeded shared floor ranking'} -> ${rankingPath}`);
     } else console.log(`  ranking PRESERVED (self-heals, shared) -> ${rankingPath}`);
   } catch (e) { console.warn(`  [warn] ranking seed: ${e.message}`); process.exitCode = 1; }

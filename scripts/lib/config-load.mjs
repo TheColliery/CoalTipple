@@ -103,7 +103,16 @@ export function projectConfigPath(cwd = process.cwd()) {
 // State dirs — hold the ranking / work-state, NOT config. The GLOBAL state dir holds
 // the shared platform model-ranking; the PROJECT state dir holds per-project
 // work-state (proposed/, state.json) and the optional project conductor copy.
+// Namespace campaign (#69+#39 part 2, owner-designated 2026-08-08): the machine-global
+// scratch state moves under coal/ too. This dir holds ONLY ranking.json for this room
+// (verified: `globalStateDir(` has exactly two consumers outside tests, both building
+// `path.join(globalStateDir(), 'ranking.json')` -- install.mjs). oldGlobalStateDir is the
+// pre-campaign location, kept only so install.mjs's migration can find + move a ranking
+// written before this change.
 export function globalStateDir(home = os.homedir()) {
+  return path.join(claudeBaseDir(home), 'coal', 'coaltipple');
+}
+export function oldGlobalStateDir(home = os.homedir()) {
   return path.join(claudeBaseDir(home), '.coaltipple');
 }
 export function projectStateDir(cwd = process.cwd()) {
