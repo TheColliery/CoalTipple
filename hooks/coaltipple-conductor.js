@@ -107,11 +107,16 @@ function loadCfg() {
 // Ported from CoalMine's conductor (CM v3.7.5). The hook only SCHEDULES the nudge;
 // the version CHECK lives in the /coaltipple:update agent procedure (a fail-silent
 // offline hook cannot verify a published version — Phoenix #7). The stamp is an ISO
-// date at <CLAUDE_CONFIG_DIR or ~>/.claude/.coaltipple-update-check; the conductor
-// reads it to decide if a nudge is due, then rewrites it to today so the nudge fires
-// at most once per updateCheckDays (no re-nag). Sandbox-compliant (Phoenix #10): only
-// the global .claude dir is touched. CT has no gold-standard rules, so there is no
-// KIND 2 (rule-freshness) scan — KIND 1 only.
+// date; the conductor reads it to decide if a nudge is due, then rewrites it to today
+// so the nudge fires at most once per updateCheckDays (no re-nag). Sandbox-compliant
+// (Phoenix #10): only the global .claude dir is touched. CT has no gold-standard
+// rules, so there is no KIND 2 (rule-freshness) scan — KIND 1 only.
+// Namespace campaign (#69+#39 part 2): the stamp moved to <CLAUDE_CONFIG_DIR or
+// ~>/.claude/coal/coaltipple/update-check. A pre-campaign stamp at the OLD bare
+// location (.claude/.coaltipple-update-check) is still READ if the new one is
+// absent (so an existing user's throttle window isn't silently reset to "due"),
+// and is best-effort dropped on the next write (write-new-then-drop-old, same
+// pattern as the ranking migration this session).
 const UPDATE_STAMP = '.coaltipple-update-check';
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -136,10 +141,16 @@ function dayDiff(a, b) {
   return Math.floor((tb - ta) / MS_PER_DAY);
 }
 function updateStampPath() {
+  return path.join(claudeBaseDir(), 'coal', 'coaltipple', 'update-check');
+}
+function oldUpdateStampPath() {
   return path.join(claudeBaseDir(), UPDATE_STAMP);
 }
 function readUpdateStamp() {
-  try { return fs.readFileSync(updateStampPath(), 'utf8').trim(); } catch { return null; }
+  for (const p of [updateStampPath(), oldUpdateStampPath()]) {
+    try { return fs.readFileSync(p, 'utf8').trim(); } catch { /* try next */ }
+  }
+  return null;
 }
 // Due when there is no stamp, a corrupt stamp, or the window has elapsed.
 function updateDue(stamp, today, days) {
@@ -152,12 +163,13 @@ function updateDue(stamp, today, days) {
 // leave a half-written (unparseable) stamp.
 function writeUpdateStamp(today) {
   try {
-    const dir = claudeBaseDir();
+    const dir = path.dirname(updateStampPath());
     try { fs.mkdirSync(dir, { recursive: true }); } catch {}
-    const final = path.join(dir, UPDATE_STAMP);
+    const final = updateStampPath();
     const tmp = final + '.tmp';
     fs.writeFileSync(tmp, today, 'utf8');
     fs.renameSync(tmp, final);
+    try { fs.rmSync(oldUpdateStampPath(), { force: true }); } catch {}
   } catch {}
 }
 

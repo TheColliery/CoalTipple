@@ -27,7 +27,10 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const HOOK = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'hooks', 'coaltipple-conductor.js');
-const STAMP_REL = path.join('.claude', '.coaltipple-update-check');
+// Namespace campaign (#69+#39 part 2): the stamp moved under coal/; OLD_STAMP_REL is
+// the pre-campaign bare-filename location, kept only for the migration-read fixtures.
+const STAMP_REL = path.join('.claude', 'coal', 'coaltipple', 'update-check');
+const OLD_STAMP_REL = path.join('.claude', '.coaltipple-update-check');
 
 // Sandbox HOME: <home>/.claude is both the global config dir and the stamp dir.
 // CLAUDE_CONFIG_DIR is DELETED so it can never redirect claudeBaseDir off the sandbox.
@@ -58,10 +61,16 @@ function readStamp(home) {
   try { return fs.readFileSync(path.join(home, STAMP_REL), 'utf8').trim(); } catch { return null; }
 }
 function writeStamp(home, iso) {
-  const dir = path.join(home, '.claude');
+  const dir = path.dirname(path.join(home, STAMP_REL));
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, '.coaltipple-update-check'), iso, 'utf8');
+  fs.writeFileSync(path.join(home, STAMP_REL), iso, 'utf8');
 }
+function writeOldStamp(home, iso) {
+  const dir = path.dirname(path.join(home, OLD_STAMP_REL));
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(home, OLD_STAMP_REL), iso, 'utf8');
+}
+function oldStampExists(home) { return fs.existsSync(path.join(home, OLD_STAMP_REL)); }
 const SESSION = { hook_event_name: 'SessionStart' };
 
 test('default (no config): KIND-1 ask directive fires when no stamp, and the stamp is written', () => {
@@ -209,5 +218,29 @@ test('the self-update directive lands ONLY on SessionStart, never on the UserPro
     assert.match(r.stdout, /Route this turn per the resident routing contract/, 'the per-prompt forcer still fires (HOOK-LEAN pointer text)');
     assert.doesNotMatch(r.stdout, /self-update/, 'no self-update directive on the prompt path');
     assert.equal(readStamp(home), null, 'the forcer path never touches the update stamp');
+  } finally { fs.rmSync(home, { recursive: true, force: true }); }
+});
+
+// Namespace campaign (#69+#39 part 2): migration-read + write-new-drop-old.
+test('migration-read: an OLD-location stamp alone (not due) is honored -- no re-ask, new location stays untouched', () => {
+  const home = mkHome({ updateMode: 'ask' });
+  try {
+    writeOldStamp(home, todayISO()); // fresh -> not due
+    const r = run(SESSION, home);
+    assert.equal(r.status, 0);
+    assert.doesNotMatch(r.stdout, /self-update/, 'old stamp read as the throttle source -- not due, no directive');
+    assert.equal(readStamp(home), null, 'not due -> the hook never writes (new location stays absent)');
+  } finally { fs.rmSync(home, { recursive: true, force: true }); }
+});
+
+test('migration-write: an OLD-location stamp past due fires the ask, then the write lands at NEW and the OLD file is dropped', () => {
+  const home = mkHome({ updateMode: 'ask' });
+  try {
+    writeOldStamp(home, isoDaysAgo(20)); // >= 14 -> due
+    const r = run(SESSION, home);
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /CoalTipple self-update \(ask/, 'old stamp read as due -- directive fires');
+    assert.equal(readStamp(home), todayISO(), 'the write lands at the NEW location');
+    assert.ok(!oldStampExists(home), 'the OLD-location file is dropped on write (moved, not duplicated)');
   } finally { fs.rmSync(home, { recursive: true, force: true }); }
 });
