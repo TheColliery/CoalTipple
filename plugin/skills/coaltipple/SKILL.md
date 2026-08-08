@@ -69,7 +69,7 @@ A recovery move inside a Step or a reference and not listed here is that step's 
 
 ### Files — the on-disk set (a near-twin pair, declared once)
 
-A dot-FILE is CONFIG, a dot-DIR is STATE — the pair exists at both levels; do not read one as a typo of the other. This is the complete set a ROUTE touches. The conductor's own update-check stamp (`~/.claude/.coaltipple-update-check`) belongs to the SessionStart self-update channel, not to this contract.
+A dot-FILE is CONFIG, a dot-DIR is STATE — the pair exists at both levels; do not read one as a typo of the other. This is the complete set a ROUTE touches. The conductor's own update-check stamp (`~/.claude/coal/coaltipple/update-check`) belongs to the SessionStart self-update channel, not to this contract.
 
 - **Config (read on every route):** global `~/.claude/.coaltipple.json` (unchanged) overlaid by the FIRST-FOUND project config — `<gitroot>/.claude/coal/coaltipple.json` → `.agents/coal/coaltipple.json` → `.gemini/coal/coaltipple.json` → LEGACY `<gitroot>/.claude/.coaltipple.json` — every bare "`.coaltipple.json`" in this file means this MERGED pair (merge rules in **Always**). **`<gitroot>` = the nearest ancestor holding `.git`; no `.git` anywhere above → `<gitroot>` is just the starting directory itself** (`findGitRoot`, `config-load.mjs`).
 - **State:** `~/.claude/coal/coaltipple/` (global dir) holds `ranking.json` — READ at spawn-time only (a SELF route never reads it), WRITTEN only on a rare rebuild, atomically (F8) · `<gitroot>/.claude/.coaltipple/` (project dir) holds `proposed/` (the delegation sandbox workers write proposals into) + `state.json` (the subtask journal) — written only during a delegation (F10).
