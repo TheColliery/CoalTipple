@@ -12,7 +12,7 @@
 // (SKILL.md Step 1/2) carries the grading — it grades by MEANING/intent and applies
 // the sensitive never-down gate by intent, because the keyword flag will not fire.
 
-import { KEYWORD_GROUPS, HOT5, HOT4, SENSITIVE, EXCLUDE } from './keywords.mjs';
+import { KEYWORD_GROUPS, SENSITIVE, EXCLUDE } from './keywords.mjs';
 
 // Re-exported from the keyword SSoT (keywords.mjs) — so the grader and the
 // conductor's synced copy can never disagree (the rot-canary "two sources of
@@ -20,8 +20,6 @@ import { KEYWORD_GROUPS, HOT5, HOT4, SENSITIVE, EXCLUDE } from './keywords.mjs';
 export const DEFAULT_EXCLUDE = EXCLUDE;
 export const DEFAULT_SENSITIVE = SENSITIVE;
 export const DEFAULT_KEYWORD_GROUPS = KEYWORD_GROUPS;
-export const DEFAULT_HOT5 = HOT5; // derived flats (grade-5 / grade-4 group words) kept for the conductor + any legacy caller
-export const DEFAULT_HOT4 = HOT4;
 
 const TIER_BY_GRADE = { 1: 'low', 2: 'low', 3: 'mid', 4: 'heavy', 5: 'reasoning' };
 

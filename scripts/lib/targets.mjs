@@ -32,7 +32,7 @@ export const TARGETS = {
 // Agents NOT auto-detected by `install.mjs all` (their dir is ambiguous with a
 // global/plugin install): claude (~/.claude global) and cline (project .claude,
 // also read by Claude Code itself). Both stay installable explicitly by name.
-export const ALL_EXCLUDE = new Set(['claude', 'cline']);
+const ALL_EXCLUDE = new Set(['claude', 'cline']);
 
 const IMPORT_CWD = process.cwd();
 

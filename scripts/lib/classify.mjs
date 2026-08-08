@@ -96,7 +96,7 @@ export function writeRankingAtomic(stateDir, ranking) {
 // The capability climb order for quality-gated escalation (cheapest -> best).
 // 'local' (TIERS[0]) is orthogonal (on-device / privacy), NOT a quality rung, so
 // it is excluded from the climb.
-export const ESCALATION_LADDER = ['low', 'mid', 'heavy', 'reasoning'];
+const ESCALATION_LADDER = ['low', 'mid', 'heavy', 'reasoning'];
 
 // Quality-gated climb (the staircase). After an attempt scores BELOW the qualityBar,
 // pick the next tier to try:
