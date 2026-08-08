@@ -23,7 +23,10 @@ function freshProject() {
   return { dir, home };
 }
 const globalPath = (home) => path.join(home, '.claude', '.coaltipple.json');
-const projectPath = (dir) => path.join(dir, '.claude', '.coaltipple.json');
+// Namespace campaign (#69+#39): on a fresh sandbox (nothing on disk yet), --project
+// now writes to the own-dir NEW shape, not the LEGACY .claude/.coaltipple.json —
+// see the precedence tests in config-load.test.mjs for the full read order.
+const projectPath = (dir) => path.join(dir, '.claude', 'coal', 'coaltipple.json');
 const run = ({ dir, home }, ...a) =>
   spawnSync(process.execPath, [CONFIGURE, ...a],
     { cwd: dir, env: { ...process.env, USERPROFILE: home, HOME: home }, encoding: 'utf8', timeout: 60000 });
@@ -120,7 +123,7 @@ test('an existing config is edited in place; other keys + comments survive (proj
   const p = freshProject();
   try {
     // Seed a minimal commented project config, then flip one value via --project.
-    fs.mkdirSync(path.join(p.dir, '.claude'), { recursive: true });
+    fs.mkdirSync(path.dirname(projectPath(p.dir)), { recursive: true });
     fs.writeFileSync(projectPath(p.dir),
       '{\n  // keep me\n  "mode": "auto",\n  "qualityBar": 60\n}\n', 'utf8');
     const r = run(p, '--project', '--mode', 'delegation');
@@ -175,7 +178,7 @@ test('H1 (regression): editing a non-last key (qualityBar) still works correctly
 test('M6: trailing // comment on the rewritten line is preserved', () => {
   const p = freshProject();
   try {
-    fs.mkdirSync(path.join(p.dir, '.claude'), { recursive: true });
+    fs.mkdirSync(path.dirname(projectPath(p.dir)), { recursive: true });
     // Write a config where the value line has a trailing comment.
     fs.writeFileSync(projectPath(p.dir),
       '{\n  "mode": "auto", // routing direction\n  "qualityBar": 60\n}\n', 'utf8');
@@ -214,5 +217,32 @@ test('M7b: -p resolves to --project (not updateCheckDays); -P sets updateCheckDa
     const r2 = run(p, '-P', '30');
     assert.equal(r2.status, 0, r2.stderr);
     assert.equal(stripJsonc(fs.readFileSync(globalPath(p.home), 'utf8')).updateCheckDays, 30);
+  } finally { cleanup(p); }
+});
+
+// ---------------------------------------------------------------------------
+// Namespace campaign (#69+#39): move-on-write. Unlike CoalWash (no
+// project-config writer anywhere -> a structural "no writer exists" test was
+// the whole proof), CT DOES write project config here, so the real behavior
+// needs a real spawn, not just a grep. Structural grep is kept too, as a
+// cheap regression tripwire for the mechanism's continued EXISTENCE.
+// ---------------------------------------------------------------------------
+
+test('structural: configure.mjs DOES call fs.rmSync on a legacy path inside its write logic (move-on-write exists)', () => {
+  const src = fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'configure.mjs'), 'utf8');
+  assert.match(src, /fs\.rmSync\(\s*writeTarget\.legacyToRemove/, 'expected the move-on-write drop-old call to still be present');
+});
+
+test('move-on-write: an existing LEGACY project config is migrated to the own-dir shape on the next --project write, and the legacy file is gone', () => {
+  const p = freshProject();
+  try {
+    const legacy = path.join(p.dir, '.claude', '.coaltipple.json');
+    fs.mkdirSync(path.dirname(legacy), { recursive: true });
+    fs.writeFileSync(legacy, '{\n  // keep me\n  "mode": "auto",\n  "qualityBar": 60\n}\n', 'utf8');
+    const r = run(p, '--project', '--qualityBar', '77');
+    assert.equal(r.status, 0, r.stderr);
+    assert.ok(fs.existsSync(projectPath(p.dir)), 'the new own-dir config must exist after the write');
+    assert.equal(stripJsonc(fs.readFileSync(projectPath(p.dir), 'utf8')).qualityBar, 77, 'the edit landed at the NEW location');
+    assert.ok(!fs.existsSync(legacy), 'the LEGACY file must be gone -- moved, not duplicated');
   } finally { cleanup(p); }
 });

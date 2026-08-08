@@ -1,7 +1,9 @@
 // CoalTipple config cascade — the 2-level merge that every config reader uses.
 //
 //   GLOBAL  = <home>/.claude/.coaltipple.json   the user's defaults for ALL projects
-//   PROJECT = <gitroot>/.claude/.coaltipple.json optional per-project OVERRIDE
+//   PROJECT = optional per-project OVERRIDE, now resolved under an agent dir (namespace
+//             campaign #69+#39, owner-designated 2026-08-08) — see `projectConfigPath`'s
+//             own header for the full read order and the LEGACY fallback it still honors.
 //
 // Precedence (shallow, per-key): PROJECT value > GLOBAL value > schema default.
 // A project file is created ONLY when the user customizes per-project (no-clutter):
@@ -65,8 +67,38 @@ export function findGitRoot(startDir = process.cwd()) {
     dir = parent;
   }
 }
+// Namespace campaign (#69+#39, owner-designated 2026-08-08). Per-project config
+// lives under an agent dir, never bare at the project root. THE READ ORDER IS A
+// RAIL — identical wording in every room's readCfg comment and README Configure
+// section, one flock:
+//   1. <project>/.<the running agent's OWN dir>/coal/coaltipple.json — the dir of
+//      the agent actually executing. CoalTipple activates ONLY through Claude
+//      Code's own hook system (`hooks/hooks.json`); it has no other running-agent
+//      identity to branch on, so for THIS room "own dir" is always `.claude` and
+//      collapses onto the first entry of step 2 below rather than needing a
+//      separate check.
+//   2. Other known agent dirs, fixed order: `.claude` -> `.agents` -> `.gemini`
+//      (first FOUND wins).
+//   3. LEGACY: <project>/.claude/.coaltipple.json — CT's own CURRENT shape as of
+//      this campaign (never a bare root dotfile, unlike CoalWash's legacy) —
+//      read normally, no breakage for an existing user.
+// WRITE target = where the config was found; absent everywhere, the running
+// agent's own dir. Hooks never perform this move on a READ (Phoenix #5, no side
+// effects) — CT DOES have a project-config writer (`configure.mjs`, including the
+// fableConsent "always-this-project" consent persistence), so unlike CoalWash the
+// write side is real: `configure.mjs` implements write-new-then-drop-old via its
+// own `projectWriteTarget` helper, which reuses `projectConfigCandidates` below.
+const AGENT_DIR_ORDER = ['.claude', '.agents', '.gemini'];
+export function projectConfigCandidates(cwd = process.cwd()) {
+  const root = findGitRoot(cwd);
+  const candidates = AGENT_DIR_ORDER.map((d) => path.join(root, d, 'coal', 'coaltipple.json'));
+  candidates.push(path.join(root, '.claude', '.coaltipple.json')); // LEGACY, always last
+  return candidates;
+}
 export function projectConfigPath(cwd = process.cwd()) {
-  return path.join(findGitRoot(cwd), '.claude', '.coaltipple.json');
+  const candidates = projectConfigCandidates(cwd);
+  for (const c of candidates) if (fs.existsSync(c)) return c;
+  return candidates[0]; // nothing found anywhere -- own-dir is both the read and write target
 }
 // State dirs — hold the ranking / work-state, NOT config. The GLOBAL state dir holds
 // the shared platform model-ranking; the PROJECT state dir holds per-project

@@ -12,9 +12,12 @@
 //
 // TWO-LEVEL CASCADE: by default it writes the GLOBAL config (~/.claude/.coaltipple.json)
 // = your defaults for ALL projects. Pass --project to write the per-project override
-// (<gitroot>/.claude/.coaltipple.json) instead — that file is created ONLY when you use
-// --project (no-clutter; a global install never auto-creates it). Effective precedence
-// is project > global > schema default; `--list` shows that merged effective config.
+// instead — that file is created ONLY when you use --project (no-clutter; a global
+// install never auto-creates it), at whichever agent-dir candidate config-load.mjs's
+// projectConfigCandidates already resolves to (own dir if nothing exists yet; the
+// existing location otherwise — see projectWriteTarget below for the move-on-write
+// rule when only the LEGACY <gitroot>/.claude/.coaltipple.json is found). Effective
+// precedence is project > global > schema default; `--list` shows that merged config.
 //   node scripts/configure.mjs --qualityBar 85 --mode delegation   # edits GLOBAL
 //   node scripts/configure.mjs --project --qualityBar 90            # edits THIS project
 //   node scripts/configure.mjs --sensitive auth,crypto,payments
@@ -24,20 +27,26 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CONFIG_SCHEMA, validateValue } from './lib/config-schema.mjs';
-import { loadMergedConfig, globalConfigPath } from './lib/config-load.mjs';
+import { loadMergedConfig, globalConfigPath, findGitRoot, projectConfigCandidates, projectConfigPath } from './lib/config-load.mjs';
 import { stripJsonc } from './lib/jsonc.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const factoryCfg = path.join(repo, 'platform-configs', '.coaltipple.json');
 
-function findGitRoot(startDir) {
-  let dir = path.resolve(startDir);
-  while (true) {
-    if (fs.existsSync(path.join(dir, '.git'))) return dir;
-    const parent = path.dirname(dir);
-    if (parent === dir) return startDir;
-    dir = parent;
-  }
+// Namespace campaign (#69+#39): write-new-then-drop-old. Unlike CoalWash (no
+// project-config writer at all, read-only migration), CT DOES write per-project
+// config here -- so this is the room's real move-on-write implementation. Target
+// = the first candidate that already EXISTS among the new-shape dirs; if none of
+// those exist but the LEGACY file does, write to own-dir and flag the legacy
+// file for removal (move on write); a genuinely fresh project writes straight to
+// own-dir with nothing to remove.
+function projectWriteTarget(cwd) {
+  const candidates = projectConfigCandidates(cwd);
+  const legacy = candidates[candidates.length - 1];
+  const newCandidates = candidates.slice(0, -1);
+  for (const c of newCandidates) if (fs.existsSync(c)) return { target: c, legacyToRemove: null };
+  if (fs.existsSync(legacy)) return { target: newCandidates[0], legacyToRemove: legacy }; // found only at legacy -> move on write
+  return { target: newCandidates[0], legacyToRemove: null }; // fresh project -> own-dir
 }
 
 function printHelp() {
@@ -47,7 +56,7 @@ function printHelp() {
     '',
     'Target (default = GLOBAL):',
     '  (none)                                   Write the GLOBAL config ~/.claude/.coaltipple.json (your defaults for ALL projects)',
-    `  ${'--project, -p'.padEnd(40)} Write the per-project override <gitroot>/.claude/.coaltipple.json instead (created only when used)`,
+    `  ${'--project, -p'.padEnd(40)} Write the per-project override instead (created only when used) -- <gitroot>/.claude/coal/coaltipple.json, or wherever the config already exists (see README Configure)`,
     '',
     'Options:',
   ];
@@ -161,8 +170,9 @@ function main() {
   // Target selection: GLOBAL by default; --project/-p writes the per-project override.
   const toProject = args.includes('--project') || args.includes('-p');
   const globalPath = globalConfigPath();
-  const projectPath = path.join(findGitRoot(process.cwd()), '.claude', '.coaltipple.json');
-  const configPath = toProject ? projectPath : globalPath;
+  const projectReadPath = projectConfigPath(process.cwd()); // display/read target -- whichever candidate a READ would resolve
+  const writeTarget = projectWriteTarget(process.cwd());
+  const configPath = toProject ? writeTarget.target : globalPath;
 
   // Pure --list (no setting flags): show the MERGED effective config and stop.
   // --project may accompany --list (it has no effect on a read; both files merge).
@@ -172,12 +182,12 @@ function main() {
     try { merged = loadMergedConfig(); } catch (e) {
       console.error(`Error: cannot read config cascade: ${e.message}`); process.exitCode = 1; return;
     }
-    const hasGlobal = fs.existsSync(globalPath), hasProject = fs.existsSync(projectPath);
+    const hasGlobal = fs.existsSync(globalPath), hasProject = fs.existsSync(projectReadPath);
     if (!hasGlobal && !hasProject) {
       console.log('No .coaltipple.json yet (global or project) — showing factory defaults:');
       try { merged = parseConfig(fs.readFileSync(factoryCfg, 'utf8')); } catch {}
     } else {
-      const sources = [hasGlobal ? `global ${globalPath}` : null, hasProject ? `project ${projectPath}` : null].filter(Boolean);
+      const sources = [hasGlobal ? `global ${globalPath}` : null, hasProject ? `project ${projectReadPath}` : null].filter(Boolean);
       console.log(`Effective config (project > global; from ${sources.join(' + ')}):`);
     }
     console.log(JSON.stringify(merged, null, 2));
@@ -244,6 +254,12 @@ function main() {
   try {
     fs.mkdirSync(path.dirname(configPath), { recursive: true }); // global target: ensure ~/.claude exists
     fs.writeFileSync(configPath, text, 'utf8');
+    // Move-on-write (namespace campaign #69+#39): the new file is written FIRST;
+    // only after that succeeds do we best-effort drop the legacy one -- a failed
+    // delete never undoes a successful write (CoalWash's writeUpdateStamp idiom).
+    if (toProject && writeTarget.legacyToRemove) {
+      try { fs.rmSync(writeTarget.legacyToRemove, { force: true }); } catch {}
+    }
     // Echo back the parsed effective config so the user sees the result.
     const eff = parseConfig(text);
     console.log(`Updated ${toProject ? 'project' : 'global'} config ${configPath}:`);

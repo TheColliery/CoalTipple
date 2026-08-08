@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { loadMergedConfig, globalConfigPath, globalStateDir, projectConfigPath, projectStateDir, claudeBaseDir, findGitRoot } from './config-load.mjs';
+import { loadMergedConfig, globalConfigPath, globalStateDir, projectConfigPath, projectConfigCandidates, projectStateDir, claudeBaseDir, findGitRoot } from './config-load.mjs';
 
 // Build a sandbox with optional global/project file bodies; returns { home, cwd }.
 function sandbox({ global, project } = {}) {
@@ -248,8 +248,83 @@ test('CLAUDE_CONFIG_DIR redirects the GLOBAL paths (#6); comma-list -> first ent
     delete process.env.CLAUDE_CONFIG_DIR; // unset -> home/.claude (unchanged default)
     assert.equal(globalConfigPath('/h'), path.join('/h', '.claude', '.coaltipple.json'));
     process.env.CLAUDE_CONFIG_DIR = custom; // project path NEVER uses it
-    assert.equal(projectConfigPath('/proj'), path.join('/proj', '.claude', '.coaltipple.json'));
+    // Namespace campaign (#69+#39): nothing exists at '/proj' -> own-dir (.claude/coal/…)
+    // is the default, not the LEGACY path (see the precedence tests below for the full order).
+    assert.equal(projectConfigPath('/proj'), path.join('/proj', '.claude', 'coal', 'coaltipple.json'));
   } finally {
     if (saved === undefined) delete process.env.CLAUDE_CONFIG_DIR; else process.env.CLAUDE_CONFIG_DIR = saved;
   }
+});
+
+// ---------------------------------------------------------------------------
+// Namespace campaign (#69+#39, owner-designated 2026-08-08): per-project
+// config read order -- own agent dir -> other known agent dirs (fixed order)
+// -> LEGACY <gitroot>/.claude/.coaltipple.json. CT's legacy shape is already
+// under .claude/ (never a bare root dotfile, unlike CoalWash's legacy) --
+// see projectConfigPath's own header comment for the full rail wording.
+// ---------------------------------------------------------------------------
+
+test('projectConfigCandidates: the rail order is .claude -> .agents -> .gemini -> LEGACY, always relative to the resolved git root', () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-proj-'));
+  try {
+    assert.deepEqual(projectConfigCandidates(cwd), [
+      path.join(cwd, '.claude', 'coal', 'coaltipple.json'),
+      path.join(cwd, '.agents', 'coal', 'coaltipple.json'),
+      path.join(cwd, '.gemini', 'coal', 'coaltipple.json'),
+      path.join(cwd, '.claude', '.coaltipple.json'),
+    ]);
+  } finally { fs.rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('projectConfigPath precedence 1/3: own-dir (.claude/coal) wins even when every other candidate, including LEGACY, also exists', () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-proj-'));
+  try {
+    for (const c of projectConfigCandidates(cwd)) {
+      fs.mkdirSync(path.dirname(c), { recursive: true });
+      fs.writeFileSync(c, '{}', 'utf8');
+    }
+    assert.equal(projectConfigPath(cwd), path.join(cwd, '.claude', 'coal', 'coaltipple.json'));
+  } finally { fs.rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('projectConfigPath precedence 2/3: .claude/coal absent, .agents/coal present -> the other-known-dir entry wins over LEGACY', () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-proj-'));
+  try {
+    const [, agentsCandidate, , legacy] = projectConfigCandidates(cwd);
+    fs.mkdirSync(path.dirname(agentsCandidate), { recursive: true });
+    fs.writeFileSync(agentsCandidate, '{}', 'utf8');
+    fs.mkdirSync(path.dirname(legacy), { recursive: true });
+    fs.writeFileSync(legacy, '{}', 'utf8');
+    assert.equal(projectConfigPath(cwd), agentsCandidate);
+  } finally { fs.rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('projectConfigPath precedence 3/3: no new-shape candidate exists anywhere -> LEGACY is read, no breakage for an existing user', () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-proj-'));
+  try {
+    const legacy = path.join(cwd, '.claude', '.coaltipple.json');
+    fs.mkdirSync(path.dirname(legacy), { recursive: true });
+    fs.writeFileSync(legacy, JSON.stringify({ mode: 'delegation' }), 'utf8');
+    assert.equal(projectConfigPath(cwd), legacy);
+    // and it actually READS through loadMergedConfig, not just resolves the path
+    assert.equal(loadMergedConfig({ cwd }).mode, 'delegation');
+  } finally { fs.rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('projectConfigPath: nothing exists anywhere -> the own-dir (.claude/coal) path is the read AND write target, matching a never-configured project', () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-proj-'));
+  try {
+    assert.equal(projectConfigPath(cwd), path.join(cwd, '.claude', 'coal', 'coaltipple.json'));
+  } finally { fs.rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('clamp-unchanged regression: safer-value-wins applies identically no matter WHICH read-order candidate supplied the project value', () => {
+  const s = sandbox({ global: JSON.stringify({ mode: 'off' }) });
+  try {
+    // the project value arrives via the NEW own-dir shape, not the legacy path
+    const ownDir = projectConfigCandidates(s.cwd)[0];
+    fs.mkdirSync(path.dirname(ownDir), { recursive: true });
+    fs.writeFileSync(ownDir, JSON.stringify({ mode: 'auto' }), 'utf8');
+    assert.equal(loadMergedConfig(s).mode, 'off', 'a project may not escalate past a deliberate global off, regardless of which candidate file the value came from -- only the ADDRESS moved, the clamp semantics did not');
+  } finally { cleanup(s); }
 });

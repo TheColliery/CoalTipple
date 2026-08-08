@@ -17,7 +17,11 @@ const run = (cwd, home, ...a) =>
 
 // Canonical NEW paths (everything under .claude): the project config + state live at
 // <cwd>/.claude; the SHARED model ranking lives at <home>/.claude/.coaltipple/.
-const projCfg = (tmp) => path.join(tmp, '.claude', '.coaltipple.json');
+// Namespace campaign (#69+#39): on a fresh target (nothing on disk yet), the project
+// config seeds at the own-dir NEW shape, not the LEGACY .claude/.coaltipple.json --
+// install.mjs already delegates to config-load.mjs's projectConfigPath (line 155),
+// so its OWN source needed no edit; only this test's fixture path did.
+const projCfg = (tmp) => path.join(tmp, '.claude', 'coal', 'coaltipple.json');
 const projState = (tmp) => path.join(tmp, '.claude', '.coaltipple');
 const globalRanking = (home) => path.join(home, '.claude', '.coaltipple', 'ranking.json');
 const globalCfg = (home) => path.join(home, '.claude', '.coaltipple.json');

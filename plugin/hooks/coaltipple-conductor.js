@@ -14,13 +14,18 @@ const os = require('os');
 
 // --- config cascade (BOM- and comment-tolerant, cached): GLOBAL then PROJECT ---
 //   GLOBAL  = <home>/.claude/.coaltipple.json   the user's defaults for ALL projects
-//   PROJECT = <gitroot>/.claude/.coaltipple.json optional per-project OVERRIDE
+//   PROJECT = optional per-project OVERRIDE, resolved under an agent dir (namespace
+//             campaign #69+#39, owner-designated 2026-08-08) -- see the
+//             projectConfigCandidates walk below for the full read order and the
+//             LEGACY fallback it still honors.
 // Shallow per-key merge, PROJECT wins (project > global > schema default). Either
 // file may be missing/corrupt — each is read in isolation and contributes nothing
 // on failure, so the merge always yields the best available config (never throws).
 // Inlined (not imported) to keep the hook standalone-portable (Phoenix #9).
-// Keep findGitRoot byte-identical to scripts/lib/config-load.mjs + configure.mjs
-// (verify.mjs's config-path-sync gate guards the project-config PATH SEGMENTS, not the function body).
+// Keep findGitRoot byte-identical to scripts/lib/config-load.mjs + configure.mjs.
+// The read-order WALK below must stay in sync with config-load.mjs's
+// projectConfigCandidates -- not just findGitRoot's own body (verify.mjs's
+// config-path-sync gate guards the project-config PATH SEGMENTS, not the function body).
 function findGitRoot(startDir) {
   let dir = path.resolve(startDir);
   while (true) {
@@ -29,6 +34,16 @@ function findGitRoot(startDir) {
     if (parent === dir) return startDir;
     dir = parent;
   }
+}
+// Namespace campaign (#69+#39): first-found-wins over the SAME order as
+// config-load.mjs's projectConfigCandidates -- own agent dir (always .claude for
+// this room) -> .agents -> .gemini -> LEGACY <gitroot>/.claude/.coaltipple.json.
+const AGENT_DIR_ORDER = ['.claude', '.agents', '.gemini'];
+function projectConfigCandidates(cwd) {
+  const root = findGitRoot(cwd);
+  const candidates = AGENT_DIR_ORDER.map((d) => path.join(root, d, 'coal', 'coaltipple.json'));
+  candidates.push(path.join(root, '.claude', '.coaltipple.json')); // LEGACY, always last
+  return candidates;
 }
 function readCfgFile(file) {
   try {
@@ -64,7 +79,13 @@ function loadCfg() {
   // CLAUDE_CONFIG_DIR (#6) redirects ~/.claude (portable / multi-account / CI); first entry if a comma-list.
   const cfgDir = claudeBaseDir();
   const global = readCfgFile(path.join(cfgDir, '.coaltipple.json'));
-  const project = readCfgFile(path.join(findGitRoot(process.cwd()), '.claude', '.coaltipple.json'));
+  // First EXISTING candidate wins (matches config-load.mjs's projectConfigPath
+  // exactly) -- an existing-but-corrupt file still stops the walk there and
+  // contributes nothing (readCfgFile returns null), it does NOT fall through to
+  // a lower-priority candidate's real content.
+  const candidates = projectConfigCandidates(process.cwd());
+  const projectPath = candidates.find((c) => fs.existsSync(c)) || candidates[0];
+  const project = readCfgFile(projectPath);
   // Merge only when something loaded; keep null (= "no config") if neither did, so
   // the existing `if (cfg && ...)` guards in main() behave exactly as before.
   const merged = global || project ? { ...(global || {}), ...(project || {}) } : null;

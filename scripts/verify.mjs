@@ -193,23 +193,30 @@ try {
   if (!bad) ok(`all ${Object.keys(kw.KEYWORD_GROUPS).length} keyword floors match keywords.mjs`);
 } catch (e) { fail(`SKILL.md keyword-floor check: ${e.message}`); }
 
-console.log('config-path sync (conductor + configure inline vs config-load SSoT):');
+console.log('config-path sync (conductor inline vs config-load SSoT; configure imports it):');
 try {
-  // The project-config path lives under .claude in config-load.mjs (the SSoT). The
-  // conductor and configure inline their OWN copy (the hook must be standalone,
-  // Phoenix #9 — it cannot import config-load), so a future edit to one could silently
-  // drift. Assert all three reference the same path segments — the path analogue of the
-  // hot-keyword sync above. Cheap presence guard, not a full parse.
+  // The LEGACY project-config path segment lives under .claude in config-load.mjs
+  // (the SSoT). The conductor inlines its OWN copy (the hook must be standalone,
+  // Phoenix #9 — it cannot import config-load), so a future edit to one could
+  // silently drift — assert both reference the same path segment (the path
+  // analogue of the hot-keyword sync above). configure.mjs is DIFFERENT since the
+  // namespace campaign (#69+#39): it is a plain script (no standalone constraint),
+  // so it IMPORTS findGitRoot + projectConfigCandidates from config-load.mjs rather
+  // than duplicating the segment — assert the import instead of the literal string.
   const seg = "'.claude', '.coaltipple.json'";
   for (const [label, rel] of [
     ['config-load.mjs', ['scripts', 'lib', 'config-load.mjs']],
     ['coaltipple-conductor.js', ['hooks', 'coaltipple-conductor.js']],
-    ['configure.mjs', ['scripts', 'configure.mjs']],
   ]) {
     const s = fs.readFileSync(path.join(repo, ...rel), 'utf8');
     if (s.includes(seg)) ok(`${label} references the .claude project-config path`);
     else fail(`${label} lost ${seg} — project-config path DRIFTED from config-load (the SSoT)`);
   }
+  const configureSrc = fs.readFileSync(path.join(repo, 'scripts', 'configure.mjs'), 'utf8');
+  const importsBoth = /import\s*\{[^}]*\bfindGitRoot\b[^}]*\bprojectConfigCandidates\b[^}]*\}\s*from\s*['"]\.\/lib\/config-load\.mjs['"]/.test(configureSrc)
+    || /import\s*\{[^}]*\bprojectConfigCandidates\b[^}]*\bfindGitRoot\b[^}]*\}\s*from\s*['"]\.\/lib\/config-load\.mjs['"]/.test(configureSrc);
+  if (importsBoth) ok('configure.mjs imports findGitRoot + projectConfigCandidates from config-load.mjs');
+  else fail('configure.mjs no longer imports findGitRoot + projectConfigCandidates from config-load.mjs — project-config path DRIFTED from config-load (the SSoT)');
 } catch (e) { fail(`config-path sync: ${e.message}`); }
 
 console.log('cross-platform SKILL transform engine (PARKED -- no active platform; add one only after verifying its spawn tool takes a worker model param):');
