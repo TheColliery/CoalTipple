@@ -1,6 +1,6 @@
 # CoalTipple — the Lock (ranking rebuild + safety rationale)
 
-Loaded ON-DEMAND from Step 0, only when the ranking must be REBUILT (missing / corrupt / incomplete — rare) or you need the full pin/fall/safety detail. A normal route that will SPAWN just reads `~/.claude/.coaltipple/ranking.json` (a cheap file read) and never touches this.
+Loaded ON-DEMAND from Step 0, only when the ranking must be REBUILT (missing / corrupt / incomplete — rare) or you need the full pin/fall/safety detail. A normal route that will SPAWN just reads `~/.claude/coal/coaltipple/ranking.json` (moved under `coal/` — namespace campaign #69+#39, 2026-08-08; the pre-campaign `~/.claude/.coaltipple/ranking.json` is read as a fallback only by `install.mjs`'s one-time migration, never by a route) and never touches this.
 
 ## Rebuild recipe (the ranking is missing / corrupt / incomplete)
 Rebuild it on the spot: `buildFloorRanking([], modelTiers)` (classify.mjs) — `aliasDefaults()` + your pins, ALWAYS (no enumeration, no model-list introspection). Write it atomically. `modelTiers` comes from the merged `.coaltipple.json`. You do NOT enumerate the live model list — the floor is the alias structure + pins, nothing more.

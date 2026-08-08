@@ -21,6 +21,15 @@ The enumerability carve (variance-walk lab, `TheColliery/scratchpad/longrun/SKIL
 ### Notes
 - Body ratchet baseline moves 26,720 → 41,596 chars — the rise is countable-home structure per the variance-walk ruling (enumerable FIRST, lean only after zero variance; skill-authoring.md §3b/§5). Re-derive live with `wc -c skills/coaltipple/SKILL.md`; never quote this number later.
 
+## [1.4.0] - 2026-08-08
+
+Namespace campaign #69+#39 (owner-designated 2026-08-08, one-flock shape shared with CoalWash's identical change same day): per-project config and machine-global scratch state move under an agent-owned `coal/` dir, closing the same class of root-level scatter the series already fixed for skill scratch files. Backward-compatible — every legacy location is still read (and, for global scratch state, migrated) automatically; no user action required.
+
+### Added
+- **Per-project config now resolves via a first-found agent-dir order, not a bare `.claude/.coaltipple.json`:** `<gitroot>/.claude/coal/coaltipple.json` → `.agents/coal/coaltipple.json` → `.gemini/coal/coaltipple.json` → LEGACY `<gitroot>/.claude/.coaltipple.json` (always read, never breaks an existing project). Write target = wherever the config was found; absent everywhere, the read order's first entry. `configure.mjs --project` implements write-new-then-drop-old. The GLOBAL user config (`~/.claude/.coaltipple.json`) is UNCHANGED, stays at root.
+- **Machine-global scratch state (the shared model ranking, the self-update check stamp) moves from `~/.claude/.coaltipple/` to `~/.claude/coal/coaltipple/`** — read-new-fallback-old, write-new-drop-old; `install.mjs` migrates an existing ranking written before this change on next run. Project-scoped scratch state (`<gitroot>/.claude/.coaltipple/proposed/`, `state.json`) is unaffected — already project-scoped under an agent dir, out of this campaign's scope.
+- `scripts/lib/config-load.mjs` gains `projectConfigCandidates`/`globalStateDir`/`oldGlobalStateDir` as the new SSoT for both read orders; the conductor's and `configure.mjs`'s inline copies stay byte-identical to it per Phoenix #9.
+
 ## [1.3.4] - 2026-07-27
 
 Config-security hardening from `hooks-safety.md` §9's one-flock sweep (station-3 review, 2 rounds — the first round's own overclaim is corrected in this entry, not silently rewritten). A consent-escalation clamp (now covering BOTH the code merge path and the agent's own SKILL.md-instructed read), a factory-default fix, and a prototype-pollution guard. No routing behavior, config key, or user-facing capability changed.

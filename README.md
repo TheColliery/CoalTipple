@@ -74,7 +74,7 @@ claude plugin install coaltipple@coaltipple
 # Restart Claude Code to load the /coaltipple commands (stats | off | memory | update)
 ```
 
-Optional per-project config override: `<project>/.claude/.coaltipple.json`.
+Optional per-project config override, first-found wins: `<project>/.claude/coal/coaltipple.json` → `.agents/coal/coaltipple.json` → `.gemini/coal/coaltipple.json` → legacy `.claude/.coaltipple.json`.
 
 ### Other platforms — no install (routing cannot actuate)
 
@@ -165,7 +165,7 @@ Workers start context-fresh. A **memory anchor** file gives a fresh worker proje
 
 ## ⚙️ Configure
 
-Everything is tunable in `.coaltipple.json` — a global `~/.claude/.coaltipple.json` overlaid per key by the project `<gitroot>/.claude/.coaltipple.json` (project wins), so you can **tune or shut off a globally-installed skill per project** (off-switch: `enableRouting: false`) — a skill you don't need in a given project stops loading (and burning tokens) there. Ships zero-config with optimal defaults. The high-impact keys:
+Everything is tunable in `.coaltipple.json` — a global `~/.claude/.coaltipple.json` overlaid per key by the first-found project config (`<gitroot>/.claude/coal/coaltipple.json` → `.agents/coal/coaltipple.json` → `.gemini/coal/coaltipple.json` → legacy `.claude/.coaltipple.json`; project wins), so you can **tune or shut off a globally-installed skill per project** (off-switch: `enableRouting: false`) — a skill you don't need in a given project stops loading (and burning tokens) there. Ships zero-config with optimal defaults. The high-impact keys:
 
 | Key | Default | What it does |
 |---|---|---|
