@@ -124,6 +124,21 @@ test('ranking migration: an OLD-location ranking is moved to the NEW location on
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); }
 });
 
+test('ranking migration: a CORRUPT old-location ranking is dropped (never stranded), not carried forward or left behind', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-global-'));
+  const home = mkHome();
+  try {
+    fs.mkdirSync(path.dirname(oldGlobalRanking(home)), { recursive: true });
+    fs.writeFileSync(oldGlobalRanking(home), '{ not valid json', 'utf8');
+    const r = run(tmp, home, '--global', path.join(home, '.claude', 'skills'));
+    assert.equal(r.status, 0, `global install must pass:\n${r.stdout}${r.stderr}`);
+    assert.ok(fs.existsSync(globalRanking(home)), 'a fresh valid ranking must exist at the new location');
+    const fresh = JSON.parse(fs.readFileSync(globalRanking(home), 'utf8'));
+    assert.equal(fresh.source, 'install-floor', 'a corrupt old ranking must fall through to a fresh floor-seed, not fabricate content');
+    assert.ok(!fs.existsSync(oldGlobalRanking(home)), 'the corrupt OLD ranking file must be gone, not stranded forever (INSPECT Finding 4)');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); }
+});
+
 test('ranking migration: a NEW-location ranking already present is left untouched, and an old one (if present too) is left alone', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-global-'));
   const home = mkHome();

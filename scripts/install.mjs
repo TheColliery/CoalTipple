@@ -134,6 +134,15 @@ function seedGlobalConfig(force = false) {
 // so an existing user's ranking isn't silently re-seeded from the floor. --reset
 // (force) also best-effort drops any old-location file, so a reset doesn't leave a
 // stale old-format copy sitting around.
+// Best-effort: drop an old-location file, then the dir itself if that leaves it
+// empty. Non-recursive rmSync on the dir throws ENOTEMPTY (silently swallowed) if
+// anything else is in there -- never force-recurse a dir that might hold unrelated
+// content (INSPECT Finding 4, 2026-08-08).
+function dropOldRankingFileAndDir(oldRankingPath) {
+  try { fs.rmSync(oldRankingPath, { force: true }); } catch {}
+  try { fs.rmSync(oldGlobalStateDir(), { recursive: false, force: true }); } catch {}
+}
+
 function seedGlobalRanking(force = false) {
   try {
     const stateDir = globalStateDir();
@@ -143,17 +152,21 @@ function seedGlobalRanking(force = false) {
       const old = loadRanking(oldGlobalStateDir());
       if (old.ok) {
         writeRankingAtomic(stateDir, old.ranking);
-        try { fs.rmSync(oldRankingPath, { force: true }); } catch {}
+        dropOldRankingFileAndDir(oldRankingPath);
         console.log(`  migrated ranking from old location -> ${rankingPath}`);
         return;
       }
-      // old location unreadable/corrupt -- fall through to fresh-seed below.
+      // old location unreadable/corrupt -- never worth preserving, drop it the
+      // same way a successfully-migrated one gets dropped, then fall through to
+      // fresh-seed below (Finding 4: previously stranded forever, since the
+      // migration branch above never runs again once rankingPath exists).
+      dropOldRankingFileAndDir(oldRankingPath);
     }
     if (force || !fs.existsSync(rankingPath)) {
       const ranking = buildFloorRanking([]);
       ranking.source = 'install-floor';
       writeRankingAtomic(stateDir, ranking);
-      if (force) { try { fs.rmSync(oldRankingPath, { force: true }); } catch {} }
+      if (force) dropOldRankingFileAndDir(oldRankingPath);
       console.log(`  ${force ? 'RESET ranking to floor' : 'seeded shared floor ranking'} -> ${rankingPath}`);
     } else console.log(`  ranking PRESERVED (self-heals, shared) -> ${rankingPath}`);
   } catch (e) { console.warn(`  [warn] ranking seed: ${e.message}`); process.exitCode = 1; }
