@@ -42,6 +42,44 @@ test('--help: prints usage and exits 0', () => {
   } finally { fs.rmSync(home, { recursive: true, force: true }); }
 });
 
+test('board #44 F1: --file followed by a flag-shaped token errors loud instead of swallowing it as a phantom file + dropping the next flag\'s value', () => {
+  const home = freshHome();
+  try {
+    // BEFORE the fix this produced files:[{path:"--size-units",lines:0}] and
+    // sizeUnits:0 -- a wrong grade printed with full confidence, no warning.
+    const r = run(home, '--prompt', 'x', '--file', '--size-units', '5');
+    assert.notEqual(r.status, 0, 'a flag-shaped next token after --file must fail loud, not silently consume it');
+    assert.match(r.stderr, /--file needs a value/);
+  } finally { fs.rmSync(home, { recursive: true, force: true }); }
+});
+
+test('board #44 F1 (same exposure, --size-units): a flag-shaped next token errors loud instead of Number()-coercing to NaN->0', () => {
+  const home = freshHome();
+  try {
+    const r = run(home, '--prompt', 'x', '--size-units', '--file', 'a.js');
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /--size-units needs a value/);
+  } finally { fs.rmSync(home, { recursive: true, force: true }); }
+});
+
+test('--size-units given a non-numeric value (not flag-shaped) still errors loud rather than silently coercing to 0', () => {
+  const home = freshHome();
+  try {
+    const r = run(home, '--prompt', 'x', '--size-units', 'banana');
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /--size-units needs a numeric value/);
+  } finally { fs.rmSync(home, { recursive: true, force: true }); }
+});
+
+test('--file/--size-units at the very end of argv (no next token at all) errors loud too, not just the flag-shaped case', () => {
+  const home = freshHome();
+  try {
+    const r = run(home, '--prompt', 'x', '--file');
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /--file needs a value/);
+  } finally { fs.rmSync(home, { recursive: true, force: true }); }
+});
+
 test('trivial prompt, no files: grade 1, tier low, no sensitive flag, tier-only (no global ranking in the sandbox home)', () => {
   const home = freshHome();
   try {

@@ -13,13 +13,21 @@ import { grade } from './lib/grade.mjs';
 import { loadMergedConfig, globalStateDir } from './lib/config-load.mjs';
 import { loadRanking, resolveWorker } from './lib/classify.mjs';
 
+// A flag-shaped next token means the user forgot the value -- error rather than
+// silently swallowing the next flag as data (configure.mjs's M7a fix, ported here;
+// INSPECT board #44 Finding 1: --file --size-units 5 used to produce a phantom
+// file {path:"--size-units"} AND silently drop --size-units' own value).
+const looksLikeFlag = (s) => typeof s === 'string' && s.startsWith('-');
+
 function parseArgs(argv) {
   const out = { prompt: '', files: [], sizeUnits: 0 };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--prompt') out.prompt = argv[++i] ?? '';
     else if (a === '--file') {
-      const raw = argv[++i] ?? '';
+      const next = argv[i + 1];
+      if (next === undefined || looksLikeFlag(next)) return { error: '--file needs a value' };
+      const raw = argv[++i];
       const sep = raw.lastIndexOf(':');
       // A bare path may itself contain ':' (a Windows drive letter) -- only treat the
       // split as path:lines when the tail actually parses as a non-negative integer,
@@ -28,14 +36,24 @@ function parseArgs(argv) {
       const lines = /^\d+$/.test(tail) ? Number(tail) : NaN;
       if (Number.isFinite(lines)) out.files.push({ path: raw.slice(0, sep), lines });
       else out.files.push({ path: raw, lines: 0 });
-    } else if (a === '--size-units') out.sizeUnits = Number(argv[++i]) || 0;
-    else if (a === '--help' || a === '-h') out.help = true;
+    } else if (a === '--size-units') {
+      const next = argv[i + 1];
+      if (next === undefined || looksLikeFlag(next)) return { error: '--size-units needs a value' };
+      const n = Number(argv[++i]);
+      if (!Number.isFinite(n)) return { error: '--size-units needs a numeric value' };
+      out.sizeUnits = n;
+    } else if (a === '--help' || a === '-h') out.help = true;
   }
   return out;
 }
 
 function main() {
   const args = parseArgs(process.argv.slice(2));
+  if (args.error) {
+    console.error(`Error: ${args.error}`);
+    process.exitCode = 1;
+    return;
+  }
   if (args.help || !args.prompt) {
     console.log('Usage: node scripts/grade-task.mjs --prompt "<task text>" [--file path[:lines] ...] [--size-units N]');
     console.log('Advisory only -- see COALTIPPLE_RESIDENT_DISPATCH_DESIGN.md. Prints grade()\'s own verdict as JSON; never touches effort or a flip decision.');
