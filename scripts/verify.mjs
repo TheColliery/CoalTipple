@@ -11,6 +11,12 @@ import { CONFIG_SCHEMA, validateValue } from './lib/config-schema.mjs';
 import { stripJsonc } from './lib/jsonc.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+// Leading-BOM strip for the plugin.json description check below, built from a char
+// code rather than a hand-typed escape sequence (board #64 exemplar, CoalMine
+// 13daf36: typing the literal BOM escape directly in a tool call silently became
+// the literal BOM character in transit). This file's other BOM strips (charCodeAt
+// checks) are untouched.
+const BOM_RE = new RegExp('^' + String.fromCharCode(0xfeff));
 let fails = 0;
 const ok = (m) => console.log(`  ok   ${m}`);
 const fail = (m) => { console.log(`  FAIL ${m}`); fails++; };
@@ -104,6 +110,22 @@ for (const [label, p, isSkill] of descTargets) {
     else if (len > DESC_CAP) fail(`${label}: description+when_to_use ${len} chars exceeds the ${DESC_CAP}-char cap`);
     else ok(`${label}: ${len} chars (cap ${DESC_CAP})`);
   } catch (e) { fail(`${label} description check: ${e.message}`); }
+}
+// .claude-plugin/plugin.json's OWN description field vs the same cap (board #64: this gate
+// covered skill/command FRONTMATTER only, so a plugin.json description could silently exceed
+// 1024 -- CoalLedger shipped one at 1067 before a human eye caught it). plugin.json is plain
+// JSON, not YAML frontmatter, so it reads the field directly rather than through
+// frontmatterField; the cap constant is the same DESC_CAP above, never redefined.
+{
+  const pluginJsonPath = path.join(repo, '.claude-plugin', 'plugin.json');
+  try {
+    const raw = fs.readFileSync(pluginJsonPath, 'utf8').replace(BOM_RE, '');
+    const pj = JSON.parse(raw);
+    const len = typeof pj.description === 'string' ? pj.description.length : 0;
+    if (!pj.description) fail('.claude-plugin/plugin.json: description missing');
+    else if (len > DESC_CAP) fail(`.claude-plugin/plugin.json: description ${len} chars exceeds the ${DESC_CAP}-char cap`);
+    else ok(`.claude-plugin/plugin.json: ${len} chars (cap ${DESC_CAP})`);
+  } catch (e) { fail(`.claude-plugin/plugin.json description check: ${e.message}`); }
 }
 
 console.log('config (factory vs schema):');

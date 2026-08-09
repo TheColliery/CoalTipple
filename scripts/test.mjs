@@ -28,6 +28,7 @@ const TESTS = [
   'scripts/build-plugin.test.mjs',
   'scripts/build-dist.test.mjs',
   'scripts/build-skill.test.mjs',
+  'scripts/verify.test.mjs',
 ];
 
 const missing = TESTS.filter((t) => !fs.existsSync(path.join(repo, t)));
