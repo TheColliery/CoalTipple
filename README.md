@@ -6,7 +6,7 @@
 
 **A model/effort router for Claude Code** — delegate a task you *can* do but that is large and cheap *down* to a cheaper tier to save tokens, and hand a task beyond your reach *up* to a stronger tier for quality.
 
-Not the cheapest router by claimed savings — a cross-provider or empirical router can point to a bigger number on someone else's benchmark. The real difference is MECHANISM, not degree: CoalTipple's `qualityBar` staircase is a **procedural guarantee** — read the code, watch it fire on your own task, every delegated result must clear the bar or climb the ladder — not an **empirical claim** measured on someone else's workload that you have to trust. Newer entrants like Not Diamond Code (announced 2026-08-04) report large self-measured savings (their own figure: 20–65%) on their own benchmarks; we make no comparable claim, and place no number beside theirs. One mechanism difference that IS verifiable by reading this repo: CoalTipple's routing decision runs entirely in the agent's own context on local files — zero external network calls for the decision itself — unlike Not Diamond Code's own-documented architecture, where a local proxy sends per-step derived metadata to a remote optimization service for every routing call. That is a property of HOW the decision is made, not a claim about which result is better.
+Not the cheapest router by claimed savings — a cross-provider or empirical router can point to a bigger number on someone else's benchmark. The real difference is MECHANISM, not degree: CoalTipple's `qualityBar` staircase is **inspectable and local** — the contract lives in `SKILL.md`, the tier ladder and fall logic in `classify.mjs`, the config in your own file, all readable in this repo — not an **empirical claim** measured on someone else's workload that you have to trust. Newer entrants like Not Diamond Code (announced 2026-08-04) report large self-measured savings (their own figure: 20–65%) on their own benchmarks; we make no comparable claim, and place no number beside theirs. One mechanism difference that IS verifiable by reading this repo: CoalTipple's routing decision runs entirely in the agent's own context on local files — zero external network calls for the decision itself — unlike Not Diamond Code's own-documented architecture, where a local proxy sends per-step derived metadata to a remote optimization service for every routing call. That is a property of HOW the decision is made, not a claim about which result is better.
 
 ![version](https://img.shields.io/github/v/tag/TheColliery/CoalTipple?label=version&color=blue)
 ![license](https://img.shields.io/badge/license-Apache_2.0-blue)
@@ -114,7 +114,7 @@ Routing adjusts **two independent knobs** (always raise effort before tier):
 2. The worker runs, and output is verified against the task contract.
 3. **Passes → done. Fails → climb one rung.** Out of attempts/fails hard → jump to top tier.
 * Tune `qualityBar` by risk: raise (~85) for critical logic; lower (~45) for quick drafts.
-* This is the procedural guarantee named above — a mechanism you read in the code and watch fire on your own task, not a benchmark number you have to trust.
+* This is the inspectable, local mechanism named above — the contract and the code that implements it live in this repo, not a benchmark number you have to trust.
 
 ---
 
