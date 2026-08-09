@@ -216,7 +216,7 @@ Install one, it stands alone; install all, they compose without conflict.
 
 That doctrine: Phoenix-13 hooks (zero-dependency, no network, fail-silent, no child processes, deterministic), single-source-of-truth config schemas, and a strict no-overkill discipline — full series at [TheColliery](https://github.com/TheColliery).
 
-Zero-dependency, offline, no API keys.
+Zero-dependency, offline by default, no API keys — "by default" because the consent-gated self-update check (`/coaltipple:update`) goes online; the hook never does.
 
 ## 📄 License
 
