@@ -129,6 +129,7 @@ test('project config anchors at the GIT ROOT, not raw cwd — a subdir cwd reads
   // Before the fix, projectConfigPath used raw cwd -> a subdir read a DIFFERENT (absent) file
   // than the conductor/configure (which use findGitRoot), so per-project overrides mis-applied.
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-gitroot-'));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-h-'));
   try {
     fs.mkdirSync(path.join(root, '.git'), { recursive: true });
     fs.mkdirSync(path.join(root, '.claude'), { recursive: true });
@@ -141,8 +142,11 @@ test('project config anchors at the GIT ROOT, not raw cwd — a subdir cwd reads
     assert.equal(projectConfigPath(sub), path.join(root, '.claude', '.coaltipple.json'));
     assert.equal(projectStateDir(sub), path.join(root, '.claude', '.coaltipple'));
     // The merged read from the subdir picks up the root project override.
-    assert.equal(loadMergedConfig({ cwd: sub, home: fs.mkdtempSync(path.join(os.tmpdir(), 'ct-h-')) }).qualityBar, 77);
-  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+    assert.equal(loadMergedConfig({ cwd: sub, home }).qualityBar, 77);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  }
 });
 
 test('a poisoned project config cannot smuggle __proto__/constructor/prototype as literal keys into the merged config', () => {
