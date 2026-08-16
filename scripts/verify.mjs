@@ -223,8 +223,11 @@ try {
   // silently drift — assert both reference the same path segment (the path
   // analogue of the hot-keyword sync above). configure.mjs is DIFFERENT since the
   // namespace campaign (#69+#39): it is a plain script (no standalone constraint),
-  // so it IMPORTS findGitRoot + projectConfigCandidates from config-load.mjs rather
-  // than duplicating the segment — assert the import instead of the literal string.
+  // so it IMPORTS projectConfigCandidates from config-load.mjs rather than
+  // duplicating the segment — assert the import instead of the literal string.
+  // projectConfigCandidates resolves the git root INTERNALLY (config-load.mjs), so
+  // configure.mjs needs no git-root helper of its own — requiring one here would
+  // pin an incidental implementation detail, not the real invariant.
   const seg = "'.claude', '.coaltipple.json'";
   for (const [label, rel] of [
     ['config-load.mjs', ['scripts', 'lib', 'config-load.mjs']],
@@ -235,10 +238,9 @@ try {
     else fail(`${label} lost ${seg} — project-config path DRIFTED from config-load (the SSoT)`);
   }
   const configureSrc = fs.readFileSync(path.join(repo, 'scripts', 'configure.mjs'), 'utf8');
-  const importsBoth = /import\s*\{[^}]*\bfindGitRoot\b[^}]*\bprojectConfigCandidates\b[^}]*\}\s*from\s*['"]\.\/lib\/config-load\.mjs['"]/.test(configureSrc)
-    || /import\s*\{[^}]*\bprojectConfigCandidates\b[^}]*\bfindGitRoot\b[^}]*\}\s*from\s*['"]\.\/lib\/config-load\.mjs['"]/.test(configureSrc);
-  if (importsBoth) ok('configure.mjs imports findGitRoot + projectConfigCandidates from config-load.mjs');
-  else fail('configure.mjs no longer imports findGitRoot + projectConfigCandidates from config-load.mjs — project-config path DRIFTED from config-load (the SSoT)');
+  const importsIt = /import\s*\{[^}]*\bprojectConfigCandidates\b[^}]*\}\s*from\s*['"]\.\/lib\/config-load\.mjs['"]/.test(configureSrc);
+  if (importsIt) ok('configure.mjs imports projectConfigCandidates from config-load.mjs');
+  else fail('configure.mjs no longer imports projectConfigCandidates from config-load.mjs — project-config path DRIFTED from config-load (the SSoT)');
 } catch (e) { fail(`config-path sync: ${e.message}`); }
 
 console.log('cross-platform SKILL transform engine (PARKED -- no active platform; add one only after verifying its spawn tool takes a worker model param):');

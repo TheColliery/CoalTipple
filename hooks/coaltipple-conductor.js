@@ -22,7 +22,7 @@ const os = require('os');
 // file may be missing/corrupt — each is read in isolation and contributes nothing
 // on failure, so the merge always yields the best available config (never throws).
 // Inlined (not imported) to keep the hook standalone-portable (Phoenix #9).
-// Keep findGitRoot byte-identical to scripts/lib/config-load.mjs + configure.mjs.
+// Keep findGitRoot byte-identical to scripts/lib/config-load.mjs.
 // The read-order WALK below must stay in sync with config-load.mjs's
 // projectConfigCandidates -- not just findGitRoot's own body (verify.mjs's
 // config-path-sync gate guards the project-config PATH SEGMENTS, not the function body).

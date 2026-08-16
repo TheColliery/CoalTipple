@@ -27,7 +27,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CONFIG_SCHEMA, validateValue } from './lib/config-schema.mjs';
-import { loadMergedConfig, globalConfigPath, findGitRoot, projectConfigCandidates, projectConfigPath } from './lib/config-load.mjs';
+import { loadMergedConfig, globalConfigPath, projectConfigCandidates, projectConfigPath } from './lib/config-load.mjs';
 import { stripJsonc } from './lib/jsonc.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');

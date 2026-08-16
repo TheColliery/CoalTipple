@@ -18,6 +18,9 @@ The enumerability carve (variance-walk lab, `TheColliery/scratchpad/longrun/SKIL
 - **Sensitive-scope ruling written into P1:** sensitivity keys on the PATH + the task's MEANING, never the edit type — a "comments-only" edit on an auth/crypto/payment path is still sensitive; DOWN stays forbidden, SELF stays allowed.
 - **Fan-out consent made countable (ASK 2):** spawning more than one worker in one move states the plan (N × tier × effort) and gets a yes — a precision of the existing "never fan out costly work silently" rail; a SINGLE non-fable worker needs no per-instance ask (standing consent = the `mode` config; transparency = the spawn label).
 
+### Fixed
+- **Dead `findGitRoot` import removed from `configure.mjs`** (board #117, CodeQL `js/unused-local-variable`) — `configure.mjs` never called `findGitRoot` directly; `projectConfigCandidates` (which it does call) already resolves the git root internally. `verify.mjs`'s config-path-sync gate narrowed to require only `projectConfigCandidates` in that import, matching the real invariant instead of an incidental implementation detail; the stale `hooks/coaltipple-conductor.js` comment referencing `configure.mjs` as a byte-identical-`findGitRoot` copy (it never was one) corrected to match.
+
 ### Notes
 - Body ratchet baseline moves 26,720 → 41,596 chars — the rise is countable-home structure per the variance-walk ruling (enumerable FIRST, lean only after zero variance; skill-authoring.md §3b/§5). Re-derive live with `wc -c skills/coaltipple/SKILL.md`; never quote this number later.
 
