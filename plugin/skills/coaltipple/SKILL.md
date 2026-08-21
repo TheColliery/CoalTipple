@@ -111,6 +111,16 @@ A dot-FILE is CONFIG, a dot-DIR is STATE — the pair exists at both levels; do 
 | `references/lock.md` | on-demand — ONLY to REBUILD a missing/corrupt/incomplete ranking (F8), or for pin/fall/safety depth; a normal route never opens it |
 | `references/damage-control.md` | MANDATORY at its moments — a delegation failing mid-run (F2 detail · F6 · F10) · the memory-anchor flow (ASK 3) · a self error-report (the OFFER) |
 
+## Grants & denials (CLASSIFY-BLOCK — declared)
+
+| class | step it powers | grant | on denial |
+|---|---|---|---|
+| read | the merged config, the ranking, memory-anchor files, `state.json`/`proposed/` (F10 resume) | `Read` | an unreadable file is NOT the same as an absent one — never fall back to schema defaults silently: an unbuildable ranking → routing OFF (F8); an unreadable config → treat as `mode:'off'` (one of THE FRAME's five declared states, never a sixth); an unreadable journal → say the F10 resume net is not active this run, before delegating |
+| write | ASK 1's `fableConsent` persist, ASK 3's memory-anchor file, the delegation journal (`proposed/`, `state.json`) | `Write`/`Edit` | report the write failed, never claim it applied — a failed "always" persist means you WILL be asked again next spawn, say why (never let a silent re-ask read as a config bug); a failed journal write means F10's resume net does not exist this run |
+| spawn | delegate-DOWN / escalate-UP (Step 3) | `Agent`/`Task` (or `Bash` for a `claude -p` dispatch — its OWN grant) | **a refused GRANT is not F1's unavailable-MODEL fall** — say the delegation could not run and why, before landing on SELF; a silent SELF here is byte-identical to the routine SELF outcome and hides that routing never happened |
+
+A denial reaches the WORKER as a visible message and propagates NO further — not to the dispatcher, not as a catchable condition. Every row above states a branch or an explicit death; a step that dies says so in the output. Never report a denied step as done, skipped, or clean. No network row — the routing pipeline fetches nothing (the self-update check is the conductor's SessionStart channel, not this contract — Asks ledger, NOT-asks bullet). Grant denials are a SEPARATE mechanism from the F1–F11 fail-routes and P1–P17 prohibitions above (permission-level, not a routing decision) — both ledgers' counts are unchanged.
+
 ## Step 0 — the Lock (a valid ranking gates any SPAWN)
 
 Routing that will SPAWN needs a tier ranking — **the ranking is READ at spawn-time (Step 3), never per prompt: a SELF route reads nothing, and an idle session pays nothing.** It is **dead simple — no introspection, no model-list enumeration, no refresh cadence:**
