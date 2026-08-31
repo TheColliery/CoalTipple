@@ -44,11 +44,14 @@ export function applyAdapter(ccText, adapter) {
   return { text: out, todos, residual };
 }
 
-// AG scrapped 2026-06-16: Antigravity cannot actuate routing -- a spawned subagent inherits the
-// PARENT's model (invoke_subagent/define_subagent expose no model param) and AG has no separate
-// effort knob (low/mid/high are baked into model names). Confirmed by reading the live tool schema
-// in-app. The transform ENGINE (applyAdapter) is PARKED here for the first platform that passes
-// the spawn-model-param check. Add a platform entry here ONLY after verifying its spawn tool
-// accepts a worker model parameter -- read the ACTUAL tool schema, do not trust docs.
+// AG scrapped 2026-06-16, re-checked 2026-08-04: Antigravity's invoke_subagent DOES take a
+// per-spawn Model field (proven live) -- a bare spawn-model-param check PASSES it. It still
+// cannot actuate CT's routing: the Model field selects a GOOGLE tier regardless of the Claude
+// parent's vendor (a cross-vendor handoff, not a cheaper same-family worker), and no effort
+// knob exists anywhere in the schema. CT's never-down gate, qualityBar staircase, and Claude
+// alias floor don't map onto that shape. The transform ENGINE (applyAdapter) is PARKED here
+// for the first platform that passes BOTH checks. Add a platform entry here ONLY after
+// verifying its spawn tool takes a SAME-VENDOR worker model param AND a separate effort knob --
+// read the ACTUAL tool schema, do not trust docs, and do not stop at the model-param check alone.
 // Capability movement is reviewed monthly.
 export const PLATFORMS = []

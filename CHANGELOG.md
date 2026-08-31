@@ -2,6 +2,11 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.5.2] - 2026-08-31
+
+### Fixed
+- **CWK-033 findings-back — four doc-only corrections, no behavior change, all landed against shipped source (`skills/` is a `DIST_ITEMS` member).** Two false claims in prose fixed to match what the code actually does; two stale script comments carrying the same falsified mechanism claim, corrected and their platform-admission criterion tightened; and one relabel + one scope fix on `SKILL.md:12`'s platform-gate paragraph, found by INSPECT as a residue of the mechanism fix in this same unit: the sentence still opened `**BROKEN: Antigravity**`, the old retracted framing this room dropped everywhere else (README says "does NOT ship CT" / "a different, unbuilt product, not a missing spawn param," never "broken") — relabeled to `**NOT SUPPORTED: Antigravity**`. The following sentence ("On any platform without an agent-selectable worker model, do NOT pretend to delegate-down or escalate-up...") used to read as a consequence of the Antigravity example specifically; now that Antigravity's `invoke_subagent` DOES carry a per-spawn `Model` field (proven live 2026-08-04, just not one that maps onto CT's shape), AG no longer illustrates "no agent-selectable worker model at all" — reworded to "On a platform with no agent-selectable worker model at all, do NOT pretend..." so the rule's scope reads correctly without AG as its instance. Nothing else on the line touched; the corrected mechanism content (the `Model`-field description itself) was independently verified clean and left as-is. `plugin/skills/coaltipple/SKILL.md` rebuilt in sync (`build-plugin.mjs` then `build-dist.mjs`); `verify.mjs` PASS; `node scripts/test.mjs` 196 (195 pass, 1 pre-existing skip, 0 fail). **PATCH-shaped** (doc-only correction, no routing mechanic changed) — version not bumped here; ships at the department head's next release cut.
+
 ## [1.5.1] - 2026-08-22
 
 ### Changed

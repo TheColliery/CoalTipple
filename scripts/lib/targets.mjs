@@ -2,14 +2,16 @@
 // skills-dir map. Shared by install.mjs and verify.mjs so the two can never
 // drift. Same skill-dir conventions as CoalMine (source-grounded Jun 2026).
 //
-// CoalTipple ACTUATES routing only where an agent can pick a spawned worker's
-// model + effort. Confirmed: Claude Code (Agent/Task `model`). Candidate: Cursor
-// (Task tool `model` -- verify its spawn schema before trusting). A platform that
-// spawns but CANNOT pick the worker's model -- e.g. Antigravity, where the worker
-// INHERITS the parent model (invoke_subagent/define_subagent have no model param) --
-// does NOT cleanly self-degrade: a weak main HALLUCINATES a delegate-down it cannot
-// perform (observed live 2026-06-16). So do NOT install broadly; the SKILL.md
-// platform-gate warning is the guard. Antigravity scrapped 2026-06-16; capability
+// CoalTipple ACTUATES routing only where an agent can pick a SAME-VENDOR spawned
+// worker's model + effort. Confirmed: Claude Code (Agent/Task `model`). Candidate:
+// Cursor (Task tool `model` -- verify its spawn schema before trusting). A platform
+// whose spawn tool can't produce that shape -- e.g. Antigravity: invoke_subagent DOES
+// take a per-spawn Model field (proven live 2026-08-04), but it selects a cross-vendor
+// GOOGLE tier with no effort knob anywhere in the schema, so CT's never-down gate,
+// qualityBar staircase, and Claude alias floor don't map onto it -- does NOT cleanly
+// self-degrade: a weak main HALLUCINATES a delegate-down it cannot perform (observed
+// live 2026-06-16). So do NOT install broadly; the SKILL.md platform-gate warning is
+// the guard. Antigravity scrapped 2026-06-16, re-checked 2026-08-04; capability
 // movement reviewed monthly. The map below stays for install mechanics only.
 // Node built-ins only.
 

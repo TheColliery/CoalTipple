@@ -37,7 +37,7 @@ node scripts/test.mjs           # runs the zero-dependency test runner (node --t
 
 ## 🖥️ Supported Platforms
 
-CoalTipple is **Claude Code only**. Routing actuates only where an agent can pick a spawned worker's model and effort — Claude Code's `Agent`/`Task` `model` parameter. Antigravity is confirmed unable to actuate it (a spawned subagent inherits the parent model — no model parameter, no effort knob), so it is not supported. Cursor, Codex, Gemini CLI, Cline, and Windsurf are unverified and under monthly review.
+CoalTipple is **Claude Code only**. Routing actuates only where an agent can pick a spawned worker's model and effort — Claude Code's `Agent`/`Task` `model` parameter. Antigravity's `invoke_subagent` DOES take a per-spawn `Model` field (proven live 2026-08-04), but it selects a GOOGLE model regardless of the Claude parent's vendor and carries no effort knob — CT's never-down gate, qualityBar staircase, and Claude alias floor don't map onto that shape, so it is not supported. Cursor, Codex, Gemini CLI, Cline, and Windsurf are unverified and under monthly review.
 
 | Platform | Support Status |
 |---|---|
