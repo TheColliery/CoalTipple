@@ -253,13 +253,13 @@ function contract(cfg) {
     '[CoalTipple] Model/effort routing active. Before delegating, ensure a valid model-tier ranking exists (it is the alias floor haiku<sonnet<opus<fable + your modelTiers pins; fable = the top rung, a real-money spawn you ASK before using [once/always-this-project/no], else opus; rebuild it via the coaltipple skill if missing/corrupt). Then:',
     '- Routing degrades safe on any Claude Code version: an unfamiliar model classifies as a strong tier, a failed spawn falls to the next available, and the platform resolves each alias to its current best model at spawn-time (verified across the 2.1.x line).',
     '- DELEGATE-DOWN a task you can do but is large + cheap, to a lower tier — ONLY with a compact task-contract (goal+constraints+interface+done) AND verify the returned output on merge. Skip it for small tasks (spawn overhead beats the saving).',
-    '- ESCALATE-UP a task beyond the current tier for quality. Workers are leaves by policy (routing stays depth-0): give each a bounded task-contract so it RETURNS rather than spawning its own workers; a worker that fails RETURNS its result and the MAIN re-routes.',
+    '- ESCALATE-UP a task beyond the current tier for quality. A worker that fails RETURNS its result and the MAIN re-routes. Spawn/fan-out discipline is CoalFace\'s authority, not this contract\'s.',
     '- Grade by the deterministic rubric, not a model self-assessment. Opus is scarce: cheapest lever first - raise effort, then a stronger same-tier version (e.g. Opus 4.6 -> 4.8), before escalating the tier.',
     '- Sensitivity is graded by MEANING in ANY language: the keyword/complexity hints are an English-only fast-path, so a non-English prompt (Spanish/French/Thai/CJK - any script) fires NO keyword flag. Never read "no flag" as "not sensitive" - judge crypto/auth/payment/security by intent and keep never-down (delegate-down stays forbidden for sensitive work).',
     '- mode (.coaltipple.json, default auto): auto = route both directions per grade; delegation = delegate-down only (escalate-up suppressed, a budget-saving mode); escalation = escalate-up only (delegate-down suppressed, a quality mode); off = routing off, do it yourself. The sensitive HARD GATE overrides mode (sensitive is still never-down and may always escalate up).',
     '- Honor qualityBar (.coaltipple.json, 0-100, default 60): a result must clear it or climb the model ladder — start at the grade floor, verify vs the contract done-criteria by domain-appropriate means (code: tests/build; text: completeness; research: sourced claims), climb one rung if short, jump to the top tier if far below or out of attempts. 0 = anything passes (cheapest); 100 = climb until best.',
     langLine(cfg),
-    '- Consent + token spend: honor .coaltipple.json; never silently fan out costly work.',
+    '- Consent + token spend: honor .coaltipple.json for routing spend. Whether/how to fan out costly work is CoalFace\'s call, not this contract\'s.',
   ].join('\n');
 }
 

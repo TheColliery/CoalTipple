@@ -2,6 +2,11 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.5.3] - 2026-08-31
+
+### Changed
+- **CWK-022 — the conductor points at CoalFace for fan-out/spawn authority instead of restating it.** Owner ruling: CoalFace holds helper-spawn authority; CoalTipple grades the TIER for workers that already exist — those are different jobs, and the conductor's `contract()` text blurred them. Two `hooks/coaltipple-conductor.js` lines fixed: the ESCALATE-UP bullet dropped its restated "workers are leaves by policy / bounded task-contract / no nested spawning" clause (that belongs to `subagent-safety.md`, a baseline rule CoalFace does not own or amend — INSPECT grepped CF's own skill body and found zero hits for "bounded task-contracts," so the first-draft fix's pointer would have mis-attributed the rule) in favor of a bare pointer: "Spawn/fan-out discipline is CoalFace's authority, not this contract's." The Consent+token-spend bullet lost its own "never silently fan out costly work" assertion the same way. A first-draft fix also added "the MAIN re-routes **to the next tier**" — factually wrong (none of F1–F4 land on "the next tier": F3 climbs one rung effort-first, F4 jumps to the top, F1 falls a tier, F2 stops) and contradicting the very next bullet in the same array — caught by INSPECT and reverted to the original destination-free wording. No routing mechanic changed; conductor prose only. `plugin/hooks/coaltipple-conductor.js` rebuilt in sync.
+
 ## [1.5.2] - 2026-08-31
 
 ### Fixed
