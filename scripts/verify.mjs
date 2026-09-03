@@ -243,6 +243,39 @@ try {
   else fail('configure.mjs no longer imports projectConfigCandidates from config-load.mjs — project-config path DRIFTED from config-load (the SSoT)');
 } catch (e) { fail(`config-path sync: ${e.message}`); }
 
+// config-key drift (CWK-060, ported from CoalMine 0019e09): every config key NAMED on
+// a user-facing surface must RESOLVE in config-schema.mjs, or be declared in
+// PENDING_KEYS / NOT_CONFIG / RETIRED_KEYS / BLIND_KEYS (config-keys.mjs). PRINTS
+// per-locator coverage EVERY run (files scanned, notice-region LINE COUNTS, candidates
+// per surface, table rows) -- a reader can sanity-check the numbers rather than trust
+// the pass/fail line alone, and the line counts are what would catch a future
+// re-introduction of the sentinel-overrun class config-keys.mjs's own header documents.
+console.log('config keys:');
+try {
+  const ck = await import(pathToFileURL(path.join(repo, 'scripts', 'lib', 'config-keys.mjs')).href);
+  const { findings, coverage } = ck.checkConfigKeys({
+    schemaKeys: CONFIG_SCHEMA.map((e) => e.key),
+    mdFiles: [
+      path.join('skills', 'coaltipple', 'SKILL.md'),
+      path.join('skills', 'coaltipple', 'references', 'lock.md'),
+      path.join('skills', 'coaltipple', 'references', 'damage-control.md'),
+      'README.md',
+    ],
+    read: (f) => fs.readFileSync(path.join(repo, f), 'utf8'),
+  });
+  const hard = findings.filter((f) => f.level !== 'SKIP');
+  const blindSkips = findings.filter((f) => f.level === 'SKIP' && f.msg.startsWith('blind to'));
+  const scope = blindSkips.length ? 'every DETECTABLE config key' : 'every config key';
+  if (hard.length === 0) ok(`${scope} named across ${coverage.mdFiles.length} doc + ${coverage.noticeSites.length} notice-site + ${coverage.keyTables.length} key-table surface(s) resolves in the schema`);
+  for (const f of findings) {
+    if (f.level === 'SKIP') console.log('  --   ' + f.msg);
+    else fail(f.msg);
+  }
+  for (const m of coverage.mdFiles) console.log(`  cov  markdown ${m.file}: ${m.readable ? `${m.candidates} candidate(s)` : 'UNREADABLE'}`);
+  for (const n of coverage.noticeSites) console.log(`  cov  notice "${n.name}" (${n.file}): ${n.readable ? `${n.lines} line(s), ${n.candidates} candidate(s)` : 'UNREADABLE'}`);
+  for (const t of coverage.keyTables) console.log(`  cov  key table ${t.file} "${t.heading}": ${t.readable ? `${t.rows} row(s)` : 'UNREADABLE'}`);
+} catch (e) { fail(`config-key check crashed: ${e.message}`); }
+
 console.log('cross-platform SKILL transform engine (PARKED -- no active platform; add one only after verifying its spawn tool takes a worker model param):');
 try {
   const bs = await import(pathToFileURL(path.join(repo, 'scripts', 'build-skill.mjs')).href);

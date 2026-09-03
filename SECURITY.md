@@ -27,7 +27,7 @@ git tag -v "$(git describe --tags --abbrev=0)"
 ## 📦 Dist Integrity
 
 CoalTipple is distributed as source (human-auditable skill Markdown). The plugin distribution is generated at publish time:
-* **Pre-commit/Pre-push Gates:** `node scripts/verify.mjs` automatically verifies config schema matching, files presence, and ensures the conductor is in sync with `scripts/lib/keywords.mjs` to prevent silent drift.
+* **Pre-commit/Pre-push Gates:** `node scripts/verify.mjs` automatically verifies config schema matching, files presence, ensures the conductor is in sync with `scripts/lib/keywords.mjs`, and flags a **detectable** config key documented on a user-facing surface (SKILL.md, its references, README, and the conductor's notice regions) that no longer resolves in the schema — to prevent silent drift.
 * **Reproducible Builds:** Run `node scripts/build-dist.mjs` to regenerate the plugin distribution from source, then `node scripts/verify.mjs` to gate it against source — the parity check matches byte-for-byte, except `.js`/`.json`/`.md` files (today's shipped extensions) are compared EOL-normalized: a CRLF-vs-LF checkout of identical content is not flagged as drift, but any other content difference still is.
 * **Test Suite:** Run `node scripts/test.mjs` to execute zero-dependency unit tests.
 
