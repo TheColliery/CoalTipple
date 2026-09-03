@@ -490,3 +490,5 @@ The v1 core — Claude Code first, built and dogfooded across its model tiers in
 
 - Cross-platform support beyond Claude Code (the three pluggable per-platform functions: model classification, supported efforts, spawn encoding), surfaced by dogfooding on each new agent.
 - ROI telemetry (an A/B token benchmark), a published marketplace listing, and git pre-commit/pre-push hooks at git-init time.
+
+<!-- CWK-058 doc-only proof push: verifies both required checks fire on a docs path. -->
