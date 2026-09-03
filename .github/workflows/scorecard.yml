@@ -13,6 +13,14 @@ on:
 permissions:
   contents: read
 
+# cancel-in-progress: FALSE -- this job PUBLISHES (publish_results: true, an external
+# OpenSSF badge/API write) and uploads a SARIF file GitHub persists as a code-scanning
+# result. Cancelling mid-run risks a half-published score or a half-uploaded SARIF; let
+# a superseded run finish rather than leave external state half-written.
+concurrency:
+  group: scorecard-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   analysis:
     name: Scorecard analysis

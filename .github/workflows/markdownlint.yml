@@ -13,6 +13,12 @@ on:
 permissions:
   contents: read
 
+# cancel-in-progress: TRUE -- report-only lint (continue-on-error below), reads and
+# annotates, touches no external state. A superseded run has nothing to leave half-done.
+concurrency:
+  group: markdownlint-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint:
     runs-on: ubuntu-latest
