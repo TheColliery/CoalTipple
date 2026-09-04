@@ -7,6 +7,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { execFileSync } from 'node:child_process';
 import { CONFIG_SCHEMA, validateValue } from './lib/config-schema.mjs';
 import { stripJsonc } from './lib/jsonc.mjs';
 
@@ -275,6 +276,138 @@ try {
   for (const n of coverage.noticeSites) console.log(`  cov  notice "${n.name}" (${n.file}): ${n.readable ? `${n.lines} line(s), ${n.candidates} candidate(s)` : 'UNREADABLE'}`);
   for (const t of coverage.keyTables) console.log(`  cov  key table ${t.file} "${t.heading}": ${t.readable ? `${t.rows} row(s)` : 'UNREADABLE'}`);
 } catch (e) { fail(`config-key check crashed: ${e.message}`); }
+
+console.log('pointer check (ship-text path citations resolve in this repo -- scripts/lib/pointer-check.mjs owns the detection rule, the funnel measurement, the three CoalTipple-specific fixes, and the four named blind spots; PATH only, section/symbol not checked -- CoalMine\'s + CoalBoard\'s own measurement is why that half stays unbuilt):');
+try {
+  const pc = await import(pathToFileURL(path.join(repo, 'scripts', 'lib', 'pointer-check.mjs')).href);
+  // SAFE READ, not a direct fs.readFileSync: a hermetic sandbox test (scripts/verify.test.mjs)
+  // spawns this whole script against a NARROWED copy of the repo (VERIFY_ITEMS there does not
+  // include README.md/SECURITY.md/CONTRIBUTING.md/PRIVACY.md -- it exists to test board #64's
+  // check in isolation, not to mirror the full tree). Reading those four DIRECTLY, unguarded,
+  // crashed the whole pointer-check block there (ENOENT), which failed the ENTIRE gate on a
+  // sandbox that never claimed to carry every file -- caught by CWK-075's own full-suite
+  // re-run, per this room's own red-first/green-after discipline (scripts-quality.md: "run
+  // the FULL suite ... before every commit"). checkPointers() already has a graceful path for
+  // exactly this (an unreadable surface -> SKIP, never a crash) -- this helper is what lets a
+  // per-file read failure REACH that path instead of throwing past it.
+  const pcSafeRead = (rel) => { try { return fs.readFileSync(path.join(repo, rel), 'utf8'); } catch { return undefined; } };
+  const refsDir = path.join(repo, 'skills', 'coaltipple', 'references');
+  const commandsDir = path.join(repo, 'commands');
+  const pcSurfaces = [
+    { label: 'skills/coaltipple/SKILL.md', text: pcSafeRead('skills/coaltipple/SKILL.md'), dir: 'skills/coaltipple' },
+    ...fs.readdirSync(refsDir).filter((f) => f.endsWith('.md')).map((f) => {
+      const rel = path.join('skills', 'coaltipple', 'references', f).replace(/\\/g, '/');
+      return { label: rel, text: pcSafeRead(rel), dir: 'skills/coaltipple/references' };
+    }),
+    ...fs.readdirSync(commandsDir).filter((f) => f.endsWith('.md')).map((f) => {
+      const rel = path.join('commands', f).replace(/\\/g, '/');
+      return { label: rel, text: pcSafeRead(rel), dir: 'commands' };
+    }),
+    ...['README.md', 'SECURITY.md', 'CONTRIBUTING.md', 'PRIVACY.md'].map((f) => ({
+      label: f, text: pcSafeRead(f), dir: '',
+    })),
+    {
+      label: 'CHANGELOG.md',
+      text: pcSafeRead('CHANGELOG.md'),
+      historyOnly: true,
+      dir: '',
+    },
+  ];
+  // SCOPE, matching CWK-075's own dispatch (not CoalBoard's wider roster): the 8 surfaces
+  // above are the ones this ticket measured and fixed against. scripts/ + hooks/ line-comment
+  // scanning (which CoalBoard's own verify.mjs additionally does) is deliberately NOT added
+  // here -- widening the surface set would change the funnel numbers away from what this
+  // unit's own measurement, report, and INSPECT re-derivation are against. A future ticket
+  // may extend it; this one does not, to keep the reported numbers reproducible.
+  const PC_OUR_ROOTS = new Set(['commands', 'hooks', 'platform-configs', 'plugin', 'scripts', 'skills']);
+  // NO-GIT FALLBACK ONLY (CWK-075 findings-back MEDIUM-1) -- when git is unavailable, this is
+  // what pcResolve degrades to. When git IS available (the normal case), the LIVE-DERIVED set
+  // below is what actually gates; this literal is never consulted for the real check in that
+  // case, only compared against the derivation as a drift self-check (below), so it does not
+  // silently go stale itself.
+  const PC_IGNORED_ROOTS_FALLBACK = new Set(['.claude', '.agents', 'AGENTS.md', 'CLAUDE.md', 'COALTIPPLE_DESIGN.md', 'COALTIPPLE_RESIDENT_DISPATCH_DESIGN.md', 'MEMORY.md', 'dogfood', 'skillspector-20260702.json', 'skills-lock.json']);
+  // no-external-assumption (AGENTS.md): git is an OPTIONAL enhancement with a graceful
+  // fallback, never a hard requirement -- checked ONCE, not per-call, so the same sandbox
+  // (verify.test.mjs's fs.cpSync copy, no `.git` at all) does not pay a failing `git`
+  // spawn for every candidate. Inside a real work tree, tracked/untracked/missing keeps its
+  // full three-way meaning via `git ls-files`. Outside one, the distinction this gate exists
+  // to draw (reachable from a CLONE vs merely present on THIS disk) cannot be asked of git at
+  // all -- degrades to exists-on-disk-is-good-enough (an existing file reads 'tracked', never
+  // 'untracked'), which is the correct direction for a throwaway sandbox: `.gitignore`-rooted
+  // citations are still caught, unconditionally, by the ignoredRoots branch above (pure string
+  // membership, never touches git), so the only property actually lost here is catching a
+  // genuinely untracked-but-not-gitignored stray file while running with no `.git` present --
+  // narrower than normal operation, never wider.
+  let pcHasGit = true;
+  try { execFileSync('git', ['rev-parse', '--is-inside-work-tree'], { cwd: repo, stdio: 'pipe' }); }
+  catch { pcHasGit = false; }
+  // `git check-ignore -q -- <name>` exits 0 = ignored, 1 = not ignored, anything ELSE (128,
+  // ENOENT, ...) is a genuine git failure -- NEVER read as "not ignored", or a git error would
+  // silently reopen exactly the silent-narrowing hole this derivation exists to close.
+  function pcCheckIgnore(name) {
+    try {
+      execFileSync('git', ['check-ignore', '-q', '--', name], { cwd: repo, stdio: 'pipe' });
+      return true;
+    } catch (e) {
+      if (e.status === 1) return false;
+      throw e;
+    }
+  }
+  // DERIVE ignoredRoots FROM GIT (CWK-075 findings-back MEDIUM-1). The dispatch's own concern:
+  // a hand-kept literal drifts silently the moment .gitignore grows a root (measured -- this
+  // room's own .gitignore has grown twice recently) and a citation into the newly-ignored root
+  // then matches neither ourRoots nor ignoredRoots, dropped as "someone else's tree" instead of
+  // FAILing, under a green tick. Fixed at the root: when git is available, walk every top-level
+  // entry (`fs.readdirSync(repo)`, the same shape INSPECT itself used -- "git check-ignore over
+  // ls -A") and ask git directly, every run, rather than trusting a name someone wrote down
+  // once. A mid-walk git failure (not just "not ignored") aborts the derivation and falls back
+  // to the literal WHOLE, never a partial derived set -- a half-derived set is worse than the
+  // stale literal, because it looks freshly computed while missing an unknown number of roots.
+  function pcDeriveIgnoredRoots() {
+    if (!pcHasGit) return PC_IGNORED_ROOTS_FALLBACK;
+    try {
+      const out = new Set();
+      for (const name of fs.readdirSync(repo)) { if (pcCheckIgnore(name)) out.add(name); }
+      return out;
+    } catch {
+      return PC_IGNORED_ROOTS_FALLBACK;
+    }
+  }
+  const PC_IGNORED_ROOTS = pcDeriveIgnoredRoots();
+  // SELF-CHECK, so the no-git FALLBACK constant itself cannot go stale unnoticed: when git IS
+  // available (the normal case, so the comparison is trustworthy), FAIL if the live-derived
+  // set contains a root the hand-kept fallback does not know about -- the fallback is meant to
+  // be a safe (super-set-or-equal) approximation for when git is absent, and a root missing
+  // from it would silently narrow coverage on that path too.
+  if (pcHasGit) {
+    for (const r of PC_IGNORED_ROOTS) {
+      if (!PC_IGNORED_ROOTS_FALLBACK.has(r)) {
+        fail(`pointer check: '${r}' is gitignored (live-derived) but absent from the no-git PC_IGNORED_ROOTS_FALLBACK literal in verify.mjs -- add it, or the no-git degrade path silently stops catching it`);
+      }
+    }
+  }
+  function pcResolve(rel) {
+    if (!pcHasGit) return fs.existsSync(path.join(repo, rel)) ? 'tracked' : 'missing';
+    try {
+      execFileSync('git', ['ls-files', '--error-unmatch', '--', rel], { cwd: repo, stdio: 'pipe' });
+      return 'tracked';
+    } catch {
+      return fs.existsSync(path.join(repo, rel)) ? 'untracked' : 'missing';
+    }
+  }
+  const pcFindings = pc.checkPointers({
+    surfaces: pcSurfaces,
+    ourRoots: PC_OUR_ROOTS,
+    ignoredRoots: PC_IGNORED_ROOTS,
+    resolve: pcResolve,
+  });
+  const pcHard = pcFindings.filter((f) => f.level !== 'SKIP');
+  for (const f of pcFindings) {
+    if (f.level === 'SKIP') console.log('  --   ' + f.msg);
+  }
+  if (pcHard.length === 0) ok(`every in-scope path citation resolves or is declared (${pcFindings.checked} checked, 8 surfaces, ${PC_OUR_ROOTS.size} ourRoots, ${PC_IGNORED_ROOTS.size} ignoredRoots -- ${pcHasGit ? 'git-derived' : 'NO-GIT FALLBACK literal'})`);
+  else pcHard.forEach((f) => fail(f.msg));
+} catch (e) { fail(`pointer check crashed: ${e.message}`); }
 
 console.log('cross-platform SKILL transform engine (PARKED -- no active platform; add one only after verifying its spawn tool takes a worker model param):');
 try {
