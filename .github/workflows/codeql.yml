@@ -24,6 +24,17 @@ env:
 # cancel-in-progress: TRUE -- a superseded CodeQL run simply never uploads its SARIF, and the
 # previous analysis stands; nothing is left half-written. The newer push analyzes the newer tree,
 # which is the state anyone cares about.
+#
+# DELIBERATELY THE OPPOSITE OF scorecard.yml's `false` (CWK-074 findings-back, checked
+# because both upload a SARIF to the same GitHub code-scanning system -- superficially the
+# same operation, cancelled two different ways). The difference is real, not an oversight:
+# this job's `github/codeql-action/analyze` step is ONE atomic action that computes AND
+# uploads in a single external write -- there is no OUR-observable half-done state to
+# interrupt. scorecard.yml's job makes TWO SEPARATE external writes in TWO SEPARATE steps to
+# TWO DIFFERENT systems (its own `publish_results: true` to the OpenSSF Scorecard API, THEN a
+# separate `upload-sarif` step to this same GitHub code-scanning system) -- a cancel landing
+# between those two steps leaves OpenSSF holding a fresh score while GitHub code-scanning
+# still shows the stale SARIF, a real divergence this job's single-step shape cannot produce.
 concurrency:
   group: codeql-${{ github.ref }}
   cancel-in-progress: true
@@ -66,7 +77,26 @@ jobs:
           # FAIL-SAFE POLARITY, and it is the whole safety argument: anything this step
           # cannot determine counts as CODE, never as docs-only. A wrong "docs-only" skips a
           # real analysis silently; a wrong "code" costs one cheap job. Never invert this.
-          emit() { echo "code=$1" >> "$GITHUB_OUTPUT"; echo "files<<EOF" >> "$GITHUB_OUTPUT"; echo "${2:-}" >> "$GITHUB_OUTPUT"; echo "EOF" >> "$GITHUB_OUTPUT"; }
+          #
+          # RUN-TIME RANDOM HEREDOC DELIMITER (CWK-074, shell-injection findings-back). A
+          # FIXED delimiter ("EOF") is forgeable: a PR whose diff contains a file literally
+          # named `EOF` terminates the $GITHUB_OUTPUT heredoc body early, and a later line in
+          # that diff can then be read as a SECOND `code=` assignment -- GitHub's own
+          # multi-line-output parser takes the LAST same-named key, so a forged `code=false`
+          # after a real `code=true` silently flips the classifier's own output.
+          # WHY $RANDOM SUFFICES, WRITTEN DOWN SO NOBODY "STRENGTHENS" THIS LATER: the defense
+          # works by ORDERING, not entropy. `$changed` (the attacker's PR content) is already
+          # frozen on disk before this line runs; the delimiter is generated AFTER that, so no
+          # attacker can craft a matching filename in advance. $RANDOM not being a CSPRNG is
+          # irrelevant -- the property that matters is "generated after the untrusted input is
+          # fixed", not "hard to brute-force".
+          emit() {
+            local delim="EOF_${RANDOM}${RANDOM}${RANDOM}"
+            echo "code=$1" >> "$GITHUB_OUTPUT"
+            echo "files<<$delim" >> "$GITHUB_OUTPUT"
+            echo "${2:-}" >> "$GITHUB_OUTPUT"
+            echo "$delim" >> "$GITHUB_OUTPUT"
+          }
           if [ "${{ github.event_name }}" != "push" ]; then
             echo "not a push event -- treating as code (fail-safe)"; emit true ""; exit 0
           fi
@@ -111,7 +141,17 @@ jobs:
       # HONESTY STEP (CWK-058), FIRST so it is the first thing a reader sees. This check now
       # fires on every push, so it must distinguish "analyzed and clean" from "analyzed
       # nothing" without anyone reading a commit message.
+      #
+      # ATTACKER-CONTROLLED VALUES ARRIVE VIA env:, NEVER VIA ${{ }} IN THE SCRIPT BODY
+      # (CWK-074, shell-injection findings-back) -- same reasoning as ci.yml's `all-green`
+      # honesty step, ported here: `needs.changes.outputs.code`/`.files` trace to
+      # `git diff --name-only`, filenames a PR AUTHOR chooses, and a direct ${{ }}
+      # interpolation is textually substituted into this script's SOURCE before bash parses
+      # it. Routed through `env:` and read as "$CODE"/"$FILES" instead.
       - name: what this check actually did
+        env:
+          CODE: ${{ needs.changes.outputs.code }}
+          FILES: ${{ needs.changes.outputs.files }}
         run: |
           if [ "${{ needs.changes.result }}" != "success" ]; then
             {
@@ -123,7 +163,7 @@ jobs:
             echo "changed-paths=${{ needs.changes.result }} -- refusing"
             exit 1
           fi
-          if [ "${{ needs.changes.outputs.code }}" = "true" ]; then
+          if [ "$CODE" = "true" ]; then
             {
               echo "### analyze (javascript): a REAL CodeQL analysis ran"
               echo ""
@@ -143,7 +183,7 @@ jobs:
               echo ""
               echo "Changed paths:"
               echo '```'
-              echo "${{ needs.changes.outputs.files }}"
+              echo "$FILES"
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
           fi

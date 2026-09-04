@@ -17,6 +17,16 @@ permissions:
 # OpenSSF badge/API write) and uploads a SARIF file GitHub persists as a code-scanning
 # result. Cancelling mid-run risks a half-published score or a half-uploaded SARIF; let
 # a superseded run finish rather than leave external state half-written.
+#
+# DELIBERATELY THE OPPOSITE OF codeql.yml's `true` (CWK-074 findings-back, checked because
+# both this job and codeql.yml upload a SARIF to the same GitHub code-scanning system --
+# superficially the same operation, cancelled two different ways here). The difference is
+# real, not an oversight: THIS job makes TWO SEPARATE external writes in TWO SEPARATE steps
+# to TWO DIFFERENT systems -- `ossf/scorecard-action`'s own `publish_results: true` to the
+# OpenSSF Scorecard API, THEN a separate `upload-sarif` step to GitHub code-scanning -- so a
+# cancel landing between those two steps leaves OpenSSF holding a fresh score while GitHub
+# code-scanning still shows the stale SARIF. codeql.yml's own `analyze` step is ONE atomic
+# action that computes AND uploads in a single external write, with no such window.
 concurrency:
   group: scorecard-${{ github.ref }}
   cancel-in-progress: false

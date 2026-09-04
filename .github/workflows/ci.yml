@@ -68,7 +68,26 @@ jobs:
           # FAIL-SAFE POLARITY, and it is the whole safety argument: anything this step
           # cannot determine counts as CODE, never as docs-only. A wrong "docs-only" skips a
           # real analysis silently; a wrong "code" costs one cheap job. Never invert this.
-          emit() { echo "code=$1" >> "$GITHUB_OUTPUT"; echo "files<<EOF" >> "$GITHUB_OUTPUT"; echo "${2:-}" >> "$GITHUB_OUTPUT"; echo "EOF" >> "$GITHUB_OUTPUT"; }
+          #
+          # RUN-TIME RANDOM HEREDOC DELIMITER (CWK-074, shell-injection findings-back). A
+          # FIXED delimiter ("EOF") is forgeable: a PR whose diff contains a file literally
+          # named `EOF` terminates the $GITHUB_OUTPUT heredoc body early, and a later line in
+          # that diff can then be read as a SECOND `code=` assignment -- GitHub's own
+          # multi-line-output parser takes the LAST same-named key, so a forged `code=false`
+          # after a real `code=true` silently flips the classifier's own output.
+          # WHY $RANDOM SUFFICES, WRITTEN DOWN SO NOBODY "STRENGTHENS" THIS LATER: the defense
+          # works by ORDERING, not entropy. `$changed` (the attacker's PR content) is already
+          # frozen on disk before this line runs; the delimiter is generated AFTER that, so no
+          # attacker can craft a matching filename in advance. $RANDOM not being a CSPRNG is
+          # irrelevant -- the property that matters is "generated after the untrusted input is
+          # fixed", not "hard to brute-force".
+          emit() {
+            local delim="EOF_${RANDOM}${RANDOM}${RANDOM}"
+            echo "code=$1" >> "$GITHUB_OUTPUT"
+            echo "files<<$delim" >> "$GITHUB_OUTPUT"
+            echo "${2:-}" >> "$GITHUB_OUTPUT"
+            echo "$delim" >> "$GITHUB_OUTPUT"
+          }
           if [ "${{ github.event_name }}" != "push" ]; then
             echo "not a push event -- treating as code (fail-safe)"; emit true ""; exit 0
           fi
@@ -138,7 +157,20 @@ jobs:
       # `needs.changes.result != 'success'` first and exits 1 regardless of what this step
       # writes) -- but the falsehood landed inside the one step whose entire purpose is
       # honesty, ported from codeql.yml's own first branch, worded consistently with it.
+      #
+      # ATTACKER-CONTROLLED VALUES ARRIVE VIA env:, NEVER VIA ${{ }} IN THE SCRIPT BODY
+      # (CWK-074, shell-injection findings-back). `needs.changes.outputs.code`/`.files`
+      # both trace to `git diff --name-only`, which emits filenames a PR AUTHOR chooses --
+      # unlike `needs.changes.result` (a job-result enum), these are attacker-controlled
+      # text. GitHub Actions expands `${{ }}` by TEXTUAL SUBSTITUTION into the run: SOURCE
+      # before bash ever parses it, so a filename like `x"; touch pwned; ".md` interpolated
+      # directly would break out of the double quotes and execute. Routing the value through
+      # `env:` and referencing it as a shell VARIABLE ("$CODE"/"$FILES") means bash receives
+      # it as DATA, never as script text -- the same fix as CoalHearth's, applied here.
       - name: what this check actually did
+        env:
+          CODE: ${{ needs.changes.outputs.code }}
+          FILES: ${{ needs.changes.outputs.files }}
         run: |
           if [ "${{ needs.changes.result }}" != "success" ]; then
             {
@@ -147,7 +179,7 @@ jobs:
               echo "\`changed-paths\` finished as \`${{ needs.changes.result }}\`, so this check cannot"
               echo "tell whether a suite run was needed. It refuses rather than reporting either way."
             } >> "$GITHUB_STEP_SUMMARY"
-          elif [ "${{ needs.changes.outputs.code }}" = "true" ]; then
+          elif [ "$CODE" = "true" ]; then
             {
               echo "### all-green: the suite RAN"
               echo ""
@@ -166,7 +198,7 @@ jobs:
               echo ""
               echo "Changed paths:"
               echo '```'
-              echo "${{ needs.changes.outputs.files }}"
+              echo "$FILES"
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
           fi
