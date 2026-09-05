@@ -363,11 +363,43 @@ try {
   // once. A mid-walk git failure (not just "not ignored") aborts the derivation and falls back
   // to the literal WHOLE, never a partial derived set -- a half-derived set is worse than the
   // stale literal, because it looks freshly computed while missing an unknown number of roots.
+  // CWK-078, corrected by findings-back MEDIUM-1: `pcFedCount` and `pcDerived` RECORD what
+  // happened during the walk -- neither changes the walk, its order, its
+  // git-failure-aborts-to-whole-fallback behaviour, or the returned Set.
+  //
+  // `pcFedCount` counts entries ACTUALLY FED to `pcCheckIgnore` -- incremented AFTER each call
+  // returns, inside the loop, never set once from `entries.length` before the loop runs. The
+  // first version of this fix got this backwards: it recorded the INTENDED count
+  // (`entries.length`, taken right after `fs.readdirSync`) rather than the ACTUAL one, so a
+  // mid-walk abort at entry 5 of 29 still reported "29 fed" -- a number the walk never
+  // produced, on the very ticket about a number the instrument does not produce. Counting
+  // inside the loop means a partial walk's fed count is exactly how many `pcCheckIgnore` calls
+  // actually returned before the abort, never the size of the array it started from.
+  //
+  // `pcDerived` is `true` only once the FULL walk completes and `out` is about to be returned
+  // -- never inferred from `pcHasGit`, which only says git EXISTS, not that the derivation
+  // FINISHED. A mid-walk failure (pcCheckIgnore throws a non-1 status) leaves `pcDerived`
+  // false while `pcHasGit` stays true, and THAT distinction is what the pass line now keys its
+  // source label on, not `pcHasGit` alone -- the original bug's own mislabel (a mid-walk abort
+  // printing "git-derived" while `PC_IGNORED_ROOTS_FALLBACK` is what's actually in use).
+  // `pcTotalEntries` is a pure REPORTING denominator (how many top-level entries readdir
+  // found), recorded once for the abort message's "N of M" shape -- it is never read by the
+  // walk, the loop, or the returned Set, only by the pass line below.
+  let pcFedCount = 0;
+  let pcTotalEntries = null;
+  let pcDerived = false;
   function pcDeriveIgnoredRoots() {
     if (!pcHasGit) return PC_IGNORED_ROOTS_FALLBACK;
     try {
+      const entries = fs.readdirSync(repo);
+      pcTotalEntries = entries.length;
       const out = new Set();
-      for (const name of fs.readdirSync(repo)) { if (pcCheckIgnore(name)) out.add(name); }
+      for (const name of entries) {
+        const ignored = pcCheckIgnore(name);
+        pcFedCount++;
+        if (ignored) out.add(name);
+      }
+      pcDerived = true;
       return out;
     } catch {
       return PC_IGNORED_ROOTS_FALLBACK;
@@ -405,7 +437,39 @@ try {
   for (const f of pcFindings) {
     if (f.level === 'SKIP') console.log('  --   ' + f.msg);
   }
-  if (pcHard.length === 0) ok(`every in-scope path citation resolves or is declared (${pcFindings.checked} checked, 8 surfaces, ${PC_OUR_ROOTS.size} ourRoots, ${PC_IGNORED_ROOTS.size} ignoredRoots -- ${pcHasGit ? 'git-derived' : 'NO-GIT FALLBACK literal'})`);
+  // CWK-078 fix: `${pcSurfaces.length}` replaces a former TYPED "8 surfaces" literal that
+  // disagreed with the real walked array (12) -- a CoalHearth-class defect (a number in a
+  // gate's own pass line the instrument does not produce). And the ignoredRoots ENUMERATION
+  // is now self-evidencing every run, not just its final count: `N fed` names how many
+  // TOP-LEVEL ENTRIES (files and hidden dot-entries included, per fs.readdirSync -- not a
+  // directories-only walk, which is the exact shape that exposed two sibling rooms) were
+  // handed to `git check-ignore`, so a reader sees the ENUMERATION'S SHAPE, never only its
+  // output count.
+  //
+  // THREE PATHS, findings-back MEDIUM-1 -- the source label keys on `pcDerived` (did the walk
+  // actually FINISH), never on `pcHasGit` (does git merely EXIST) alone, because those two can
+  // disagree: git present + a mid-walk failure leaves `pcHasGit` true while `pcDerived` stays
+  // false, and the FALLBACK is what is actually in `PC_IGNORED_ROOTS` at that point.
+  //   1. success (pcHasGit && pcDerived)   -> "N top-level entries fed ..." + "-- git-derived"
+  //   2. no-git (!pcHasGit)                -> "no-git: nothing fed ..." + "-- NO-GIT FALLBACK literal"
+  //   3. mid-walk abort (pcHasGit && !pcDerived) -> names the abort EXPLICITLY: how many of how
+  //      many entries were fed before the failure, and that the fallback literal is what is
+  //      actually in use despite git being present -- the exact case the prior version of this
+  //      fix mislabelled as "git-derived" while printing the pre-abort entries.length as if it
+  //      were the true fed count (findings-back MEDIUM-1's own finding, corrected here).
+  let pcFedWording;
+  let pcSourceLabel;
+  if (pcHasGit && pcDerived) {
+    pcFedWording = `${pcFedCount} top-level entries fed to git check-ignore (files + hidden dot-entries included)`;
+    pcSourceLabel = 'git-derived';
+  } else if (!pcHasGit) {
+    pcFedWording = 'no-git: nothing fed, NO-GIT FALLBACK literal used';
+    pcSourceLabel = 'NO-GIT FALLBACK literal';
+  } else {
+    pcFedWording = `ABORTED after ${pcFedCount} of ${pcTotalEntries} top-level entries -- git check-ignore failed mid-walk`;
+    pcSourceLabel = 'NO-GIT FALLBACK literal -- derivation ABORTED mid-walk despite git being present';
+  }
+  if (pcHard.length === 0) ok(`every in-scope path citation resolves or is declared (${pcFindings.checked} checked, ${pcSurfaces.length} surfaces, ${PC_OUR_ROOTS.size} ourRoots, ${pcFedWording}, ${PC_IGNORED_ROOTS.size} ignoredRoots -- ${pcSourceLabel})`);
   else pcHard.forEach((f) => fail(f.msg));
 } catch (e) { fail(`pointer check crashed: ${e.message}`); }
 

@@ -43,3 +43,29 @@ test('verify.mjs negative path: an over-cap .claude-plugin/plugin.json descripti
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+test('verify.mjs pointer-check pass line: the printed surface count matches the ACTUAL walked set (CWK-078, CoalHearth-class -- a typed number the instrument does not produce)', () => {
+  // Spawns the REAL verify.mjs against the REAL repo, no sandbox -- the pointer-check block
+  // reads README/SECURITY/CONTRIBUTING/PRIVACY, none of which VERIFY_ITEMS above copies (that
+  // list exists for board #64's narrower check), so a synthetic copy would need to duplicate
+  // pointer-check's own surface roster just to test it -- a maintenance burden this test
+  // avoids by using the live tree main already runs against.
+  const run = spawnSync(process.execPath, [path.join(repo, 'scripts', 'verify.mjs')], { encoding: 'utf8', timeout: 60000, cwd: repo });
+  assert.equal(run.status, 0, `verify.mjs must PASS on the real repo, got:\n${run.stdout}${run.stderr}`);
+
+  const m = run.stdout.match(/every in-scope path citation resolves or is declared \((\d+) checked, (\d+) surfaces,/);
+  assert.ok(m, `pointer-check pass line not found or not in the expected shape:\n${run.stdout}`);
+  const printedSurfaces = Number(m[2]);
+
+  // Independently recompute the expected surface count from the SAME live tree, by the SAME
+  // rule verify.mjs's own pcSurfaces array uses (SKILL.md · every references/*.md ·
+  // every commands/*.md · the 4 fixed root docs · CHANGELOG.md) -- never import verify.mjs's
+  // internals or re-run its walk; a fresh, independent count is what actually catches a
+  // typed literal silently drifting from the real array.
+  const refsCount = fs.readdirSync(path.join(repo, 'skills', 'coaltipple', 'references')).filter((f) => f.endsWith('.md')).length;
+  const commandsCount = fs.readdirSync(path.join(repo, 'commands')).filter((f) => f.endsWith('.md')).length;
+  const expectedSurfaces = 1 /* SKILL.md */ + refsCount + commandsCount + 4 /* README/SECURITY/CONTRIBUTING/PRIVACY */ + 1 /* CHANGELOG.md */;
+
+  assert.equal(printedSurfaces, expectedSurfaces,
+    `pointer-check pass line printed ${printedSurfaces} surfaces but the live tree has ${expectedSurfaces} -- a typed/stale number in the pass line, the exact CWK-078 defect this test exists to catch`);
+});
