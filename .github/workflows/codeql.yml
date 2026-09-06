@@ -192,10 +192,10 @@ jobs:
       # config-file (not the exemplar's `queries: security-and-quality`) is a NAMED room
       # divergence, unchanged by this port -- CoalTipple's own security-and-quality query
       # pack selection lives in this file, not inline.
-      - uses: github/codeql-action/init@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4
+      - uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
         if: needs.changes.result == 'success' && needs.changes.outputs.code == 'true'
         with:
           languages: javascript-typescript
           config-file: ./.github/codeql/codeql-config.yml
-      - uses: github/codeql-action/analyze@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4
+      - uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
         if: needs.changes.result == 'success' && needs.changes.outputs.code == 'true'
