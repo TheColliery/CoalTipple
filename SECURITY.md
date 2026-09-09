@@ -7,7 +7,7 @@ CoalTipple is verified under the same framework as **[CoalMine](https://github.c
 ## 🔒 Reporting a Vulnerability
 
 Report a vulnerability via **GitHub private vulnerability reporting** — [Security → Report a vulnerability](https://github.com/TheColliery/CoalTipple/security/advisories/new). Do not open a public issue for a security finding.
-* **In scope:** the conductor hook's routing/sensitive never-down gate, the config-cascade merge-safety clamp, the installer's file-write and self-target paths, `.proposed/`/damage-control, and anything else that could make the skill route, spend, or write somewhere it shouldn't.
+* **In scope:** the conductor hook's routing/sensitive never-down gate, the config-cascade merge-safety clamp, the installer's file-write and self-target paths, `.claude/.coaltipple/proposed/`/damage-control, and anything else that could make the skill route, spend, or write somewhere it shouldn't.
 * **Out of scope:** a SkillSpector false positive, a style nit, or anything without a security impact — those go through the project's normal (public) issue flow instead.
 * **What to expect:** acknowledged promptly, triaged, and coordinated disclosure once a fix ships — no fixed SLA is committed today.
 

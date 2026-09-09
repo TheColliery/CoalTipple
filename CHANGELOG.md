@@ -2,6 +2,11 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.5.4] - 2026-09-10
+
+### Fixed
+- **CWK-077 — the damage-control sandbox is named ONE way in shipped text.** This repo wrote the full `.claude/.coaltipple/proposed/` in four places and the shorthand `.proposed/` in three, with `SECURITY.md` carrying BOTH forms — a reader handed `.proposed/` could not find it, because no such path exists at the repo root or in a user's project. Three sites corrected to the full path (`SECURITY.md` once, `skills/coaltipple/SKILL.md` twice); every surrounding rail word untouched, and `plugin/skills/coaltipple/SKILL.md` rebuilt in sync. **Stated honestly because the opposite is the tempting claim: the pointer gate did NOT force this.** `.proposed/` normalises to a single segment, so the citer-relative join guard declines it and the token is dropped silently rather than FAILing — an earlier measurement predicting three hard FAILs here was wrong, from a harness that did not model that guard. This is a one-term-one-meaning doc fix on its own merits. No routing mechanic changed; the dev-only gate work in the same unit lives under `scripts/`, which is not a `DIST_ITEMS` member and ships nothing.
+
 ## [1.5.3] - 2026-08-31
 
 ### Changed

@@ -250,13 +250,46 @@ test('pointerCandidates: FIX 1 does not false-positive on an ordinary path with 
   );
 });
 
-test('pointerCandidates: FIX 1 does not false-positive on a dot-dir (already excluded by its own rule, not by DOMAIN_LIKE)', () => {
+test('pointerCandidates: a dot-dir token SURVIVES extraction (CWK-077 -- blind spot 1 narrowed); DOMAIN_LIKE still does not exclude it', () => {
   // `.claude-plugin` starts with `.`, so `[a-z0-9]` cannot match at position 0 -- DOMAIN_LIKE
-  // must not fire here; the dot-dir rule is what excludes it, unchanged.
+  // must not fire here, unchanged. What changed is the OLD "if (tok.startsWith('.')) continue"
+  // rule this test used to name: CWK-077 moved the dot-dir decision out of pointerCandidates()
+  // into checkPointers()'s agentHomeRoots holdout, where the caller-supplied set is available.
+  // A dot-dir token therefore now SURVIVES this function unchanged, same as any other
+  // path-shaped candidate -- the narrowing itself.
   assert.deepEqual(
     pointerCandidates('See `.claude-plugin/plugin.json`.'),
-    [],
+    ['.claude-plugin/plugin.json'],
   );
+});
+
+test('checkPointers: a dot-dir NOT in agentHomeRoots reaches ordinary resolution (the narrowing, at the checkPointers layer)', () => {
+  const seen = [];
+  const findings = checkPointers({
+    surfaces: [{ label: 'a', text: 'See `.claude-plugin/plugin.json`.' }],
+    ourRoots: new Set([...OUR_ROOTS, '.claude-plugin']),
+    ignoredRoots: IGNORED_ROOTS,
+    agentHomeRoots: new Set(['.claude', '.agents', '.gemini']),
+    resolve: (rel) => { seen.push(rel); return 'tracked'; },
+    pending: [],
+  });
+  assert.equal(findings.length, 0, JSON.stringify(findings));
+  assert.deepEqual(seen, ['.claude-plugin/plugin.json'], 'a dot-dir in ourRoots must resolve like any other root, not be held out');
+});
+
+test('checkPointers: a dot-dir IN agentHomeRoots is held out silently, even when it also matches ourRoots/ignoredRoots', () => {
+  // `.claude` deliberately sits in BOTH ourRoots (the caller mistakenly listing it) and
+  // agentHomeRoots here -- agentHomeRoots must win regardless, the same priority
+  // checkPointers() itself documents (a reader's agent home is never resolved against our tree).
+  const findings = checkPointers({
+    surfaces: [{ label: 'a', text: 'See `.claude/.coaltipple/proposed/x.md`.' }],
+    ourRoots: new Set([...OUR_ROOTS, '.claude']),
+    ignoredRoots: IGNORED_ROOTS,
+    agentHomeRoots: new Set(['.claude', '.agents', '.gemini']),
+    resolve: () => { throw new Error('resolve() must not be called for an agent-home root'); },
+    pending: [],
+  });
+  assert.equal(findings.length, 0, JSON.stringify(findings));
 });
 
 test('checkPointers: FIX 2 -- a citation relative to the CITING SURFACE resolves against surface.dir, not the repo root', () => {
@@ -315,12 +348,65 @@ test('checkPointers: FIX 2 GUARD -- a bare directory-fragment word with only a d
   assert.equal(findings.length, 0, JSON.stringify(findings));
 });
 
+test('checkPointers: a root-relative citation into a TRACKED DOT-DIR root resolves directly, never joined onto the citing surface\'s dir (CWK-077 -- guards the narrowing itself, not the ourRoots-data defect)', () => {
+  // Guards the NARROWING (findings-back LOW-2, correcting an earlier version of this comment
+  // that claimed to reproduce the real ourRoots-DATA defect verify.mjs shipped -- it does not:
+  // this test's own `ourRoots` already includes '.github', and the shared OUR_ROOTS fixture
+  // (:14) has no 'commands' either, so FIX 2's join can never fire here regardless of that
+  // data defect -- it is guarded separately, at the verify.mjs level, where PC_OUR_ROOTS is
+  // actually derived. What THIS test proves: once a dot-dir SURVIVES pointerCandidates() (the
+  // narrowing itself) and its first segment is a real ourRoots member, it resolves directly,
+  // never joined onto the citing surface's dir. It is not vacuous: reverting the narrowing
+  // (restoring the old blanket dot-dir drop in pointerCandidates()) makes the token never
+  // reach resolve() at all, and this test goes red (`seen` stays empty against the asserted
+  // `['.github/workflows/ci.yml']`).
+  const seen = [];
+  const findings = checkPointers({
+    surfaces: [{
+      label: 'commands/update.md',
+      dir: 'commands',
+      text: 'See `.github/workflows/ci.yml` for the gate.',
+    }],
+    ourRoots: new Set([...OUR_ROOTS, '.github']),
+    ignoredRoots: IGNORED_ROOTS,
+    agentHomeRoots: new Set(['.claude', '.agents', '.gemini']),
+    resolve: (rel) => { seen.push(rel); return rel === '.github/workflows/ci.yml' ? 'tracked' : 'missing'; },
+    pending: [],
+  });
+  assert.equal(findings.length, 0, JSON.stringify(findings));
+  assert.deepEqual(seen, ['.github/workflows/ci.yml'], 'must resolve the raw root-relative token; must NOT be joined onto commands/.github/workflows/ci.yml');
+});
+
+test('checkPointers: an interior `..` in a token whose first segment ALREADY matches ourRoots is floored before resolve(), never left to fs.existsSync/path.join to collapse (findings-back LOW-1)', () => {
+  // FIX 2's join floors `..` (joinRel's out.pop() on an empty array is a no-op), but it only
+  // runs when the FIRST segment matches neither ourRoots nor ignoredRoots -- a token whose
+  // first segment is ALREADY an ourRoots member skips FIX 2 entirely, so before this fix the
+  // raw token (with `..` still inside) went straight to resolve(), and verify.mjs's own
+  // fs.existsSync(path.join(repo, rel)) DOES collapse `..` -- the stat would land outside the
+  // repo. RED before the fix: `seen` held the raw escaping token itself.
+  const seen = [];
+  const findings = checkPointers({
+    surfaces: [{ label: 'a', dir: 'scripts', text: 'See `scripts/../../../etc/passwd` here.' }],
+    ourRoots: OUR_ROOTS,
+    ignoredRoots: IGNORED_ROOTS,
+    resolve: (rel) => { seen.push(rel); return 'missing'; },
+    pending: [],
+  });
+  assert.deepEqual(seen, ['etc/passwd'], 'the `..` must be floored before resolve() is asked -- never the raw escaping token');
+  assert.equal(findings.length, 1);
+  assert.match(findings[0].msg, /does not resolve in this repo/);
+});
+
 test('checkPointers: FIX 2 fallback also binds the gitignored-root branch (a relative citation whose JOINED path lands under a gitignored root still FAILs)', () => {
-  // A `../`-prefixed token is unreachable here by construction: pointerCandidates()'s own
-  // dot-dir rule (`tok.startsWith('.')`) drops any token starting with `.` before FIX 2 ever
-  // runs, so this exercises the reachable shape instead -- a surface whose OWN directory
-  // (`ignoredRoots.has('scratchpad')`-style top segment) is itself gitignored, citing a
-  // plain relative filename with no leading dot.
+  // A `../`-prefixed token DOES reach FIX 2 (findings-back MEDIUM-2, correcting an earlier
+  // version of this comment: CWK-077 removed pointerCandidates()'s dot-dir drop, so `..` is
+  // no longer excluded at extraction). It still cannot escape the repo -- `joinRel`'s
+  // `out.pop()` on an empty array is a no-op, so `..` floors at the join root instead of
+  // walking above it, AND the joined path is only ADOPTED when its own first segment lands in
+  // ourRoots/ignoredRoots, which `..` itself can never be. This test exercises a simpler
+  // reachable shape instead -- a surface whose OWN directory (`ignoredRoots.has('scratchpad')`-
+  // style top segment) is itself gitignored, citing a plain relative filename with no leading
+  // dot.
   const ignoredRootsWithDir = new Set([...IGNORED_ROOTS, 'dogfood']);
   const findings = checkPointers({
     surfaces: [{

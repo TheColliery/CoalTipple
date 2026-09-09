@@ -80,10 +80,29 @@
 // FOUR NAMED BLIND SPOTS, ported from the exemplar (CoalBoard's own measurement; re-verify on
 // this room's data before trusting a number, never assume it transfers unchanged):
 //
-//   1. Step 7 excludes EVERY dot-dir. `.github/` IS TRACKED here (workflows, dependabot.yml,
-//      codeql config) -- a shipped doc citing `.github/workflows/ci.yml` goes UNCHECKED.
-//      Measured cost today: zero (no in-scope surface currently cites `.github/...`). Revisit
-//      by hand the day one does -- prose, not a machine.
+//   1. NARROWED (CWK-077, porting CoalMine's own fix at d5e1466): this blind spot used to
+//      exclude EVERY dot-dir at step 7. `.github/` IS TRACKED here (workflows, dependabot.yml,
+//      codeql config), so a shipped doc citing `.github/workflows/ci.yml` went UNCHECKED for
+//      no reason -- the dot itself was never the hazard, only the specific dot-dirs a READER'S
+//      OWN agent home can be. `checkPointers()` now holds out only `agentHomeRoots`, derived
+//      from `config-load.mjs`'s own `AGENT_DIR_ORDER` (`.claude`/`.agents`/`.gemini`) -- never
+//      a hand-copied second list -- and lets every other dot-dir (`.github`, `.claude-plugin`,
+//      `.githooks`, ...) reach normal resolution.
+//
+//      MEASURED, DEDUPED -- checkPointers()'s own per-surface `seen` set (above) governs
+//      behaviour, so these are the figures that matter; re-derive by walking pointerCandidates()
+//      per surface through an equivalent `seen` set, never by a bare grep: 24 dot-prefixed
+//      tokens reach this step / 15 held out by agentHomeRoots / 9 survive -- 2 RESOLVED tracked
+//      (`.claude-plugin/plugin.json`, from commands/update.md and CONTRIBUTING.md -- the whole
+//      live gain), 4 on CHANGELOG.md (historyOnly + ourRoots-matching, resolution skipped by
+//      design), 3 DROPPED SILENTLY on CHANGELOG.md (`.coaltipple/ranking.json`,
+//      `.coaltipple/proposed/`, `.coaltipple/` -- an ordinary ourRoots MISS, `.coaltipple`
+//      matches no known root, NOT FIX 2's bare-word guard), 0 HARD FAIL. RAW (pre-dedup, a
+//      different scale, cross-check only): 35 / 25 / 10. `.github/` coverage is PROSPECTIVE,
+//      not live: BOTH its citations (`.github/SKILL-REPO-PATTERN.md` and
+//      `.github/workflows/ci.yml`) sit on CHANGELOG.md, checked-into-ourRoots but never
+//      resolved (historyOnly) -- the narrowing makes a future live citation verifiable, it
+//      verifies none today.
 //
 //   2. A same-named root shared with a SIBLING repo (e.g. a hypothetical `agents/` this room
 //      does not have, but the SHAPE applies to any future same-named top-level dir) would be
@@ -193,7 +212,10 @@ export function pointerCandidates(text) {
     if (!tok.includes('/')) continue;      // a bare filename is the USER's repo's
     if (OUTSIDE.test(tok)) continue;       // absolute, home-relative, or a schemed URL
     if (DOMAIN_LIKE.test(tok)) continue;   // a scheme-less domain (CWK-075 FIX 1)
-    if (tok.startsWith('.')) continue;     // a dot-dir is an agent/tool home (blind spot 1)
+    // NOTE: dot-dir tokens are NOT dropped here (CWK-077 -- narrowed blind spot 1). Only the
+    // TOOL'S OWN agent-home roots are held out, and that decision needs the caller-supplied
+    // `agentHomeRoots` set, which this function does not receive -- it happens in
+    // checkPointers() below, at the same point ourRoots/ignoredRoots membership is decided.
     out.push(tok);
   }
   return out;
@@ -219,10 +241,11 @@ function joinRel(dir, tok) {
 }
 
 export function checkPointers({
-  surfaces = [],            // [{ label, text, historyOnly?, dir? }]
-  ourRoots = new Set(),     // top-level names that belong to THIS repo
-  ignoredRoots = new Set(), // top-level dirs/files this repo gitignores
-  resolve,                  // (relPath) => 'tracked' | 'untracked' | 'missing'
+  surfaces = [],               // [{ label, text, historyOnly?, dir? }]
+  ourRoots = new Set(),        // top-level names that belong to THIS repo
+  ignoredRoots = new Set(),    // top-level dirs/files this repo gitignores
+  agentHomeRoots = new Set(),  // dot-dir roots that are a READER'S agent home, never ours (CWK-077)
+  resolve,                     // (relPath) => 'tracked' | 'untracked' | 'missing'
   pending = PENDING_POINTERS,
 } = {}) {
   const findings = [];
@@ -248,6 +271,18 @@ export function checkPointers({
       seen.add(tok);
       let effective = tok;
       let first = tok.split('/')[0];
+
+      // CWK-077 (narrowed blind spot 1): a dot-dir whose first segment IS the reader's own
+      // agent home (`.claude`/`.agents`/`.gemini`, derived from config-load.mjs's
+      // AGENT_DIR_ORDER) is a claim about THEIR tree, never ours -- held out BEFORE the
+      // ignoredRoots check below, deliberately: `.claude` is ALSO one of THIS repo's own
+      // gitignored roots (we gitignore our own `.claude/`), so without this priority a
+      // shipped doc's `.claude/.coaltipple/proposed/` would hit the ignoredRoots branch and
+      // FAIL as if it named OUR gitignored dir, when it is actually describing the reader's.
+      // Every OTHER dot-dir (`.github`, `.claude-plugin`, ...) falls through to normal
+      // resolution -- this is the narrowing itself: CoalMine's shape holds out only the
+      // agent-home roots, not every dot-prefixed token.
+      if (agentHomeRoots.has(first)) continue;
 
       // FIX 2 (CWK-075): RELATIVE-TO-CITING-SURFACE. The raw token's own first segment
       // matches neither a real root nor a gitignored one -- before giving up on it as
@@ -299,7 +334,15 @@ export function checkPointers({
       if (s.historyOnly) continue;
 
       checked++;
-      const rel = normalise(effective);
+      // LOW-1 (findings-back): FIX 2's join is the only place `..` was floored, and it only
+      // runs when `first` matched neither ourRoots nor ignoredRoots. A token whose first
+      // segment is ALREADY an ourRoot (e.g. `.github/../../../etc/passwd`, `first='.github'`)
+      // skips FIX 2 entirely and reached resolve()/fs.existsSync() with `..` still inside --
+      // `path.join()` collapses it, so the stat lands outside the repo. Floored HERE, in the
+      // one place every candidate passes through regardless of which branch classified it --
+      // never a second rejection mechanism, the same `joinRel` FIX 2 already uses, with an
+      // empty dir so a token with no leading `..` round-trips unchanged.
+      const rel = joinRel('', normalise(effective));
       const state = resolve(rel);
       if (state === 'tracked') continue;
       if (pending.some((p) => p && p.path === rel)) continue;

@@ -88,7 +88,10 @@ export function findGitRoot(startDir = process.cwd()) {
 // fableConsent "always-this-project" consent persistence), so unlike CoalWash the
 // write side is real: `configure.mjs` implements write-new-then-drop-old via its
 // own `projectWriteTarget` helper, which reuses `projectConfigCandidates` below.
-const AGENT_DIR_ORDER = ['.claude', '.agents', '.gemini'];
+// Exported (CWK-077) so the pointer gate can derive its agent-home holdout from this SAME
+// list rather than a hand-copied second one -- a hand-copied list is the exact drift class
+// this ticket exists to remove.
+export const AGENT_DIR_ORDER = ['.claude', '.agents', '.gemini'];
 export function projectConfigCandidates(cwd = process.cwd()) {
   const root = findGitRoot(cwd);
   const candidates = AGENT_DIR_ORDER.map((d) => path.join(root, d, 'coal', 'coaltipple.json'));

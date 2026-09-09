@@ -280,6 +280,12 @@ try {
 console.log('pointer check (ship-text path citations resolve in this repo -- scripts/lib/pointer-check.mjs owns the detection rule, the funnel measurement, the three CoalTipple-specific fixes, and the four named blind spots; PATH only, section/symbol not checked -- CoalMine\'s + CoalBoard\'s own measurement is why that half stays unbuilt):');
 try {
   const pc = await import(pathToFileURL(path.join(repo, 'scripts', 'lib', 'pointer-check.mjs')).href);
+  // CWK-077: the agent-home holdout is DERIVED from config-load.mjs's own AGENT_DIR_ORDER,
+  // never a hand-copied second list -- that hand-copy is the exact drift this ticket exists
+  // to remove. Dynamic import (node/runtime.md §1): this is a scripts/lib/ import inside the
+  // check that consumes it, same pattern as `pc` immediately above.
+  const cl = await import(pathToFileURL(path.join(repo, 'scripts', 'lib', 'config-load.mjs')).href);
+  const PC_AGENT_HOME_ROOTS = new Set(cl.AGENT_DIR_ORDER);
   // SAFE READ, not a direct fs.readFileSync: a hermetic sandbox test (scripts/verify.test.mjs)
   // spawns this whole script against a NARROWED copy of the repo (VERIFY_ITEMS there does not
   // include README.md/SECURITY.md/CONTRIBUTING.md/PRIVACY.md -- it exists to test board #64's
@@ -313,19 +319,6 @@ try {
       dir: '',
     },
   ];
-  // SCOPE, matching CWK-075's own dispatch (not CoalBoard's wider roster): the 8 surfaces
-  // above are the ones this ticket measured and fixed against. scripts/ + hooks/ line-comment
-  // scanning (which CoalBoard's own verify.mjs additionally does) is deliberately NOT added
-  // here -- widening the surface set would change the funnel numbers away from what this
-  // unit's own measurement, report, and INSPECT re-derivation are against. A future ticket
-  // may extend it; this one does not, to keep the reported numbers reproducible.
-  const PC_OUR_ROOTS = new Set(['commands', 'hooks', 'platform-configs', 'plugin', 'scripts', 'skills']);
-  // NO-GIT FALLBACK ONLY (CWK-075 findings-back MEDIUM-1) -- when git is unavailable, this is
-  // what pcResolve degrades to. When git IS available (the normal case), the LIVE-DERIVED set
-  // below is what actually gates; this literal is never consulted for the real check in that
-  // case, only compared against the derivation as a drift self-check (below), so it does not
-  // silently go stale itself.
-  const PC_IGNORED_ROOTS_FALLBACK = new Set(['.claude', '.agents', 'AGENTS.md', 'CLAUDE.md', 'COALTIPPLE_DESIGN.md', 'COALTIPPLE_RESIDENT_DISPATCH_DESIGN.md', 'MEMORY.md', 'dogfood', 'skillspector-20260702.json', 'skills-lock.json']);
   // no-external-assumption (AGENTS.md): git is an OPTIONAL enhancement with a graceful
   // fallback, never a hard requirement -- checked ONCE, not per-call, so the same sandbox
   // (verify.test.mjs's fs.cpSync copy, no `.git` at all) does not pay a failing `git`
@@ -337,10 +330,55 @@ try {
   // citations are still caught, unconditionally, by the ignoredRoots branch above (pure string
   // membership, never touches git), so the only property actually lost here is catching a
   // genuinely untracked-but-not-gitignored stray file while running with no `.git` present --
-  // narrower than normal operation, never wider.
+  // narrower than normal operation, never wider. Moved ahead of PC_OUR_ROOTS/PC_IGNORED_ROOTS
+  // (CWK-077 round 2) -- both derivations below now need it.
   let pcHasGit = true;
   try { execFileSync('git', ['rev-parse', '--is-inside-work-tree'], { cwd: repo, stdio: 'pipe' }); }
   catch { pcHasGit = false; }
+
+  // SCOPE, matching CWK-075's own dispatch (not CoalBoard's wider roster): the 8 surfaces
+  // above are the ones this ticket measured and fixed against. scripts/ + hooks/ line-comment
+  // scanning (which CoalBoard's own verify.mjs additionally does) is deliberately NOT added
+  // here -- widening the surface set would change the funnel numbers away from what this
+  // unit's own measurement, report, and INSPECT re-derivation are against. A future ticket
+  // may extend it; this one does not, to keep the reported numbers reproducible.
+  //
+  // NO-GIT FALLBACK ONLY, same class as PC_IGNORED_ROOTS_FALLBACK below (CWK-077 round 2):
+  // narrowing blind spot 1 exposed that the hand-kept 6-entry literal this used to be missed
+  // three TRACKED DOT-DIRS -- `.claude-plugin`, `.github`, `.githooks` -- which then matched
+  // neither ourRoots, ignoredRoots nor agentHomeRoots, so FIX 2's citer-relative fallback
+  // wrongly joined a root-relative citation (`.claude-plugin/plugin.json` from
+  // `commands/update.md`) onto the citing surface's own dir and FAILed a tracked file. Fixed
+  // the same way as PC_IGNORED_ROOTS: derive from `git ls-files` every run rather than
+  // hand-adding the three missing names, which would only reproduce the defect the next time
+  // a tracked top-level dir is added.
+  const PC_OUR_ROOTS_FALLBACK = new Set(['.claude-plugin', '.github', '.githooks', 'commands', 'hooks', 'platform-configs', 'plugin', 'scripts', 'skills']);
+  let pcOurRootsDerived = false;
+  function pcDeriveOurRoots() {
+    if (!pcHasGit) return PC_OUR_ROOTS_FALLBACK;
+    try {
+      const listing = execFileSync('git', ['ls-files'], { cwd: repo, stdio: 'pipe' }).toString('utf8');
+      const roots = new Set();
+      for (const line of listing.split(/\r?\n/)) {
+        if (!line) continue;
+        const first = line.split('/')[0];
+        if (first === line) continue;                 // a top-level FILE, not a directory root
+        if (PC_AGENT_HOME_ROOTS.has(first)) continue;  // an agent home wins even if somehow tracked
+        roots.add(first);
+      }
+      pcOurRootsDerived = true;
+      return roots;
+    } catch {
+      return PC_OUR_ROOTS_FALLBACK;
+    }
+  }
+  const PC_OUR_ROOTS = pcDeriveOurRoots();
+  // NO-GIT FALLBACK ONLY (CWK-075 findings-back MEDIUM-1) -- when git is unavailable, this is
+  // what pcResolve degrades to. When git IS available (the normal case), the LIVE-DERIVED set
+  // below is what actually gates; this literal is never consulted for the real check in that
+  // case, only compared against the derivation as a drift self-check (below), so it does not
+  // silently go stale itself.
+  const PC_IGNORED_ROOTS_FALLBACK = new Set(['.claude', '.agents', 'AGENTS.md', 'CLAUDE.md', 'COALTIPPLE_DESIGN.md', 'COALTIPPLE_RESIDENT_DISPATCH_DESIGN.md', 'MEMORY.md', 'dogfood', 'skillspector-20260702.json', 'skills-lock.json']);
   // `git check-ignore -q -- <name>` exits 0 = ignored, 1 = not ignored, anything ELSE (128,
   // ENOENT, ...) is a genuine git failure -- NEVER read as "not ignored", or a git error would
   // silently reopen exactly the silent-narrowing hole this derivation exists to close.
@@ -418,6 +456,16 @@ try {
       }
     }
   }
+  // Same self-check, ourRoots side (CWK-077 round 2): a root the live derivation finds but
+  // the fallback literal does not know about would silently narrow ourRoots the moment git
+  // is unavailable -- the exact defect this whole fix exists to close, one layer down.
+  if (pcHasGit && pcOurRootsDerived) {
+    for (const r of PC_OUR_ROOTS) {
+      if (!PC_OUR_ROOTS_FALLBACK.has(r)) {
+        fail(`pointer check: '${r}' is a tracked top-level root (live-derived) but absent from the no-git PC_OUR_ROOTS_FALLBACK literal in verify.mjs -- add it, or the no-git degrade path silently narrows ourRoots`);
+      }
+    }
+  }
   function pcResolve(rel) {
     if (!pcHasGit) return fs.existsSync(path.join(repo, rel)) ? 'tracked' : 'missing';
     try {
@@ -431,6 +479,7 @@ try {
     surfaces: pcSurfaces,
     ourRoots: PC_OUR_ROOTS,
     ignoredRoots: PC_IGNORED_ROOTS,
+    agentHomeRoots: PC_AGENT_HOME_ROOTS,
     resolve: pcResolve,
   });
   const pcHard = pcFindings.filter((f) => f.level !== 'SKIP');
@@ -469,7 +518,14 @@ try {
     pcFedWording = `ABORTED after ${pcFedCount} of ${pcTotalEntries} top-level entries -- git check-ignore failed mid-walk`;
     pcSourceLabel = 'NO-GIT FALLBACK literal -- derivation ABORTED mid-walk despite git being present';
   }
-  if (pcHard.length === 0) ok(`every in-scope path citation resolves or is declared (${pcFindings.checked} checked, ${pcSurfaces.length} surfaces, ${PC_OUR_ROOTS.size} ourRoots, ${pcFedWording}, ${PC_IGNORED_ROOTS.size} ignoredRoots -- ${pcSourceLabel})`);
+  // Same 3-path labelling as pcSourceLabel above, for ourRoots -- a single `git ls-files`
+  // call has no partial-walk state to distinguish, so this is a 3-way switch, not the fed-count
+  // narration ignoredRoots needs for its per-entry loop.
+  let pcOurRootsLabel;
+  if (pcHasGit && pcOurRootsDerived) pcOurRootsLabel = 'git-derived';
+  else if (!pcHasGit) pcOurRootsLabel = 'NO-GIT FALLBACK literal';
+  else pcOurRootsLabel = 'NO-GIT FALLBACK literal -- derivation FAILED despite git being present';
+  if (pcHard.length === 0) ok(`every in-scope path citation resolves or is declared (${pcFindings.checked} checked, ${pcSurfaces.length} surfaces, ${PC_OUR_ROOTS.size} ourRoots -- ${pcOurRootsLabel}, ${PC_AGENT_HOME_ROOTS.size} agentHomeRoots, ${pcFedWording}, ${PC_IGNORED_ROOTS.size} ignoredRoots -- ${pcSourceLabel})`);
   else pcHard.forEach((f) => fail(f.msg));
 } catch (e) { fail(`pointer check crashed: ${e.message}`); }
 
