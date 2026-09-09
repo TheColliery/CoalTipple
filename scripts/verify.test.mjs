@@ -69,3 +69,81 @@ test('verify.mjs pointer-check pass line: the printed surface count matches the 
   assert.equal(printedSurfaces, expectedSurfaces,
     `pointer-check pass line printed ${printedSurfaces} surfaces but the live tree has ${expectedSurfaces} -- a typed/stale number in the pass line, the exact CWK-078 defect this test exists to catch`);
 });
+
+// CWK-079 -- `looksPathShaped()` gates DISCOVERY of a candidate ROOT, never JUDGEMENT of
+// a token already reaching checkPointers. Ported from CoalMine's own two-plant pin
+// (findings-back MEDIUM-2). Needs its own git-initialised sandbox (VERIFY_ITEMS above
+// omits README/SECURITY/CONTRIBUTING/PRIVACY and .gitignore -- board #64's narrower
+// scope) since the property under test is specifically about a GITIGNORED root.
+function mkGitSandbox() {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-verify-nonlocal-'));
+  for (const item of VERIFY_ITEMS) fs.cpSync(path.join(repo, item), path.join(tmp, item), { recursive: true });
+  for (const f of ['README.md', 'SECURITY.md', 'CONTRIBUTING.md', 'PRIVACY.md', '.gitignore']) {
+    fs.copyFileSync(path.join(repo, f), path.join(tmp, f));
+  }
+  const git = (args) => {
+    const r = spawnSync('git', args, { cwd: tmp, encoding: 'utf8' });
+    if (r.status !== 0) throw new Error(`git ${args.join(' ')} failed: ${r.stderr || r.error?.message}`);
+    return r.stdout;
+  };
+  git(['init', '-q', '-b', 'main']);
+  git(['config', 'user.email', 'test@test.invalid']);
+  git(['config', 'user.name', 'Test']);
+  git(['config', 'commit.gpgsign', 'false']);
+  git(['add', '-A']);
+  git(['commit', '-q', '-m', 'baseline']);
+  return { tmp, git };
+}
+
+test('verify.mjs pointer check: an extensionless citation under a gitignored root is checked NON-LOCALLY, not exempt (CWK-079)', () => {
+  // Plants land on SECURITY.md/CONTRIBUTING.md -- root-level surfaces whose pcSurfaces
+  // entry carries `dir: ''`, deliberately NOT commands/*.md. This room's own FIX 2
+  // (CWK-075, citer-relative resolution) only fires when `s.dir` is truthy; an empty dir
+  // keeps this test isolated to the property under test (shape-discovery vs judgement)
+  // instead of also exercising FIX 2's unrelated citer-relative join.
+  const { tmp, git } = mkGitSandbox();
+  try {
+    // PLANT A alone: an extensionless citation under the gitignored `dogfood/` root.
+    // Shape-rejected at DISCOVERY -- the fixture's own live gate must stay silent while
+    // nothing else cites that root.
+    fs.appendFileSync(path.join(tmp, 'SECURITY.md'), '\nNotes: `dogfood/notes`.\n');
+    git(['add', '-A']);
+    const alone = runVerify(tmp);
+    assert.doesNotMatch(alone.stdout, /dogfood/,
+      `plant A alone must stay silent -- extensionless, discovery-rejected, got:\n${alone.stdout}`);
+
+    // PLANT B, same tree, unrelated file: a PATH-SHAPED citation under the SAME root.
+    // This one alone is enough to put 'dogfood' into ignoredRoots -- and once it is
+    // there, checkPointers judges EVERY token sharing that root, including plant A's.
+    fs.appendFileSync(path.join(tmp, 'CONTRIBUTING.md'), '\nReference: `dogfood/readme.md`.\n');
+    git(['add', '-A']);
+    const both = runVerify(tmp);
+    assert.match(both.stdout, /FAIL SECURITY\.md cites `dogfood\/notes`.*gitignored/,
+      'plant A must now FAIL -- the extensionless citation was never exempt from the check, only from discovering its own root');
+    assert.match(both.stdout, /FAIL CONTRIBUTING\.md cites `dogfood\/readme\.md`.*gitignored/,
+      'plant B, the path-shaped citation that armed the root, must FAIL too');
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('verify.mjs pointer check: the clean-clone proof (CWK-079) -- a citation into an absent-but-gitignored root FAILs correctly, never misattributed to the citing surface\'s own dir', () => {
+  // The DEFECT this ticket closes, live: the OLD disk-walk never saw a gitignored root
+  // that does not physically exist on THIS checkout -- exactly a fresh clone's normal
+  // state. Proven on the REAL old/new code pair by hand before shipping (see the return);
+  // this pins the property so a future regression to disk-derivation is caught by the
+  // suite, not rediscovered by hand again.
+  const { tmp, git } = mkGitSandbox();
+  try {
+    fs.appendFileSync(path.join(tmp, 'commands', 'update.md'), '\nSee `dogfood/results/run1.json` for raw data.\n');
+    git(['add', '-A']);
+    const r = runVerify(tmp);
+    // POSIX literal, deliberately -- pcSurfaces' own label construction normalises every
+    // separator to `/` (`.replace(/\\/g, '/')`, verify.mjs) before this string ever reaches
+    // stdout, so the printed label is `/`-joined on every OS this suite runs on, never `\`.
+    assert.match(r.stdout, /FAIL commands\/update\.md cites `dogfood\/results\/run1\.json`.*gitignored `dogfood\/`/,
+      `a citation into a gitignored-but-ABSENT root must FAIL as gitignored, not silently pass and not be misjoined onto commands/'s own dir, got:\n${r.stdout}`);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});

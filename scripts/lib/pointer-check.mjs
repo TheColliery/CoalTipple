@@ -221,6 +221,58 @@ export function pointerCandidates(text) {
   return out;
 }
 
+// LAST-SEGMENT SHAPE TEST (CWK-079, ported from CoalMine 7c7cb72/8fcf443) -- feeds ONLY
+// verify.mjs's ignore-probe CANDIDATE-ROOT DISCOVERY, never pointerCandidates' own
+// resolve-path population above. THIS GATES DISCOVERY, NOT JUDGEMENT: a token this test
+// rejects can still be checked by checkPointers' own `ignoredRoots.has(first)` branch,
+// NON-LOCALLY -- the moment some OTHER, unrelated, path-shaped citation shares its first
+// segment and puts that root into `ignoredRoots`, every token sharing the root is judged,
+// discovery-rejected or not. Pinned as a permanent regression test in verify.test.mjs
+// with a two-plant pair (an extensionless citation alone, silent; the same citation
+// beside an unrelated path-shaped sibling under the same root, both FAIL).
+//
+// THE DEFECT THIS CLOSES: a token containing `/` is not necessarily a path -- the no-`/`
+// drop above (:212) proves the token HAS a slash, never what the slash SEPARATES.
+// MEASURED on THIS room's own 12 surfaces (re-derive: walk pointerCandidates() over every
+// surface, group by first segment, test each token with this function -- never trust a
+// number pinned here): 27 distinct first segments reach today's un-narrowed
+// candidate-root derivation; 6 have ZERO path-shaped citation anywhere and vanish
+// entirely from discovery under this narrowing -- `provider` (`provider/model-id`, a
+// placeholder pair), `low` (`low/mid/heavy/reasoning`, a tier enumeration), `chars`
+// (`chars/4`, arithmetic), `js` (`js/unused-local-variable`, a CodeQL query id),
+// `actions` (`actions/setup-node`, a GitHub Actions plugin ref), `dest`
+// (`dest/coaltipple`, a copy-destination mention) -- none a real root in this repo, none
+// colliding with anything in `.gitignore` today. THE NON-LOCALITY EXHIBIT, live on this
+// tree: `TheColliery/.github/benchmarks/CoalTipple` (README.md) is itself shape-rejected
+// (no trailing slash, no `.ext`-shaped last segment) but its root, `TheColliery`, is
+// STILL discovered via two unrelated shaped siblings elsewhere
+// (`TheColliery/scratchpad/.../SKILL-VARIANCE-WALK.md`,
+// `TheColliery/.github/benchmarks/CoalTipple/`) -- so that citation is checked the moment
+// `TheColliery` is ever gitignored here, exactly like any other token under a discovered
+// root, despite being individually shape-rejected.
+//
+// THE TEST: strip a trailing `:line(-line)?` ref (the same suffix `normalise()` strips
+// for resolution below), then either the token ends in `/` (an explicit directory
+// reference) or its LAST segment carries a `.ext`-shaped suffix (a filename). Both are
+// the deliberate, common path conventions this house's own prose already uses;
+// arithmetic, enumerations, and IDs carry neither.
+//
+// THE RESIDUE, both directions, named rather than hidden:
+//   - STILL LETS THROUGH: a token ending `/` is accepted with no check on what precedes
+//     it -- a function-call-shaped token like `os.tmpdir()/` still reaches the probe.
+//     Harmless in practice (no real `.gitignore` pattern is named that).
+//   - DISCOVERY-EXCLUDED, but NOT check-exempt per the non-locality above: an
+//     extensionless real path with no trailing slash no longer contributes its OWN root
+//     to discovery. A latent accept-side case, population ZERO on this tree today: the
+//     last-segment test's `.[A-Za-z0-9]{1,10}$` also matches an ALL-DIGIT "extension", so
+//     a slash-separated version-shaped token (`v1/2`) would pass as filename-shaped were
+//     one ever cited.
+export function looksPathShaped(tok) {
+  const t = tok.replace(/:\d+(-\d+)?$/, '');
+  if (t.endsWith('/')) return true;
+  return /\.[A-Za-z0-9]{1,10}$/.test(t.split('/').pop());
+}
+
 // `docs/x.md:12` and `scripts/` both name a real thing; the suffix and the trailing slash
 // are punctuation, not part of the path.
 function normalise(tok) {
@@ -243,7 +295,7 @@ function joinRel(dir, tok) {
 export function checkPointers({
   surfaces = [],               // [{ label, text, historyOnly?, dir? }]
   ourRoots = new Set(),        // top-level names that belong to THIS repo
-  ignoredRoots = new Set(),    // top-level dirs/files this repo gitignores
+  ignoredRoots = new Set(),    // first segments of CITED tokens .gitignore matches (CWK-079: existence-independent -- not a disk listing)
   agentHomeRoots = new Set(),  // dot-dir roots that are a READER'S agent home, never ours (CWK-077)
   resolve,                     // (relPath) => 'tracked' | 'untracked' | 'missing'
   pending = PENDING_POINTERS,

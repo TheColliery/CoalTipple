@@ -7,7 +7,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { CONFIG_SCHEMA, validateValue } from './lib/config-schema.mjs';
 import { stripJsonc } from './lib/jsonc.mjs';
 
@@ -343,7 +343,11 @@ try {
   // unit's own measurement, report, and INSPECT re-derivation are against. A future ticket
   // may extend it; this one does not, to keep the reported numbers reproducible.
   //
-  // NO-GIT FALLBACK ONLY, same class as PC_IGNORED_ROOTS_FALLBACK below (CWK-077 round 2):
+  // NO-GIT FALLBACK ONLY -- and DELIBERATELY asymmetric with ignoredRoots, which keeps no
+  // literal at all (CWK-079 removed PC_IGNORED_ROOTS_FALLBACK entirely). ourRoots still needs
+  // one because an EMPTY ourRoots makes every citation read as someone else's tree and the
+  // gate goes uniformly, silently green; an empty ignoredRoots only stops one branch firing,
+  // and says so in the pass line. Do not "restore consistency" by reviving a literal here:
   // narrowing blind spot 1 exposed that the hand-kept 6-entry literal this used to be missed
   // three TRACKED DOT-DIRS -- `.claude-plugin`, `.github`, `.githooks` -- which then matched
   // neither ourRoots, ignoredRoots nor agentHomeRoots, so FIX 2's citer-relative fallback
@@ -373,86 +377,76 @@ try {
     }
   }
   const PC_OUR_ROOTS = pcDeriveOurRoots();
-  // NO-GIT FALLBACK ONLY (CWK-075 findings-back MEDIUM-1) -- when git is unavailable, this is
-  // what pcResolve degrades to. When git IS available (the normal case), the LIVE-DERIVED set
-  // below is what actually gates; this literal is never consulted for the real check in that
-  // case, only compared against the derivation as a drift self-check (below), so it does not
-  // silently go stale itself.
-  const PC_IGNORED_ROOTS_FALLBACK = new Set(['.claude', '.agents', 'AGENTS.md', 'CLAUDE.md', 'COALTIPPLE_DESIGN.md', 'COALTIPPLE_RESIDENT_DISPATCH_DESIGN.md', 'MEMORY.md', 'dogfood', 'skillspector-20260702.json', 'skills-lock.json']);
-  // `git check-ignore -q -- <name>` exits 0 = ignored, 1 = not ignored, anything ELSE (128,
-  // ENOENT, ...) is a genuine git failure -- NEVER read as "not ignored", or a git error would
-  // silently reopen exactly the silent-narrowing hole this derivation exists to close.
-  function pcCheckIgnore(name) {
-    try {
-      execFileSync('git', ['check-ignore', '-q', '--', name], { cwd: repo, stdio: 'pipe' });
-      return true;
-    } catch (e) {
-      if (e.status === 1) return false;
-      throw e;
+  // IGNORED ROOTS, CITATION-BASED (CWK-079, ported from CoalMine 6588d14/7c7cb72/8fcf443,
+  // REPLACING the CWK-075/CWK-078 disk-walk this comment used to describe) -- asked of the
+  // CANDIDATES actually cited in ship-text, never of what exists on THIS box's disk.
+  //
+  // THE FINDING, measured in THIS room, not inherited: cloned this repo to a fresh temp dir
+  // and ran the OLD `fs.readdirSync(repo)`-based derivation there -- `fed=29 ignoredRoots=8`
+  // on the working box against `fed=20 ignoredRoots=0` on the clean clone. `.gitignore` is
+  // TRACKED; a clean clone simply does not yet HAVE the files it names, so the old probe
+  // answered ZERO on every clean clone and every CI leg -- dead code everywhere except a
+  // maintainer's own box. `git check-ignore` answers a PATTERN question, not an EXISTENCE
+  // one, so it is correct for an absent-but-tracked-pattern path exactly as it was for a
+  // present one -- what changed is what gets FED to it: the first segments of tokens
+  // `pointerCandidates()` actually extracted from `pcSurfaces`, not a directory listing.
+  //
+  // NARROWED ON TOKEN SHAPE, NEVER EXISTENCE, via `pc.looksPathShaped()` (pointer-check.mjs --
+  // its own comment carries the two measured bound populations on this tree and the
+  // non-locality property this narrowing does NOT exempt a token from; pinned as a
+  // regression test below). `agentHomeRoots` is held out of the probe for the same reason
+  // CWK-077 held it out of `ourRoots`: `.claude`/`.agents` are BOTH a legitimate USER-tree
+  // citation and one of THIS repo's own gitignored roots, and probing them would FAIL a
+  // correct ship-text citation as if it named our own dir.
+  const pcCandidateRoots = new Set();
+  for (const s of pcSurfaces) {
+    if (typeof s.text !== 'string') continue;
+    for (const tok of pc.pointerCandidates(s.text)) {
+      if (!pc.looksPathShaped(tok)) continue;
+      pcCandidateRoots.add(tok.split('/')[0]);
     }
   }
-  // DERIVE ignoredRoots FROM GIT (CWK-075 findings-back MEDIUM-1). The dispatch's own concern:
-  // a hand-kept literal drifts silently the moment .gitignore grows a root (measured -- this
-  // room's own .gitignore has grown twice recently) and a citation into the newly-ignored root
-  // then matches neither ourRoots nor ignoredRoots, dropped as "someone else's tree" instead of
-  // FAILing, under a green tick. Fixed at the root: when git is available, walk every top-level
-  // entry (`fs.readdirSync(repo)`, the same shape INSPECT itself used -- "git check-ignore over
-  // ls -A") and ask git directly, every run, rather than trusting a name someone wrote down
-  // once. A mid-walk git failure (not just "not ignored") aborts the derivation and falls back
-  // to the literal WHOLE, never a partial derived set -- a half-derived set is worse than the
-  // stale literal, because it looks freshly computed while missing an unknown number of roots.
-  // CWK-078, corrected by findings-back MEDIUM-1: `pcFedCount` and `pcDerived` RECORD what
-  // happened during the walk -- neither changes the walk, its order, its
-  // git-failure-aborts-to-whole-fallback behaviour, or the returned Set.
-  //
-  // `pcFedCount` counts entries ACTUALLY FED to `pcCheckIgnore` -- incremented AFTER each call
-  // returns, inside the loop, never set once from `entries.length` before the loop runs. The
-  // first version of this fix got this backwards: it recorded the INTENDED count
-  // (`entries.length`, taken right after `fs.readdirSync`) rather than the ACTUAL one, so a
-  // mid-walk abort at entry 5 of 29 still reported "29 fed" -- a number the walk never
-  // produced, on the very ticket about a number the instrument does not produce. Counting
-  // inside the loop means a partial walk's fed count is exactly how many `pcCheckIgnore` calls
-  // actually returned before the abort, never the size of the array it started from.
-  //
-  // `pcDerived` is `true` only once the FULL walk completes and `out` is about to be returned
-  // -- never inferred from `pcHasGit`, which only says git EXISTS, not that the derivation
-  // FINISHED. A mid-walk failure (pcCheckIgnore throws a non-1 status) leaves `pcDerived`
-  // false while `pcHasGit` stays true, and THAT distinction is what the pass line now keys its
-  // source label on, not `pcHasGit` alone -- the original bug's own mislabel (a mid-walk abort
-  // printing "git-derived" while `PC_IGNORED_ROOTS_FALLBACK` is what's actually in use).
-  // `pcTotalEntries` is a pure REPORTING denominator (how many top-level entries readdir
-  // found), recorded once for the abort message's "N of M" shape -- it is never read by the
-  // walk, the loop, or the returned Set, only by the pass line below.
-  let pcFedCount = 0;
-  let pcTotalEntries = null;
-  let pcDerived = false;
-  function pcDeriveIgnoredRoots() {
-    if (!pcHasGit) return PC_IGNORED_ROOTS_FALLBACK;
-    try {
-      const entries = fs.readdirSync(repo);
-      pcTotalEntries = entries.length;
-      const out = new Set();
-      for (const name of entries) {
-        const ignored = pcCheckIgnore(name);
-        pcFedCount++;
-        if (ignored) out.add(name);
-      }
-      pcDerived = true;
-      return out;
-    } catch {
-      return PC_IGNORED_ROOTS_FALLBACK;
-    }
+  let pcHomesPresent = 0;
+  const pcToProbe = [];
+  for (const name of pcCandidateRoots) {
+    if (PC_AGENT_HOME_ROOTS.has(name)) { pcHomesPresent++; continue; }
+    pcToProbe.push(name);
   }
-  const PC_IGNORED_ROOTS = pcDeriveIgnoredRoots();
-  // SELF-CHECK, so the no-git FALLBACK constant itself cannot go stale unnoticed: when git IS
-  // available (the normal case, so the comparison is trustworthy), FAIL if the live-derived
-  // set contains a root the hand-kept fallback does not know about -- the fallback is meant to
-  // be a safe (super-set-or-equal) approximation for when git is absent, and a root missing
-  // from it would silently narrow coverage on that path too.
-  if (pcHasGit) {
-    for (const r of PC_IGNORED_ROOTS) {
-      if (!PC_IGNORED_ROOTS_FALLBACK.has(r)) {
-        fail(`pointer check: '${r}' is gitignored (live-derived) but absent from the no-git PC_IGNORED_ROOTS_FALLBACK literal in verify.mjs -- add it, or the no-git degrade path silently stops catching it`);
+  // BATCHED: one `--stdin` call for every distinct candidate root, not a per-name spawn loop
+  // (the shape the old disk-walk used) -- structurally the same batching win CoalMine
+  // measured on its own tree, not independently re-timed here.
+  //
+  // EXIT-CODE SEMANTICS, findings-back MEDIUM-1 -- NOT a boolean. `git check-ignore` exits
+  // 0 when at least one fed path is ignored, 1 when none are (BOTH are successful
+  // derivations with different answers), and non-{0,1} (128 typical: a corrupted `.git`, a
+  // permission denial) is a genuine failure. The first version of this port checked only
+  // `ci.error` (a SPAWN failure) and treated any other outcome as "parse stdout" --
+  // silently reading a real git error as "nothing ignored", because a failed call's stdout
+  // is still a valid, empty string. That is the EXACT hole `pcCheckIgnore()` (CWK-075,
+  // deleted by this port) was built to close, restated here rather than re-lost: "a git
+  // error would silently reopen exactly the silent-narrowing hole this derivation exists
+  // to close." `ci.status` is checked explicitly, not just `ci.error`, before stdout is
+  // ever parsed -- a status outside {0,1} means the call FAILED and degrades to an EMPTY
+  // `PC_IGNORED_ROOTS`, same direction the no-git path already takes (narrower, never
+  // wider), with the pass line naming the failure instead of claiming `git-derived`.
+  // NAMED HONESTLY, because "same direction" is true about direction and silent about cost:
+  // on a box with NO git this path now catches NOTHING, where the deleted 10-name literal
+  // did catch one class -- a citation into a gitignored root, e.g. `dogfood/results/run1.json`
+  // (measured by INSPECT: old code FAILed it with no git present, new code passes it silently).
+  // Accepted, not hidden: the narrowing is VISIBLE (`no-git: nothing probed` in the pass line,
+  // per CWK-075's own rail), the gate is dev-only, and CI has git. Reviving the literal would
+  // reintroduce the hand-kept drift this port exists to remove.
+  const PC_IGNORED_ROOTS = new Set();
+  let pcIgnoreCallFailed = false;
+  if (pcHasGit && pcToProbe.length) {
+    const ci = spawnSync('git', ['check-ignore', '--stdin'],
+      { cwd: repo, encoding: 'utf8', input: pcToProbe.map((n) => n + '/').join('\n') + '\n' });
+    if (ci.error || (ci.status !== 0 && ci.status !== 1)) {
+      pcIgnoreCallFailed = true;
+    } else if (typeof ci.stdout === 'string') {
+      for (const line of ci.stdout.split(/\r?\n/)) {
+        const t = line.trim();
+        if (t) PC_IGNORED_ROOTS.add(t.replace(/\/$/, ''));
       }
     }
   }
@@ -486,46 +480,33 @@ try {
   for (const f of pcFindings) {
     if (f.level === 'SKIP') console.log('  --   ' + f.msg);
   }
-  // CWK-078 fix: `${pcSurfaces.length}` replaces a former TYPED "8 surfaces" literal that
-  // disagreed with the real walked array (12) -- a CoalHearth-class defect (a number in a
-  // gate's own pass line the instrument does not produce). And the ignoredRoots ENUMERATION
-  // is now self-evidencing every run, not just its final count: `N fed` names how many
-  // TOP-LEVEL ENTRIES (files and hidden dot-entries included, per fs.readdirSync -- not a
-  // directories-only walk, which is the exact shape that exposed two sibling rooms) were
-  // handed to `git check-ignore`, so a reader sees the ENUMERATION'S SHAPE, never only its
-  // output count.
+  // CWK-078 fix, still true: `${pcSurfaces.length}` replaces a former TYPED "8 surfaces"
+  // literal that disagreed with the real walked array (12) -- a CoalHearth-class defect (a
+  // number in a gate's own pass line the instrument does not produce).
   //
-  // THREE PATHS, findings-back MEDIUM-1 -- the source label keys on `pcDerived` (did the walk
-  // actually FINISH), never on `pcHasGit` (does git merely EXIST) alone, because those two can
-  // disagree: git present + a mid-walk failure leaves `pcHasGit` true while `pcDerived` stays
-  // false, and the FALLBACK is what is actually in `PC_IGNORED_ROOTS` at that point.
-  //   1. success (pcHasGit && pcDerived)   -> "N top-level entries fed ..." + "-- git-derived"
-  //   2. no-git (!pcHasGit)                -> "no-git: nothing fed ..." + "-- NO-GIT FALLBACK literal"
-  //   3. mid-walk abort (pcHasGit && !pcDerived) -> names the abort EXPLICITLY: how many of how
-  //      many entries were fed before the failure, and that the fallback literal is what is
-  //      actually in use despite git being present -- the exact case the prior version of this
-  //      fix mislabelled as "git-derived" while printing the pre-abort entries.length as if it
-  //      were the true fed count (findings-back MEDIUM-1's own finding, corrected here).
-  let pcFedWording;
-  let pcSourceLabel;
-  if (pcHasGit && pcDerived) {
-    pcFedWording = `${pcFedCount} top-level entries fed to git check-ignore (files + hidden dot-entries included)`;
-    pcSourceLabel = 'git-derived';
-  } else if (!pcHasGit) {
-    pcFedWording = 'no-git: nothing fed, NO-GIT FALLBACK literal used';
-    pcSourceLabel = 'NO-GIT FALLBACK literal';
-  } else {
-    pcFedWording = `ABORTED after ${pcFedCount} of ${pcTotalEntries} top-level entries -- git check-ignore failed mid-walk`;
-    pcSourceLabel = 'NO-GIT FALLBACK literal -- derivation ABORTED mid-walk despite git being present';
-  }
-  // Same 3-path labelling as pcSourceLabel above, for ourRoots -- a single `git ls-files`
-  // call has no partial-walk state to distinguish, so this is a 3-way switch, not the fed-count
-  // narration ignoredRoots needs for its per-entry loop.
+  // TWO NUMBERS, NOT ONE (CWK-079 -- the old single "N fed" count meant two different things
+  // depending on which shape was live; this pass line now always states both): CITED =
+  // `pcCandidateRoots.size`, every distinct first segment `looksPathShaped()` let through
+  // discovery; PROBED = `pcToProbe.length`, that set minus the agent-home roots actually
+  // fed to `git check-ignore --stdin`. The gap between them is `pcHomesPresent`, already
+  // counted in the `agentHomeRoots` clause.
+  //
+  // SOURCE LABEL, THREE states -- no-git / call-FAILED-despite-git / git-derived, the same
+  // shape ourRoots already uses. ignoredRoots has no partial-walk state to name (a single
+  // batched call, not a per-entry loop), so unlike the old fed-count era this is not a
+  // three-way switch: `pcHasGit` decides no-git vs git, and `pcIgnoreCallFailed` is the one
+  // git-present-but-the-call-itself-failed case, degrading to an EMPTY set either way.
+  let pcIgnoredRootsLabel;
+  if (!pcHasGit) pcIgnoredRootsLabel = 'no-git: nothing probed';
+  else if (pcIgnoreCallFailed) pcIgnoredRootsLabel = 'git check-ignore --stdin call FAILED despite git being present';
+  else pcIgnoredRootsLabel = 'git-derived';
+  // Same 3-state labelling, ourRoots -- a single `git ls-files` call has no partial-walk
+  // state either, so this mirrors ignoredRoots' shape, not the old fed-count one.
   let pcOurRootsLabel;
   if (pcHasGit && pcOurRootsDerived) pcOurRootsLabel = 'git-derived';
   else if (!pcHasGit) pcOurRootsLabel = 'NO-GIT FALLBACK literal';
   else pcOurRootsLabel = 'NO-GIT FALLBACK literal -- derivation FAILED despite git being present';
-  if (pcHard.length === 0) ok(`every in-scope path citation resolves or is declared (${pcFindings.checked} checked, ${pcSurfaces.length} surfaces, ${PC_OUR_ROOTS.size} ourRoots -- ${pcOurRootsLabel}, ${PC_AGENT_HOME_ROOTS.size} agentHomeRoots, ${pcFedWording}, ${PC_IGNORED_ROOTS.size} ignoredRoots -- ${pcSourceLabel})`);
+  if (pcHard.length === 0) ok(`every in-scope path citation resolves or is declared (${pcFindings.checked} checked, ${pcSurfaces.length} surfaces, ${PC_OUR_ROOTS.size} ourRoots -- ${pcOurRootsLabel}, ${PC_AGENT_HOME_ROOTS.size} agentHomeRoots, ${pcCandidateRoots.size} distinct first segment(s) shape-qualified and cited / ${pcToProbe.length} probed (${pcHomesPresent} agent-home held out) -- ${pcIgnoredRootsLabel}, ${PC_IGNORED_ROOTS.size} ignoredRoots)`);
   else pcHard.forEach((f) => fail(f.msg));
 } catch (e) { fail(`pointer check crashed: ${e.message}`); }
 
@@ -545,4 +526,10 @@ try {
 } catch (e) { fail(`plugin/ dist check: ${e.message}`); }
 
 console.log(fails ? `\nVERIFY: FAIL (${fails})` : '\nVERIFY: PASS');
-process.exit(fails ? 1 : 0);
+// CWK-071 -- node/runtime.md §7 bans process.exit() unconditionally: it truncates pending
+// stdout writes, which is a real mechanism on an async host regardless of whether THIS
+// entrypoint's own writes are ever caught by it. process.exitCode + a natural fall-through
+// exit satisfies both readings of whether that risk reaches a fail-loud CLI gate like this
+// one -- the ban applies either way, and this is a same-shape class fix landing in 6 of 6
+// rooms, each its own file.
+process.exitCode = fails ? 1 : 0;
