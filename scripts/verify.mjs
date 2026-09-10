@@ -431,6 +431,16 @@ try {
   // happen is exactly the mislabel class CWK-078/CWK-079 both paid for, and a label in a line
   // that may never print is the weaker half of it.
   const PC_IGNORED_ROOTS = new Set();
+  // INSPECT MEDIUM-1 (findings-back, round 2): `applyCheckIgnoreProbe` FAILS LOUDLY via
+  // `fail()` on a non-0/1 status, but that `fail()` lands in the GATE's overall `fails` tally,
+  // never in `pcFindings` (checkPointers' own return) -- so `pcHard.length === 0` stays true
+  // and the ok() line below still fires, and it used to keep asserting `git-derived, 0
+  // ignoredRoots` over a run that derived NOTHING. The comment this replaced was TRUE that the
+  // failure is reported and counted, and WRONG that the sentence "never needs to re-describe
+  // it" -- it was positively asserting the opposite of what happened, not merely staying
+  // silent. Fixed by consulting the probe's own verdict via the ONE observable side effect a
+  // caller can read without a return value: whether `fails` moved during the call.
+  const pcFailsBeforeIgnoreProbe = fails;
   if (pcHasGit) {
     pc.applyCheckIgnoreProbe({
       toProbe: pcToProbe,
@@ -440,6 +450,7 @@ try {
       runCheckIgnore: (input) => spawnSync('git', ['check-ignore', '--stdin'], { cwd: repo, encoding: 'utf8', input }),
     });
   }
+  const pcIgnoreProbeFailed = fails > pcFailsBeforeIgnoreProbe;
   // Same self-check, ourRoots side (CWK-077 round 2): a root the live derivation finds but
   // the fallback literal does not know about would silently narrow ourRoots the moment git
   // is unavailable -- the exact defect this whole fix exists to close, one layer down.
@@ -481,17 +492,26 @@ try {
   // fed to `git check-ignore --stdin`. The gap between them is `pcHomesPresent`, already
   // counted in the `agentHomeRoots` clause.
   //
-  // SOURCE LABEL, TWO states -- no-git / git-derived. A genuine call FAILURE (CWK-090 fix 1)
-  // no longer has a third label state here: `applyCheckIgnoreProbe` FAILS LOUDLY via `fail()`
-  // directly on that path, so by the time this line is reached (only when `pcHard.length ===
-  // 0`, i.e. checkPointers' OWN findings are clean) a prior ignore-probe failure has already
-  // been reported elsewhere and counted in the gate's overall `fails` tally -- this sentence
-  // never needs to re-describe it.
+  // SOURCE LABEL, THREE states (INSPECT MEDIUM-1, findings-back round 2 -- corrects the prior
+  // TWO-state comment here, which was falsified three lines above it in the SAME commit
+  // (`1516e7e`) that shipped it: `applyCheckIgnoreProbe` FAILS LOUDLY via `fail()` on the
+  // gate's overall tally, but `pcHard` (checkPointers' OWN findings) never sees that fail, so
+  // this line is still REACHED after one -- consulting `pcIgnoreProbeFailed` (set above from
+  // the ONE observable side effect: did `fails` move during the call) is what makes the label
+  // honest instead of asserting `git-derived` over a run that derived nothing. No fallback
+  // literal exists to name here (CWK-079 removed it) -- the label states the failure instead.
   let pcIgnoredRootsLabel;
   if (!pcHasGit) pcIgnoredRootsLabel = 'no-git: nothing probed';
+  else if (pcIgnoreProbeFailed) pcIgnoredRootsLabel = 'DERIVATION FAILED -- see the FAIL line above';
   else pcIgnoredRootsLabel = 'git-derived';
-  // Same 3-state labelling, ourRoots -- a single `git ls-files` call has no partial-walk
-  // state either, so this mirrors ignoredRoots' shape, not the old fed-count one.
+  // Same 3-state SHAPE, ourRoots -- not an identical mechanism (LOW-1, findings-back round 2:
+  // the prior comment claimed a plain mirror, which was already false the moment ignoredRoots
+  // read TWO states here and ourRoots read three, three lines below). ourRoots' third state
+  // falls back to a KEPT literal (`PC_OUR_ROOTS_FALLBACK`) because `pcDeriveOurRoots()` catches
+  // its own failure and returns one; ignoredRoots has no fallback literal to name (CWK-079
+  // removed it deliberately), so its third state names the failure and PC_IGNORED_ROOTS is
+  // left exactly as partial as `applyCheckIgnoreProbe` returned it (empty here, since it
+  // returns before touching `ignoredRoots` on a failed verdict).
   let pcOurRootsLabel;
   if (pcHasGit && pcOurRootsDerived) pcOurRootsLabel = 'git-derived';
   else if (!pcHasGit) pcOurRootsLabel = 'NO-GIT FALLBACK literal';

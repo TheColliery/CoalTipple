@@ -219,3 +219,35 @@ test('verify.mjs pointer check: FIX 2 -- the lone-CR .gitignore line false-match
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+// INSPECT MEDIUM-1 + MEDIUM-2 (findings-back round 2) -- one end-to-end red proof serves
+// both: MEDIUM-1's mislabeled pass line, and MEDIUM-2's untested `fail` argument at the
+// applyCheckIgnoreProbe call site (proving verify.mjs wires its OWN real `fail`, not a no-op
+// or the wrong function -- the unit tests in pointer-check.test.mjs only prove
+// applyCheckIgnoreProbe calls whatever `fail` IT is given). Needs no `.git` corruption (the
+// route CWK-079 declined for cost -- corrupting `.git/index` also breaks `pcResolve`'s own
+// `git ls-files`, flooding unrelated FAILs): the sandboxed verify.mjs's OWN check-ignore spawn
+// line is string-patched to append an extra invalid flag before it runs, isolating the failure
+// to exactly the one call site under test.
+test('verify.mjs pointer check: a REAL check-ignore derivation FAILURE reddens the gate AND the pass line stops claiming git-derived (INSPECT MEDIUM-1/MEDIUM-2)', () => {
+  const { tmp } = mkGitSandbox();
+  try {
+    const verifyPath = path.join(tmp, 'scripts', 'verify.mjs');
+    const src = fs.readFileSync(verifyPath, 'utf8');
+    const needle = "spawnSync('git', ['check-ignore', '--stdin'], { cwd: repo, encoding: 'utf8', input })";
+    assert.ok(src.includes(needle), 'the check-ignore spawn line moved -- update this test\'s patch target');
+    fs.writeFileSync(verifyPath, src.replace(needle,
+      "spawnSync('git', ['check-ignore', '--stdin', '--bogus-flag-xyz'], { cwd: repo, encoding: 'utf8', input })"), 'utf8');
+
+    const r = runVerify(tmp);
+    assert.equal(r.status, 1, `a real check-ignore derivation failure must FAIL the gate, got:\n${r.stdout}${r.stderr}`);
+    assert.match(r.stdout, /FAIL git check-ignore --stdin exited 129/,
+      'the real fail() must be reached -- naming the real exit status, not a no-op fail swallowing it');
+    assert.doesNotMatch(r.stdout, /git-derived, \d+ ignoredRoots\)/,
+      'MEDIUM-1: the pass line must stop asserting git-derived once the derivation genuinely failed');
+    assert.match(r.stdout, /DERIVATION FAILED -- see the FAIL line above/,
+      'MEDIUM-1: the pass line must name the failure instead of a measured-looking count');
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
