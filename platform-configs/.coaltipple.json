@@ -99,7 +99,7 @@
   // # (also listing the floor model would de-dup it OUT of its own tier — pin the newcomer alone):
   // "modelTiers": { "reasoning": ["future-top-model"] },
 
-  // ## Standing consent to route to Fable 5 (the top rung above opus) WITHOUT asking each time. Fable is a
+  // ## Standing consent to route to the fable rung (the top rung above opus) WITHOUT asking each time. Fable is a
   // ## real-money spawn, so unless this is true the agent asks ONCE per fable escalation (once / always-this-
   // ## project / no); "no" drops to the top non-fable tier (opus). "always-this-project" writes true HERE (in
   // ## the project override: `node scripts/configure.mjs --project --fableConsent true`). No cost math, no
