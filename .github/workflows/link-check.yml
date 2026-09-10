@@ -1,0 +1,70 @@
+name: link-check
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '**.md'
+  pull_request:
+    branches: [main]
+    paths:
+      - '**.md'
+
+permissions:
+  contents: read
+
+# cancel-in-progress: TRUE (CWK-058, canon: .github/SKILL-REPO-PATTERN.md) -- this
+# workflow reads files and publishes nothing, so a superseded run leaves nothing
+# half-done to clean up (the atomicity test, applied at this workflow's own site).
+concurrency:
+  group: link-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      # NOT continue-on-error, unlike markdownlint.yml -- this is a real gate, not a
+      # report-only cleanup pass (say why, since the two sit side by side and a
+      # reader will ask): markdownlint checks markdown FORMAT and this room accepted
+      # it report-only because format drift is cosmetic; a BROKEN LINK is a real
+      # defect a reader hits, so it blocks.
+      #
+      # ENGINE: this room's own scripts/lib/link-check.mjs (CW-017, zero-dep,
+      # regex-based -- .github/SKILL-REPO-PATTERN.md:91's own DEFAULT reading). No
+      # AST vendored; CoalLedger's own link-check uses its doc-structure canary's
+      # vendored CommonMark+GFM engine instead, a different room's different budget.
+      #
+      # SCOPE: every TRACKED root/skill/command .md file, excluding `plugin/**` (the
+      # GENERATED dist copy -- scanning it double-reports every finding the source
+      # copy already caught) and `scripts/fixtures/**` (the engine's OWN test
+      # fixtures, which deliberately carry planted defects its unit tests assert
+      # against -- scanning them here would fail this gate by design, forever).
+      #
+      # NOT WRAPPED (a genuine divergence from CoalLedger's own workflow, named
+      # rather than copied past): CoalLedger's engine (md-checks.mjs) always exits 0
+      # -- its OTHER consumer reads `--json` and never relies on the process exit --
+      # so its workflow wraps the call in a `grep -qE '^0 finding'` predicate to turn
+      # that into a real gate. Ours (link-check.mjs) exits non-zero NATIVELY on a
+      # finding (scripts-quality.md's fail-LOUD CLI discipline) -- adding the same
+      # wrapper here would be a SECOND mechanism for a property the engine already
+      # guarantees, the over-hardening this flock bans. Proven both directions before
+      # shipping (CW-017's own return): the engine exits 1 on a planted-defect
+      # fixture and 0 on this room's real 12-file scope; the step below (bare
+      # invocation, no wrapper) reproduces both exit codes unchanged.
+      #
+      # FAILS OPEN ON AN EMPTY FILE LIST -- kept from CoalLedger's own precedent
+      # (that room's findings-back LOW-1): the empty-list guard covers a DIFFERENT
+      # hole than the wrapper above (nothing scanned at all, not a scanned-and-clean
+      # run) and stays regardless of which engine shape is on the other side of it.
+      - run: |
+          files=$(git ls-files '*.md' | grep -v '^plugin/' | grep -v '^scripts/fixtures/')
+          if [ -z "$files" ]; then
+            echo "::error::link-check found NO markdown files to scan -- the scope filter is broken, not the tree"
+            exit 1
+          fi
+          node scripts/lib/link-check.mjs $files
