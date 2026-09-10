@@ -297,28 +297,20 @@ try {
   // exactly this (an unreadable surface -> SKIP, never a crash) -- this helper is what lets a
   // per-file read failure REACH that path instead of throwing past it.
   const pcSafeRead = (rel) => { try { return fs.readFileSync(path.join(repo, rel), 'utf8'); } catch { return undefined; } };
-  const refsDir = path.join(repo, 'skills', 'coaltipple', 'references');
-  const commandsDir = path.join(repo, 'commands');
-  const pcSurfaces = [
-    { label: 'skills/coaltipple/SKILL.md', text: pcSafeRead('skills/coaltipple/SKILL.md'), dir: 'skills/coaltipple' },
-    ...fs.readdirSync(refsDir).filter((f) => f.endsWith('.md')).map((f) => {
-      const rel = path.join('skills', 'coaltipple', 'references', f).replace(/\\/g, '/');
-      return { label: rel, text: pcSafeRead(rel), dir: 'skills/coaltipple/references' };
-    }),
-    ...fs.readdirSync(commandsDir).filter((f) => f.endsWith('.md')).map((f) => {
-      const rel = path.join('commands', f).replace(/\\/g, '/');
-      return { label: rel, text: pcSafeRead(rel), dir: 'commands' };
-    }),
-    ...['README.md', 'SECURITY.md', 'CONTRIBUTING.md', 'PRIVACY.md'].map((f) => ({
-      label: f, text: pcSafeRead(f), dir: '',
-    })),
-    {
-      label: 'CHANGELOG.md',
-      text: pcSafeRead('CHANGELOG.md'),
-      historyOnly: true,
-      dir: '',
-    },
-  ];
+  // SURFACE PLAN, DECLARED (CWK-090 fix 3, ported from CoalMine's own port) -- what this
+  // block used to hard-code as three separate walks (one SKILL.md read, two `readdirSync`
+  // fans, four root-doc reads, one CHANGELOG read) is now DATA (`DEFAULT_SURFACE_PLAN`,
+  // pointer-check.mjs), driven here with THIS room's own fs IO so the module stays pure. A
+  // room that narrows the plan deletes a row and states the reason in that row's own `why`,
+  // never by editing this driver. Behaviour is BYTE-IDENTICAL to the three walks it replaces
+  // -- same surfaces, same order, same labels, same `dir` values -- verified by a surface-
+  // identity count before/after in this unit's own return, not merely asserted here.
+  const pcSurfaces = pc.collectSurfaces(repo, pc.DEFAULT_SURFACE_PLAN, {
+    join: path.join,
+    listMd: (dir) => fs.readdirSync(dir),
+    read: (abs) => pcSafeRead(path.relative(repo, abs)),
+    rel: (abs) => path.relative(repo, abs).replace(/\\/g, '/'),
+  });
   // no-external-assumption (AGENTS.md): git is an OPTIONAL enhancement with a graceful
   // fallback, never a hard requirement -- checked ONCE, not per-call, so the same sandbox
   // (verify.test.mjs's fs.cpSync copy, no `.git` at all) does not pay a failing `git`
@@ -416,39 +408,39 @@ try {
   // (the shape the old disk-walk used) -- structurally the same batching win CoalMine
   // measured on its own tree, not independently re-timed here.
   //
-  // EXIT-CODE SEMANTICS, findings-back MEDIUM-1 -- NOT a boolean. `git check-ignore` exits
-  // 0 when at least one fed path is ignored, 1 when none are (BOTH are successful
-  // derivations with different answers), and non-{0,1} (128 typical: a corrupted `.git`, a
-  // permission denial) is a genuine failure. The first version of this port checked only
-  // `ci.error` (a SPAWN failure) and treated any other outcome as "parse stdout" --
-  // silently reading a real git error as "nothing ignored", because a failed call's stdout
-  // is still a valid, empty string. That is the EXACT hole `pcCheckIgnore()` (CWK-075,
-  // deleted by this port) was built to close, restated here rather than re-lost: "a git
-  // error would silently reopen exactly the silent-narrowing hole this derivation exists
-  // to close." `ci.status` is checked explicitly, not just `ci.error`, before stdout is
-  // ever parsed -- a status outside {0,1} means the call FAILED and degrades to an EMPTY
-  // `PC_IGNORED_ROOTS`, same direction the no-git path already takes (narrower, never
-  // wider), with the pass line naming the failure instead of claiming `git-derived`.
-  // NAMED HONESTLY, because "same direction" is true about direction and silent about cost:
-  // on a box with NO git this path now catches NOTHING, where the deleted 10-name literal
-  // did catch one class -- a citation into a gitignored root, e.g. `dogfood/results/run1.json`
-  // (measured by INSPECT: old code FAILed it with no git present, new code passes it silently).
-  // Accepted, not hidden: the narrowing is VISIBLE (`no-git: nothing probed` in the pass line,
-  // per CWK-075's own rail), the gate is dev-only, and CI has git. Reviving the literal would
-  // reintroduce the hand-kept drift this port exists to remove.
+  // INJECTION-SITE PROBE (CWK-090 fix 2, ported from CoalMine -- CoalFace's own finding): a
+  // bare `root/` feed can FALSE-MATCH a root ABSENT FROM DISK under a `.gitignore` carrying a
+  // lone-CR "blank" line (a stray carriage return with no other content) -- CoalFace's own
+  // "26 bogus FAILs" shape. **MEASURED HERE BEFORE PORTING: this room's `.gitignore` carries
+  // ZERO CR bytes, in the worktree AND the blob (`.gitattributes` pins `* text=auto eol=lf`),
+  // and the exposure probe (`git check-ignore -q "nonsense-xyz/"`) exits 1 -- this fixes
+  // NOTHING live here today.** Ported anyway as prospective hardening, one shape rather than
+  // two mechanisms for the identical question: querying a path UNDER the root
+  // (`root/.pointer-check-probe`) carries the same "is this directory ignored" information a
+  // bare `root/` query does, without ever matching the bare-root CRLF/lone-CR shape (git
+  // cannot infer that an ABSENT path is a directory either way, so SOMETHING must be
+  // appended -- what changed is what). Each returned line has the fixed suffix stripped to
+  // recover the root.
+  const PC_PROBE_SUFFIX = '/.pointer-check-probe';
+  // FAIL-OPEN, CLOSED (CWK-090 fix 1, ported from CoalMine + CoalLedger `94e994f`); WIRING
+  // moved into `applyCheckIgnoreProbe` (pointer-check.mjs, CWK-090 -- the fourth occurrence of
+  // this room's own "a classification with no test on the CALL SITE mutates to green" class:
+  // CWK-060 HIGH-1, CWK-078 abort-path, CWK-079 findings-back HIGH-1, now this) so a unit test
+  // drives the exact branch verify.mjs runs, with an injected `runCheckIgnore`, never a
+  // duplicated copy. A non-0/1 exit (128 typical: a corrupted `.git`, an unreadable
+  // `.gitignore`) now FAILS LOUDLY via `fail()` directly -- not merely a pass-line label,
+  // which only prints when there are no hard findings elsewhere: a derivation that did not
+  // happen is exactly the mislabel class CWK-078/CWK-079 both paid for, and a label in a line
+  // that may never print is the weaker half of it.
   const PC_IGNORED_ROOTS = new Set();
-  let pcIgnoreCallFailed = false;
-  if (pcHasGit && pcToProbe.length) {
-    const ci = spawnSync('git', ['check-ignore', '--stdin'],
-      { cwd: repo, encoding: 'utf8', input: pcToProbe.map((n) => n + '/').join('\n') + '\n' });
-    if (ci.error || (ci.status !== 0 && ci.status !== 1)) {
-      pcIgnoreCallFailed = true;
-    } else if (typeof ci.stdout === 'string') {
-      for (const line of ci.stdout.split(/\r?\n/)) {
-        const t = line.trim();
-        if (t) PC_IGNORED_ROOTS.add(t.replace(/\/$/, ''));
-      }
-    }
+  if (pcHasGit) {
+    pc.applyCheckIgnoreProbe({
+      toProbe: pcToProbe,
+      PROBE_SUFFIX: PC_PROBE_SUFFIX,
+      ignoredRoots: PC_IGNORED_ROOTS,
+      fail,
+      runCheckIgnore: (input) => spawnSync('git', ['check-ignore', '--stdin'], { cwd: repo, encoding: 'utf8', input }),
+    });
   }
   // Same self-check, ourRoots side (CWK-077 round 2): a root the live derivation finds but
   // the fallback literal does not know about would silently narrow ourRoots the moment git
@@ -491,14 +483,14 @@ try {
   // fed to `git check-ignore --stdin`. The gap between them is `pcHomesPresent`, already
   // counted in the `agentHomeRoots` clause.
   //
-  // SOURCE LABEL, THREE states -- no-git / call-FAILED-despite-git / git-derived, the same
-  // shape ourRoots already uses. ignoredRoots has no partial-walk state to name (a single
-  // batched call, not a per-entry loop), so unlike the old fed-count era this is not a
-  // three-way switch: `pcHasGit` decides no-git vs git, and `pcIgnoreCallFailed` is the one
-  // git-present-but-the-call-itself-failed case, degrading to an EMPTY set either way.
+  // SOURCE LABEL, TWO states -- no-git / git-derived. A genuine call FAILURE (CWK-090 fix 1)
+  // no longer has a third label state here: `applyCheckIgnoreProbe` FAILS LOUDLY via `fail()`
+  // directly on that path, so by the time this line is reached (only when `pcHard.length ===
+  // 0`, i.e. checkPointers' OWN findings are clean) a prior ignore-probe failure has already
+  // been reported elsewhere and counted in the gate's overall `fails` tally -- this sentence
+  // never needs to re-describe it.
   let pcIgnoredRootsLabel;
   if (!pcHasGit) pcIgnoredRootsLabel = 'no-git: nothing probed';
-  else if (pcIgnoreCallFailed) pcIgnoredRootsLabel = 'git check-ignore --stdin call FAILED despite git being present';
   else pcIgnoredRootsLabel = 'git-derived';
   // Same 3-state labelling, ourRoots -- a single `git ls-files` call has no partial-walk
   // state either, so this mirrors ignoredRoots' shape, not the old fed-count one.

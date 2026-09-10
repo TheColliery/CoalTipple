@@ -147,3 +147,75 @@ test('verify.mjs pointer check: the clean-clone proof (CWK-079) -- a citation in
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+// CWK-090 fix (b) -- the injection-site probe (`root/.pointer-check-probe`), ported from
+// CoalMine's own port (scratchpad/r31-crlf-measurement.md + scripts/lib/render.test.mjs,
+// re-aimed there after its FIRST fixture -- a merely-CRLF-terminated .gitignore PATTERN
+// line -- did not reproduce on this box/git version. The shape that DOES: a line whose
+// ENTIRE CONTENT is a lone CR, a "blank" line carrying a stray carriage return, false-
+// matches an ABSENT, un-patterned root under the bare `first + '/'` feed. MEASURED HERE
+// BEFORE PORTING (per the r31 order): this room's own tracked `.gitignore` carries ZERO CR
+// bytes in the worktree and the blob, `.gitattributes` pins `eol: lf`, and the exposure
+// probe `git check-ignore -q "nonsense-xyz/"` exits 1 -- this fixes NOTHING live here
+// today, and the red case below is therefore a CRLF FIXTURE, never this tree.
+test('verify.mjs pointer check: FIX 2 -- the lone-CR .gitignore line false-matches an absent root under the bare feed; the injection-site feed and the real gate are immune (CWK-090)', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-verify-lonecr-'));
+  try {
+    for (const item of VERIFY_ITEMS) fs.cpSync(path.join(repo, item), path.join(tmp, item), { recursive: true });
+    for (const f of ['README.md', 'SECURITY.md', 'CONTRIBUTING.md', 'PRIVACY.md']) {
+      fs.copyFileSync(path.join(repo, f), path.join(tmp, f));
+    }
+    // A real pattern (`dogfood/`, this room's own genuinely-ignored root -- see .gitignore)
+    // so a control still exists, PLUS a lone-CR blank line -- the shape that actually
+    // false-matches. Raw bytes, not a JS template string, so the CR survives untouched
+    // through core.autocrlf's smudge filter on checkout.
+    fs.writeFileSync(path.join(tmp, '.gitignore'), Buffer.from('dogfood/\r\n\r\n', 'binary'));
+    // A citation to a root ABSENT from disk and named by no pattern -- the reproducing
+    // shape (see the header comment). Planted on a root-level surface (`dir: ''`), never
+    // commands/*.md, so this stays isolated from FIX 2's OWN citer-relative join.
+    fs.appendFileSync(path.join(tmp, 'SECURITY.md'), '\nSee `totally-fake-root/notes.md` for details.\n');
+
+    const git = (args) => {
+      const r = spawnSync('git', args, { cwd: tmp, encoding: 'utf8' });
+      if (r.status !== 0) throw new Error(`git ${args.join(' ')} failed: ${r.stderr || r.error?.message}`);
+      return r.stdout;
+    };
+    git(['init', '-q', '-b', 'main']);
+    git(['config', 'user.email', 'test@test.invalid']);
+    git(['config', 'user.name', 'Test']);
+    git(['config', 'commit.gpgsign', 'false']);
+    git(['config', 'core.autocrlf', 'true']);
+    git(['add', '-A']);
+    git(['commit', '-q', '-m', 'baseline']);
+    assert.ok(fs.readFileSync(path.join(tmp, '.gitignore'), 'utf8').includes('\r\n\r\n'),
+      'the working-tree .gitignore must actually carry the lone-CR blank line -- the shape this fixture exists to test');
+    assert.ok(!fs.existsSync(path.join(tmp, 'totally-fake-root')),
+      'the probed root must be genuinely absent -- that absence is what the false match depends on');
+
+    // THE DISCRIMINATING PAIR, at the git level, on the SAME real fixture.
+    const bare = spawnSync('git', ['check-ignore', '--stdin'], { cwd: tmp, encoding: 'utf8', input: 'totally-fake-root/\n' });
+    assert.equal(bare.status, 0,
+      'RED: the bare feed must reproduce the false match on THIS fixture -- an absent, un-patterned root reported ignored');
+    const probed = spawnSync('git', ['check-ignore', '--stdin'], { cwd: tmp, encoding: 'utf8', input: 'totally-fake-root/.pointer-check-probe\n' });
+    assert.equal(probed.status, 1, 'the injection-site feed correctly reports the SAME root as NOT ignored');
+    const verbose = spawnSync('git', ['check-ignore', '-v', '--stdin'], { cwd: tmp, encoding: 'utf8', input: 'totally-fake-root/\n' });
+    assert.match(verbose.stdout, /\.gitignore:2:/,
+      'the matching pattern must be the lone-CR line (line 2), naming the source unambiguously');
+
+    // CONTROL: a genuinely-ignored root still matches under BOTH feeds -- the probe loses
+    // no true positive.
+    assert.equal(spawnSync('git', ['check-ignore', '--stdin'], { cwd: tmp, encoding: 'utf8', input: 'dogfood/\n' }).status, 0);
+    assert.equal(spawnSync('git', ['check-ignore', '--stdin'], { cwd: tmp, encoding: 'utf8', input: 'dogfood/.pointer-check-probe\n' }).status, 0);
+
+    // END-TO-END: the real gate, as fixed, must not be fooled by this fixture -- the
+    // absent-root citation is silently out of scope (never even resolves), never the false
+    // "gitignored" FAIL the bare feed would have produced.
+    const r = runVerify(tmp);
+    assert.doesNotMatch(r.stdout, /totally-fake-root.*gitignored/i,
+      'the gate must never report the absent-root citation as gitignored -- the exact false FAIL the bare feed would have produced');
+    assert.doesNotMatch(r.stdout, /FAIL.*totally-fake-root/,
+      'the absent-root citation must not FAIL at all -- it is silently out of scope, not "gitignored" and not "does not resolve"');
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});

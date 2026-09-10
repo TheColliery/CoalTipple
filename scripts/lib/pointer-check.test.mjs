@@ -9,7 +9,15 @@
 // against a bare directory-fragment word being wrongly joined).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { checkPointers, pointerCandidates } from './pointer-check.mjs';
+import { spawnSync } from 'node:child_process';
+import {
+  checkPointers,
+  pointerCandidates,
+  classifyCheckIgnoreResult,
+  applyCheckIgnoreProbe,
+  DEFAULT_SURFACE_PLAN,
+  collectSurfaces,
+} from './pointer-check.mjs';
 
 const OUR_ROOTS = new Set(['scripts', 'skills']);
 const IGNORED_ROOTS = new Set(['scratchpad', 'AGENTS.md']);
@@ -421,4 +429,122 @@ test('checkPointers: FIX 2 fallback also binds the gitignored-root branch (a rel
   });
   assert.equal(findings.length, 1, JSON.stringify(findings));
   assert.match(findings[0].msg, /gitignored `dogfood\/`/);
+});
+
+// CWK-090 fix (a) -- classifyCheckIgnoreResult + applyCheckIgnoreProbe, ported from CoalMine.
+// The 0/1 cases are driven through a REAL git process against THIS repo's own tracked
+// .gitignore (MEMORY.md is ignored, scripts/verify.mjs is not) -- no synthetic fixture, per
+// this file's own header comment on classifyCheckIgnoreResult. Only the non-0/1 branch needs
+// a synthetic `ci` shape for the spawn-error case; the real non-0/1 case is driven through a
+// genuine git process too (an unknown flag, measured on this box/git version to exit 129 --
+// re-derive rather than trust a number carried in from elsewhere, per this room's own rail).
+
+test('classifyCheckIgnoreResult: a REAL git check-ignore --stdin exit 0 (something matched) is ok, stdout carries the match', () => {
+  const ci = spawnSync('git', ['check-ignore', '--stdin'], { encoding: 'utf8', input: 'MEMORY.md\n' });
+  assert.equal(ci.status, 0, `fixture assumption broken -- MEMORY.md must be gitignored here, got status ${ci.status}`);
+  const verdict = classifyCheckIgnoreResult(ci);
+  assert.equal(verdict.ok, true);
+  assert.match(verdict.stdout, /MEMORY\.md/);
+});
+
+test('classifyCheckIgnoreResult: a REAL git check-ignore --stdin exit 1 (nothing matched) is ALSO ok, per the exit-code semantics comment', () => {
+  const ci = spawnSync('git', ['check-ignore', '--stdin'], { encoding: 'utf8', input: 'scripts/verify.mjs\n' });
+  assert.equal(ci.status, 1, `fixture assumption broken -- scripts/verify.mjs must NOT be gitignored here, got status ${ci.status}`);
+  const verdict = classifyCheckIgnoreResult(ci);
+  assert.equal(verdict.ok, true);
+  assert.equal(verdict.stdout, '');
+});
+
+test('classifyCheckIgnoreResult: a REAL git check-ignore --stdin exit other than 0/1 (an unknown-flag 129, this box/git version) is a FAIL naming the status and stderr', () => {
+  const ci = spawnSync('git', ['check-ignore', '--stdin', '--bogus-flag-xyz'], { encoding: 'utf8', input: 'x\n' });
+  assert.notEqual(ci.status, 0, `fixture assumption broken -- expected a non-0/1 exit, got ${ci.status}`);
+  assert.notEqual(ci.status, 1, `fixture assumption broken -- expected a non-0/1 exit, got ${ci.status}`);
+  const verdict = classifyCheckIgnoreResult(ci);
+  assert.equal(verdict.ok, false);
+  assert.match(verdict.message, new RegExp(`exited ${ci.status}`));
+  assert.match(verdict.message, /unknown option/, 'the message should carry git\'s own first stderr line');
+});
+
+test('classifyCheckIgnoreResult: a synthetic spawn error (git missing/unspawnable) is a FAIL naming the spawn error', () => {
+  const verdict = classifyCheckIgnoreResult({ error: new Error('spawn git ENOENT'), status: null, stdout: null, stderr: null });
+  assert.equal(verdict.ok, false);
+  assert.match(verdict.message, /failed to spawn: spawn git ENOENT/);
+});
+
+test('applyCheckIgnoreProbe: an empty toProbe never spawns and never fails', () => {
+  let spawned = false;
+  let failed = false;
+  const ignoredRoots = new Set();
+  applyCheckIgnoreProbe({
+    toProbe: [],
+    PROBE_SUFFIX: '/.pointer-check-probe',
+    ignoredRoots,
+    fail: () => { failed = true; },
+    runCheckIgnore: () => { spawned = true; return { status: 1, stdout: '', stderr: '' }; },
+  });
+  assert.equal(spawned, false, 'an empty candidate set must never spawn git at all');
+  assert.equal(failed, false);
+  assert.equal(ignoredRoots.size, 0);
+});
+
+test('applyCheckIgnoreProbe: an ok verdict recovers the root, stripped of the probe suffix, into ignoredRoots', () => {
+  const ignoredRoots = new Set();
+  let failed = false;
+  applyCheckIgnoreProbe({
+    toProbe: ['dogfood', 'scripts'],
+    PROBE_SUFFIX: '/.pointer-check-probe',
+    ignoredRoots,
+    fail: () => { failed = true; },
+    runCheckIgnore: (input) => {
+      assert.equal(input, 'dogfood/.pointer-check-probe\nscripts/.pointer-check-probe\n');
+      return { status: 0, stdout: 'dogfood/.pointer-check-probe\n', stderr: '' };
+    },
+  });
+  assert.equal(failed, false);
+  assert.deepEqual([...ignoredRoots], ['dogfood']);
+});
+
+test('applyCheckIgnoreProbe: a non-0/1 verdict calls fail() and leaves ignoredRoots empty', () => {
+  const ignoredRoots = new Set();
+  const failMessages = [];
+  applyCheckIgnoreProbe({
+    toProbe: ['dogfood'],
+    PROBE_SUFFIX: '/.pointer-check-probe',
+    ignoredRoots,
+    fail: (msg) => failMessages.push(msg),
+    runCheckIgnore: () => ({ status: 128, stdout: '', stderr: 'fatal: bad object HEAD\n' }),
+  });
+  assert.equal(failMessages.length, 1);
+  assert.match(failMessages[0], /exited 128/);
+  assert.equal(ignoredRoots.size, 0);
+});
+
+// CWK-090 fix (c) -- DEFAULT_SURFACE_PLAN + collectSurfaces, ported from CoalMine's own port.
+
+test('DEFAULT_SURFACE_PLAN: every row declares a non-empty why', () => {
+  for (const row of DEFAULT_SURFACE_PLAN) {
+    assert.equal(typeof row.why, 'string', `row ${row.root} has no why`);
+    assert.ok(row.why.length > 0, `row ${row.root} has an empty why`);
+  }
+});
+
+test('collectSurfaces: a narrowing pass -- deleting a row from the plan means its surface is truly UNSEEN, not merely un-failing', () => {
+  // Ties this room's own narrowing sentence (pointer-check.mjs's module header, "a room that
+  // walks fewer surfaces DELETES the row ... never by editing collectSurfaces") to a real
+  // assertion: filter the `commands` md-dir row out of a copy of the plan and confirm no
+  // `commands/*.md` label reaches the returned surface array at all.
+  const fakeIo = {
+    join: (a, b) => `${a}/${b}`,
+    listMd: (dir) => (dir.endsWith('/commands') ? ['update.md', 'lock.md'] : ['lock.md']),
+    read: () => 'irrelevant body text',
+    rel: (abs) => abs.replace(/^repo\//, ''),
+  };
+  const full = collectSurfaces('repo', DEFAULT_SURFACE_PLAN, fakeIo);
+  assert.ok(full.some((s) => s.label.startsWith('commands/')), 'sanity: the full plan must walk commands/');
+
+  const narrowed = DEFAULT_SURFACE_PLAN.filter((row) => row.root !== 'commands');
+  const surfaces = collectSurfaces('repo', narrowed, fakeIo);
+  assert.ok(!surfaces.some((s) => s.label.startsWith('commands/')),
+    'a row removed from the plan must leave no trace in the walked surfaces, never merely stop failing on it');
+  assert.equal(surfaces.length, full.length - 2, 'removing the commands row must drop exactly the 2 files it walked');
 });

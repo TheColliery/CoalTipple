@@ -177,8 +177,70 @@
 // measurement found real defects the exemplar's data never exercised. Both are documented
 // here as CoalTipple-measured corrections, not CoalTipple-specific layout, and are candidates
 // for a future upstream port -- not this unit's call to make). Everything else below hardcodes
-// nothing: a room supplies its own surfaces (walked), its own ourRoots and ignoredRoots
-// (derived from ITS tree), its own resolve(), and its own pending list.
+// nothing: a room supplies its own surfaces (walked -- `DEFAULT_SURFACE_PLAN` below is this
+// room's DEFAULT declaration of that supply, not a hardcoded fact about every room), its own
+// ourRoots and ignoredRoots (derived from ITS tree), its own resolve(), and its own pending
+// list.
+
+// SURFACE PLAN, DECLARED (CWK-090 fix 3, ported from CoalMine's own port). What this room's
+// `verify.mjs` used to hard-code as three separate walks (a single SKILL.md read, two
+// `readdirSync` fans over `references/`+`commands/`, four root-doc reads, one CHANGELOG read)
+// is now DATA -- one row per surface, each carrying its own `why`, so a reader answers "what
+// does this gate walk" from a table instead of a driver.
+//
+// THE NARROWING FORM, one sentence an adopter copies rather than guesses: a room that walks
+// fewer surfaces DELETES the row and states its reason in the row's own `why`, never by
+// editing `collectSurfaces` or leaving the row in place unused.
+//
+// `kind` is one of two: `file` (a single exact path) · `md-dir` (a directory of markdown
+// files, walked NON-recursively -- `references/` and `commands/` are flat in this room; a
+// future recursive need is CoalMine's own variable, not ported here without one). `citerDir`
+// is the directory FIX 2 joins a relative citation against (CWK-075 -- our own named
+// deviation from the exemplar); `''` for a root-level file. `historyOnly: true` marks a
+// surface `checkPointers` binds to the gitignored-root case only (CHANGELOG.md -- published
+// history is never fixed forward, but a gitignored citation was never correct on any day).
+export const DEFAULT_SURFACE_PLAN = [
+  { kind: 'file', root: 'skills/coaltipple/SKILL.md', citerDir: 'skills/coaltipple',
+    why: 'the shipped skill body -- every ASK/rail/config claim starts here' },
+  { kind: 'md-dir', root: 'skills/coaltipple/references', citerDir: 'skills/coaltipple/references',
+    why: 'reference docs, cited relative to their OWN directory (FIX 2), never the repo root' },
+  { kind: 'md-dir', root: 'commands', citerDir: 'commands',
+    why: 'command docs are ship-text a user reads' },
+  { kind: 'file', root: 'README.md', citerDir: '',
+    why: 'the front door -- every install/config claim starts here' },
+  { kind: 'file', root: 'SECURITY.md', citerDir: '',
+    why: 'the disclosure surface, and it cites internal paths (e.g. a hook line ref)' },
+  { kind: 'file', root: 'CONTRIBUTING.md', citerDir: '',
+    why: 'the dev-facing surface, and it cites internal paths' },
+  { kind: 'file', root: 'PRIVACY.md', citerDir: '',
+    why: 'the privacy surface, and it cites internal paths' },
+  { kind: 'file', root: 'CHANGELOG.md', citerDir: '', historyOnly: true,
+    why: 'published history is never fixed forward -- a path correct when the entry was written is not a defect now, but a gitignored citation was never correct on any day' },
+];
+
+// COLLECT -- plan-driven, DI'd fs so this module stays pure (it imports nothing today and
+// must not start). `io.join`/`io.listMd`/`io.read`/`io.rel` are the SAME filesystem
+// primitives the caller already owns. Runs the plan in ORDER, so a room's own surface
+// count/order is exactly its plan's -- no hidden reordering. `io.listMd(dir)` returns
+// BASENAMES only (not recursive -- see DEFAULT_SURFACE_PLAN's own kind comment); the caller
+// joins them back onto `dir` itself, so this function never assumes a path-join style.
+export function collectSurfaces(repo, plan, io) {
+  const surfaces = [];
+  for (const row of plan) {
+    if (row.kind === 'md-dir') {
+      const abs = io.join(repo, row.root);
+      for (const f of io.listMd(abs).filter((n) => n.endsWith('.md'))) {
+        const fileAbs = io.join(abs, f);
+        surfaces.push({ label: io.rel(fileAbs), text: io.read(fileAbs), dir: row.citerDir });
+      }
+    } else {
+      const s = { label: row.root, text: io.read(io.join(repo, row.root)), dir: row.citerDir };
+      if (row.historyOnly) s.historyOnly = true;
+      surfaces.push(s);
+    }
+  }
+  return surfaces;
+}
 
 // A path this room deliberately points at BEFORE it exists. Ships EMPTY unless a real forward
 // pointer needs one -- the mechanism exists anyway: without an escape hatch the first
@@ -188,6 +250,62 @@
 export const PENDING_POINTERS = [
   // { path: 'scripts/lib/thing.mjs', reason: 'CWK-000 -- landing next unit' },
 ];
+
+// CHECK-IGNORE CLASSIFIER (CWK-090 fix 1, ported from CoalMine), pure -- takes the exact
+// shape a `spawnSync('git', ['check-ignore', '--stdin'], {...})` result carries and answers
+// ONE question: did this run actually tell us anything? Exit 0 and exit 1 both SUCCEED (1 =
+// "none of the fed paths are ignored", not an error); a spawn error or any OTHER status (128
+// included -- a bad pattern, an unreadable `.gitignore`, a broken worktree) means the run
+// answered NOTHING, and the caller must not treat an empty stdout as "zero ignored". Exported
+// and kept pure so this classification is unit-testable without a real git child for the
+// non-0/1 branch specifically (the 0/1 cases ARE driven through a real git process in the
+// test file -- only a genuine non-0/1 exit needs a synthetic `ci` shape, per this room's own
+// measurement that git 2.55 tolerates every malformed-input fixture tried down to exit 1).
+export function classifyCheckIgnoreResult(ci) {
+  if (ci.error) {
+    return { ok: false, message: `git check-ignore --stdin failed to spawn: ${ci.error.message}` };
+  }
+  if (ci.status !== 0 && ci.status !== 1) {
+    const stderrLine = typeof ci.stderr === 'string' ? ci.stderr.split('\n')[0].trim() : '';
+    return {
+      ok: false,
+      message: `git check-ignore --stdin exited ${ci.status}${stderrLine ? ` -- ${stderrLine}` : ''} -- cannot tell which cited roots are gitignored`,
+    };
+  }
+  return { ok: true, stdout: typeof ci.stdout === 'string' ? ci.stdout : '' };
+}
+
+// APPLY the check-ignore probe's verdict onto `ignoredRoots`, or FAIL LOUDLY (CWK-090 fix 1,
+// second half). `classifyCheckIgnoreResult` above is pure; this is the WIRING that ties it to
+// the gate's own `fail()` -- the two-round lesson this room has now paid for four times
+// (CWK-060 HIGH-1, CWK-078 abort-path, CWK-079 findings-back HIGH-1, and CoalMine's own
+// identical HIGH on this exact classifier): a classification with no test driving the CALL
+// SITE can be mutated to `if (false)` and leave the suite green, because nothing exercises
+// the branch. Moved out of verify.mjs so a unit test can drive the EXACT code verify.mjs
+// runs, with an injected `runCheckIgnore` in place of a real `spawnSync` -- the same DI shape
+// `collectSurfaces(repo, plan, io)` above already uses for the surface walk, applied to the
+// sibling spawn site. `runCheckIgnore(input)` takes the newline-joined probe input and
+// returns the same `{status, stdout, stderr, error}` shape a real `spawnSync` result carries.
+//
+// A non-0/1 status now FAILS LOUDLY here, not merely a pass-line label -- CWK-090's own
+// finding on ours: the prior shape set a flag and named the failure only in the SUCCESS pass
+// line, which is skipped entirely whenever ANY hard finding exists elsewhere. A derivation
+// that did not happen is exactly the mislabel class CWK-078/CWK-079 both paid for; a label in
+// a line that may never print is the weaker half of it.
+export function applyCheckIgnoreProbe({ toProbe, PROBE_SUFFIX, ignoredRoots, fail, runCheckIgnore }) {
+  if (!toProbe.length) return;
+  const ci = runCheckIgnore(toProbe.map((n) => n + PROBE_SUFFIX).join('\n') + '\n');
+  const verdict = classifyCheckIgnoreResult(ci);
+  if (!verdict.ok) {
+    fail(verdict.message);
+    return;
+  }
+  for (const line of verdict.stdout.split('\n')) {
+    const t = line.trim();
+    if (!t) continue;
+    ignoredRoots.add(t.endsWith(PROBE_SUFFIX) ? t.slice(0, -PROBE_SUFFIX.length) : t.replace(/\/$/, ''));
+  }
+}
 
 const GLOB = /[*?[\]{}|]/;
 const OUTSIDE = /^([~/]|[A-Za-z]:|[a-z][a-z0-9+.-]*:\/\/)/;
