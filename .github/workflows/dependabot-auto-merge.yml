@@ -14,13 +14,16 @@ on: pull_request
 permissions:
   contents: read
 
-# cancel-in-progress: FALSE -- `auto-merge` calls `gh pr merge --auto`, an external write
-# (a real GitHub merge action) against the SAME PR the group key scopes to. Cancelling
-# mid-merge is the exact half-written-external-state case this classification exists to
-# avoid; let it finish.
+# cancel-in-progress: TRUE (CWK-058, canon-corrected -- CoalWorks r29 / SKILL-REPO-PATTERN.md).
+# The group key is scoped PER PR, so two different Dependabot PRs never serialise behind each
+# other regardless of the flag below. WITHIN one PR's own group, enabling auto-merge is
+# IDEMPOTENT -- a cancelled run corrupts nothing, because the next push to that same PR simply
+# re-enables it. A prior version of this comment reasoned from the SHARED-group case (one key
+# for every PR), where a cancel really could race two merges; that case never applies once the
+# key is scoped per-PR, and the reasoning is retired here, not restated.
 concurrency:
-  group: dependabot-automerge-${{ github.event.pull_request.number }}
-  cancel-in-progress: false
+  group: dependabot-auto-merge-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   auto-merge:
