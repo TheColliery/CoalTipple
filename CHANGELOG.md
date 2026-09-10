@@ -2,6 +2,11 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.5.5] - 2026-09-10
+
+### Fixed
+- **CWK-067 — the one versioned model ID left in shipped text is now version-free.** `skills/coaltipple/SKILL.md` named `claude-fable-5` as the exemplar concrete Fable id at two rails (ASK 1's trigger description, the decline rail's re-resolve guard) while the live Fable release had already moved past it — not FALSE, but a version-pinned exemplar sitting in text nobody re-pins on release. Both sentences still say exactly what they said before (`isFableModel`'s substring match catches a bare alias AND any pinned concrete release id · a decline blocks the RESOLVED name, not the literal `fable`, or a concrete pin would re-resolve and re-serve after a decline), now with "a pinned concrete Fable release id" in place of the version number. No rail added, none removed, no mechanism changed — a wording fix whose whole point is that it cannot rot again. Re-pinning the current version was considered and rejected: this room has watched that exact move fail twice already (a `1.3.4` pin that rotted through two releases, corrected once, then rotted again three versions behind — both times caught by an outside reader, never by a gate).
+
 ## [1.5.4] - 2026-09-10
 
 ### Fixed
