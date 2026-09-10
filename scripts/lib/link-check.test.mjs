@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
 import {
   slugifyHeading,
   extractHeadingSlugs,
@@ -63,6 +64,32 @@ test('checkLinks: the RED fixture -- all three planted defects FAIL, none silent
   assert.match(msgs, /#no-such-heading.*matches no heading/s, 'planted defect 2: same-file anchor matches no heading');
   assert.match(msgs, /target\.md#missing-heading.*matches no heading in.*target\.md/s, 'planted defect 3: cross-file anchor, file exists, heading does not');
   assert.ok(findings.every((f) => f.level === 'FAIL'));
+});
+
+// findings-back, CW-017 round 1 HIGH-1 -- the gate's ONLY mechanism (main()'s own
+// process.exitCode assignment) had NO test: every test above drives the pure
+// exports directly and never spawns the real CLI, so `process.exitCode = 0;` in
+// place of the real ternary left the whole suite byte-identically green (measured
+// by INSPECT: engine exit 1->0 on the RED fixture, workflow body exit 1->0 on a
+// planted defect while STILL PRINTING the FAIL line, `node scripts/test.mjs`
+// unchanged). This is the exact shape the unit exists to prevent -- "a gate wired
+// without a red proof looks strict and cannot fail" -- and the one mechanism this
+// module actually has, so it gets the SAME kind of call-site test this room used to
+// close CWK-090's MEDIUM-2 last sitting: spawn the real file, assert the real exit.
+const ENGINE = path.join(repo, 'scripts', 'lib', 'link-check.mjs');
+
+test('link-check.mjs CLI: spawned against the RED fixture, exits 1 (the gate\'s ONLY mechanism -- process.exitCode -- pinned by a real spawn, not a pure-export call)', () => {
+  const files = readTreeMd(path.join(FIXTURES, 'red')).map((abs) => path.relative(repo, abs).replace(/\\/g, '/'));
+  const r = spawnSync(process.execPath, [ENGINE, ...files], { cwd: repo, encoding: 'utf8' });
+  assert.equal(r.status, 1, `RED fixture must exit 1, got status=${r.status}:\n${r.stdout}${r.stderr}`);
+  assert.match(r.stdout, /^3 finding\(s\) across 4 file\(s\)$/m);
+});
+
+test('link-check.mjs CLI: spawned against the GREEN fixture, exits 0', () => {
+  const files = readTreeMd(path.join(FIXTURES, 'green')).map((abs) => path.relative(repo, abs).replace(/\\/g, '/'));
+  const r = spawnSync(process.execPath, [ENGINE, ...files], { cwd: repo, encoding: 'utf8' });
+  assert.equal(r.status, 0, `GREEN fixture must exit 0, got status=${r.status}:\n${r.stdout}${r.stderr}`);
+  assert.match(r.stdout, /^0 finding\(s\) across 4 file\(s\)$/m);
 });
 
 test('checkLinks: the discriminating pair -- a citer-relative link resolves correctly, and the engine never asks about the repo-root-joined form', () => {
@@ -144,16 +171,32 @@ test('slugifyHeading: a plain ASCII heading is untouched but for casing and spac
   assert.equal(slugifyHeading('Step 1 — Grade the task (deterministic, not self-assessment)'), 'step-1--grade-the-task-deterministic-not-self-assessment');
 });
 
-test('slugifyHeading: a synthetic Thai heading slugs to its OWN letters, never to an empty string (no live heading in this tree carries one -- prospective coverage, per CW-017)', () => {
+test('slugifyHeading: a synthetic Thai heading with NO combining marks slugs to its own letters, never to an empty string (no live heading in this tree carries one -- prospective coverage, per CW-017)', () => {
   const slug = slugifyHeading('ทดสอบ Thai heading');
   assert.ok(slug.length > 0);
   assert.equal(slug, 'ทดสอบ-thai-heading');
 });
 
-test('slugifyHeading: a synthetic CJK heading slugs to its OWN letters too', () => {
+test('slugifyHeading: a synthetic CJK heading slugs to its own letters too (CJK carries no combining marks, so this case is not the contested one below)', () => {
   const slug = slugifyHeading('测试 CJK heading');
   assert.ok(slug.length > 0);
   assert.equal(slug, '测试-cjk-heading');
+});
+
+// findings-back, CW-017 round 1 MEDIUM-1 -- the test above this one carries ZERO
+// combining marks (`\p{M}`), so it passes identically under a drop-`\p{M}` rule AND
+// a keep-`\p{M}` rule and pins NOTHING about which one this engine actually
+// implements -- a claim ("slugs to its OWN letters") tested with a fixture that
+// avoids the input where the claim breaks. A REAL Thai heading with vowels/tones
+// (unlike the ASCII-transliterated fixture above) DOES carry combining marks, and
+// this engine's strip class drops them -- CONSONANTS SURVIVE, VOWELS AND TONE MARKS
+// DO NOT. This is the engine's actual, current, LOSSY behaviour for that input, and
+// this test pins exactly that (not "letters preserved") so it can fail if the strip
+// class ever changes shape.
+test('slugifyHeading: a REAL Thai heading WITH combining marks (vowels/tones) loses them -- consonants survive, the claim "slugs to its own letters" does NOT hold unqualified', () => {
+  const heading = 'ตัวอย่าง หัวข้อ ไทย'; // 4 combining marks (verified: 4 code points in \p{M})
+  assert.equal([...heading].filter((ch) => /\p{M}/u.test(ch)).length, 4, 'fixture assumption broken -- this heading must carry combining marks for the test to mean anything');
+  assert.equal(slugifyHeading(heading), 'ตวอยาง-หวขอ-ไทย');
 });
 
 test('extractHeadingSlugs: a duplicate-heading pair de-duplicates with -1, -2 -- CHANGELOG.md\'s own repeated "### Fixed"/"### Changed" shape', () => {

@@ -74,9 +74,24 @@ export function extractLinkTargets(text) {
 // hyphen BEFORE the emoji is stripped, so the emoji vanishes and the hyphen that
 // separated it from the text is LEFT BEHIND -- producing a LEADING hyphen in the
 // slug, not a clean one. Unicode letters are kept (`\p{L}`, not `[a-z]`) so a Thai or
-// CJK heading slugs to its own letters, never to an empty string -- no such heading
-// exists in this room's own tree today (measured), so this is prospective, exercised
-// only by a synthetic test.
+// CJK heading slugs to its own BASE letters -- never to an empty string.
+//
+// THE NAMED BOUND (findings-back, CW-017 round 1 MEDIUM-1/MEDIUM-2 -- both widened
+// past the head's first draft, which claimed more than it had measured): this strip
+// class drops `\p{M}` (Unicode COMBINING MARKS) along with everything else it is not
+// listed to keep, and the mark class is exactly what carries a Thai vowel/tone sign
+// or emoji's VARIATION SELECTOR (U+FE0F) -- so a Thai heading with real vowels/tones
+// slugs to CONSONANTS ONLY (`ตัวอย่าง` -> `ตวอยาง`, pinned in link-check.test.mjs, the
+// case a prior fixture in this room avoided), never to an empty
+// string but genuinely lossy. Whether GitHub's own real algorithm ALSO drops `\p{M}`
+// (github-slugger's own reported U+FE0F behaviour) is an UNVERIFIED VENDOR CLAIM --
+// no authoritative source is cited for it here, and this room's own source-grounding
+// rule names that state explicitly (never "settled"). MEASURED, not assumed: across
+// this room's own 12-file live scope, 6 of 174 headings carry `\p{M}` (all six are
+// emoji VARIATION SELECTORS, not Thai) and exactly 0 in-tree anchor citations point
+// at any of the six -- the DISCRIMINATING POPULATION between "drop `\p{M}`" and
+// "keep `\p{M}`" is ZERO here today, so this bound is prospective correctness, not a
+// live defect, and no code change follows from it.
 export function slugifyHeading(text) {
   return String(text)
     .toLowerCase()

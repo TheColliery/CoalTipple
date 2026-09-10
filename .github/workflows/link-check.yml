@@ -1,5 +1,15 @@
 name: link-check
 
+# on: paths -- SAFE HERE, and the reason is worth stating (findings-back, CW-017
+# round 1 LOW-1): CWK-058 moved path filtering OUT of ci.yml and codeql.yml, the two
+# workflows holding this room's REQUIRED status checks, because a path-skipped
+# workflow leaves its required context PENDING rather than green -- an unsatisfiable
+# ruleset. link-check.yml is not, and is not meant to become, a required context (it
+# is a repo-hygiene gate this room chose to add, not one GitHub's branch protection
+# enforces); `markdownlint.yml` and `scorecard.yml` are the room's other two
+# `on: paths`-filtered, non-required workflows, for the same reason. If link-check is
+# ever made required, this `on: paths` block owes the SAME job-level-classifier fix
+# CWK-058 already gave ci.yml/codeql.yml -- do not just delete this comment.
 on:
   push:
     branches: [main]
