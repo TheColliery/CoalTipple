@@ -290,10 +290,16 @@ export function classifyCheckIgnoreResult(ci) {
 // (CWK-060 HIGH-1, CWK-078 abort-path, CWK-079 findings-back HIGH-1, and CoalMine's own
 // identical HIGH on this exact classifier): a classification with no test driving the CALL
 // SITE can be mutated to `if (false)` and leave the suite green, because nothing exercises
-// the branch. Moved out of verify.mjs so a unit test can drive the EXACT code verify.mjs
-// runs, with an injected `runCheckIgnore` in place of a real `spawnSync` -- the same DI shape
-// `collectSurfaces(repo, plan, io)` above already uses for the surface walk, applied to the
-// sibling spawn site. `runCheckIgnore(input)` takes the newline-joined probe input and
+// the branch. Moved out of verify.mjs so a unit test can drive the FUNCTION's own verdict
+// logic (pointer-check.test.mjs, an injected `runCheckIgnore` in place of a real `spawnSync`)
+// -- the same DI shape `collectSurfaces(repo, plan, io)` above already uses for the surface
+// walk, applied to the sibling spawn site. RE-INSPECT LOW-A: that unit test alone is NOT what
+// pins the CALL SITE -- it drives this function with a DIFFERENT set of arguments, never
+// `verify.mjs`'s own real `fail` and real `spawnSync`. What pins the call site is the
+// end-to-end test in `scripts/verify.test.mjs` (spawns the real gate, forces a real non-0/1
+// `check-ignore` exit, asserts the real `fail` fired) -- name it here so a future reader does
+// not mistake the unit test for call-site coverage it does not provide. `runCheckIgnore(input)`
+// takes the newline-joined probe input and
 // returns the same `{status, stdout, stderr, error}` shape a real `spawnSync` result carries.
 //
 // A non-0/1 status now FAILS LOUDLY here, not merely a pass-line label -- CWK-090's own
