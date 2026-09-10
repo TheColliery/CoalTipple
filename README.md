@@ -174,7 +174,7 @@ Everything is tunable in `.coaltipple.json` — a global `~/.claude/.coaltipple.
 | `mode` | `auto` | Direction: `delegation` (down) \| `escalation` (up) \| `auto` \| `off` |
 | `qualityBar` | `60` | Quality threshold (0–100) for the staircase — raise (~85) for critical logic, lower (~45) for quick drafts |
 | `delegateMinLines` | `120` | Minimum task size below which down-delegation is skipped (spawn-overhead floor) |
-| `fableConsent` | `false` | Standing consent to route to Fable 5 (the top rung above opus, a real-money spawn) without asking each time. Unset/`false` = ask once per fable escalation (once / always-this-project / no); `no` caps the climb at the top non-fable rung (opus today — read from the ranking). Set per-project: `configure.mjs --project --fableConsent true` |
+| `fableConsent` | `false` | Standing consent to route to the fable rung (the top rung above opus, a real-money spawn) without asking each time. Unset/`false` = ask once per fable escalation (once / always-this-project / no); `no` caps the climb at the top non-fable rung (opus today — read from the ranking). Set per-project: `configure.mjs --project --fableConsent true` |
 | `modelTiers` | unset | Optional pins overlaying the alias floor (e.g. `{ "reasoning": ["future-top-model"] }`) — the one human override for a model the agent cannot see; an unavailable pin falls safely down the ladder at spawn-fail |
 
 Full key reference: every key + default lives in [`scripts/lib/config-schema.mjs`](scripts/lib/config-schema.mjs) and the commented template [`platform-configs/.coaltipple.json`](platform-configs/.coaltipple.json) — or run `node scripts/configure.mjs --help`.
@@ -185,7 +185,7 @@ Full key reference: every key + default lives in [`scripts/lib/config-schema.mjs
 
 * **Reads** its own config/ranking and your project; **writes** only its own scratch state (a ranking cache, an update-check stamp) — never a target file.
 * **The one defining right:** picking the model a spawned worker runs at — the whole mechanism. A worker gets strictly LESS: a bounded task contract, no re-spawning, no shell/network of its own.
-* **Never** network, exec, or delete by itself; **always asks** before spending real money (the `fableConsent` gate before Fable 5) or anything else beyond read+scratch — you, main, execute it on your own tools.
+* **Never** network, exec, or delete by itself; **always asks** before spending real money (the `fableConsent` gate before the fable rung) or anything else beyond read+scratch — you, main, execute it on your own tools.
 
 Full series matrix + the must-fail set: [Permission Matrix](https://github.com/TheColliery/.github/blob/main/PERMISSION-MATRIX.md)
 
