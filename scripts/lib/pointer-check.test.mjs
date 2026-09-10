@@ -258,6 +258,32 @@ test('pointerCandidates: FIX 1 does not false-positive on an ordinary path with 
   );
 });
 
+test('pointerCandidates: a BACKSLASH-delimited `..` is dropped at extraction, never reaching checkPointers (findings-back, CWK-090)', () => {
+  // Ported from the head's own reachability probe -- both escaping shapes he measured
+  // (path.resolve lands OUTSIDE the repo on this platform) must be gone before checkPointers
+  // ever asks resolve() about them.
+  assert.deepEqual(pointerCandidates('See `scripts/' + String.fromCharCode(92) + '..' + String.fromCharCode(92) + 'escape.md` here.'), []);
+  assert.deepEqual(pointerCandidates('See `scripts/lib' + String.fromCharCode(92) + '..' + String.fromCharCode(92) + '..' + String.fromCharCode(92) + '..' + String.fromCharCode(92) + 'etc' + String.fromCharCode(92) + 'passwd` here.'), []);
+});
+
+test('pointerCandidates: an ordinary FORWARD-SLASH `..` still survives extraction unchanged (the named deviation -- normalise, never reject, for the property joinRel actually covers)', () => {
+  assert.deepEqual(pointerCandidates('See `scripts/../../etc/passwd` here.'), ['scripts/../../etc/passwd']);
+});
+
+test('checkPointers: a BACKSLASH-delimited escape is never asked about, end to end -- resolve() sees nothing for it', () => {
+  const seen = [];
+  const findings = checkPointers({
+    surfaces: [{ label: 'PROBE.md', text: 'See `scripts/..' + String.fromCharCode(92) + '..' + String.fromCharCode(92) + 'escape.md` here.', dir: '' }],
+    ourRoots: OUR_ROOTS,
+    ignoredRoots: IGNORED_ROOTS,
+    agentHomeRoots: new Set(['.claude', '.agents', '.gemini']),
+    resolve: (rel) => { seen.push(rel); return 'tracked'; },
+    pending: [],
+  });
+  assert.deepEqual(seen, [], 'resolve() must never be asked about a backslash-delimited token');
+  assert.equal(findings.length, 0);
+});
+
 test('pointerCandidates: a dot-dir token SURVIVES extraction (CWK-077 -- blind spot 1 narrowed); DOMAIN_LIKE still does not exclude it', () => {
   // `.claude-plugin` starts with `.`, so `[a-z0-9]` cannot match at position 0 -- DOMAIN_LIKE
   // must not fire here, unchanged. What changed is the OLD "if (tok.startsWith('.')) continue"

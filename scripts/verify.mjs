@@ -328,12 +328,10 @@ try {
   try { execFileSync('git', ['rev-parse', '--is-inside-work-tree'], { cwd: repo, stdio: 'pipe' }); }
   catch { pcHasGit = false; }
 
-  // SCOPE, matching CWK-075's own dispatch (not CoalBoard's wider roster): the 8 surfaces
-  // above are the ones this ticket measured and fixed against. scripts/ + hooks/ line-comment
-  // scanning (which CoalBoard's own verify.mjs additionally does) is deliberately NOT added
-  // here -- widening the surface set would change the funnel numbers away from what this
-  // unit's own measurement, report, and INSPECT re-derivation are against. A future ticket
-  // may extend it; this one does not, to keep the reported numbers reproducible.
+  // SCOPE -- WHICH surfaces walk, and the narrowing reason for the kind this room's plan
+  // does not carry, both live in `DEFAULT_SURFACE_PLAN` itself (pointer-check.mjs), per its own
+  // narrowing-form contract; not restated here (findings-back, CWK-090 -- a count/reason beside
+  // its own list is reconciled against that ONE list, never duplicated into a second home).
   //
   // NO-GIT FALLBACK ONLY -- and DELIBERATELY asymmetric with ignoredRoots, which keeps no
   // literal at all (CWK-079 removed PC_IGNORED_ROOTS_FALLBACK entirely). ourRoots still needs

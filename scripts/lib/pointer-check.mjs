@@ -199,6 +199,15 @@
 // deviation from the exemplar); `''` for a root-level file. `historyOnly: true` marks a
 // surface `checkPointers` binds to the gitignored-root case only (CHANGELOG.md -- published
 // history is never fixed forward, but a gitignored citation was never correct on any day).
+//
+// NARROWING APPLIED, stated HERE per the narrowing form above (findings-back, CWK-090): this
+// plan carries only `file`/`md-dir` rows -- no `scripts/`+`hooks/` line-comment-scanning kind,
+// which the wider exemplar (CoalBoard's own verify.mjs) additionally walks. That is not an
+// omitted row (there is no `comments`-shaped row to point at and delete); it is a KIND this
+// room's plan never had, so the reason lives here rather than in a row's own `why`: widening to
+// scan comments would change the funnel numbers this ticket's own measurement, report, and
+// INSPECT re-derivation are reproducible against. A future ticket may add a `comments` kind and
+// a row for it; this plan does not, to keep those numbers stable until one does.
 export const DEFAULT_SURFACE_PLAN = [
   { kind: 'file', root: 'skills/coaltipple/SKILL.md', citerDir: 'skills/coaltipple',
     why: 'the shipped skill body -- every ASK/rail/config claim starts here' },
@@ -314,6 +323,27 @@ const OUTSIDE = /^([~/]|[A-Za-z]:|[a-z][a-z0-9+.-]*:\/\/)/;
 // ordinary path segment (`scripts`, `.claude-plugin`) never matches (no leading alnum before a
 // dot for a dot-dir, no dot at all for a plain dir name).
 const DOMAIN_LIKE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+\//i;
+// findings-back (CWK-090) -- a BACKSLASH is not a separator either `joinRel` or the caller's
+// resolve() reads. `joinRel` (below) splits on `/` only, so a `..` delimited by BACKSLASHES is
+// invisible to it -- the token survives every shape test, takes the ourRoots branch on its
+// FIRST (`/`-split) segment, and reaches resolve() with the backslash-delimited `..` still
+// inside; on Windows path.resolve treats `\` as a separator and the stat lands OUTSIDE the repo
+// (measured: the head's own probe, `scripts/..\..\escape.md` and
+// `scripts/lib\..\..\..\etc\passwd`, both escape). THIS DOES NOT VIOLATE OUR NAMED DEVIATION
+// (we normalise `/`-delimited `.`/`..` in joinRel rather than reject them, unlike CoalMine): the
+// deviation binds the property the normaliser actually covers -- `/`-delimited segments -- and
+// a backslash-delimited one is outside that coverage entirely, so rejecting it here is the ONLY
+// mechanism for an uncovered half, never a second one for a covered property. Reject the
+// CHARACTER, unconditionally, rather than widen joinRel's segment scan to read `\` too: a
+// citation in our surfaces is `/`-delimited on every platform, full stop, and rejecting keeps
+// that invariant platform-UNconditional instead of teaching the scanner a second separator.
+// REACHABILITY measured before choosing this cure, never assumed: 121 candidate tokens across
+// this room's 12 walked surfaces, ZERO contain a backslash -- a broken containment invariant
+// with no live instance today, exactly like fix (b)'s CRLF probe. NAMED BLIND SPOT: a legitimate
+// Windows-style citation is now dropped, unchecked and unannounced -- measured population zero;
+// if that ever stops being zero, normalise separators at the boundary, never re-admit the
+// character into a segment scan.
+const BACKSLASH = /\\/;
 
 // Candidate extraction. Exported so an adopter (or a future audit here) can measure its OWN
 // funnel with the same instrument rather than re-implementing it and getting different
@@ -330,6 +360,7 @@ export function pointerCandidates(text) {
     if (!tok.includes('/')) continue;      // a bare filename is the USER's repo's
     if (OUTSIDE.test(tok)) continue;       // absolute, home-relative, or a schemed URL
     if (DOMAIN_LIKE.test(tok)) continue;   // a scheme-less domain (CWK-075 FIX 1)
+    if (BACKSLASH.test(tok)) continue;     // not a separator this gate reads -- see above (findings-back)
     // NOTE: dot-dir tokens are NOT dropped here (CWK-077 -- narrowed blind spot 1). Only the
     // TOOL'S OWN agent-home roots are held out, and that decision needs the caller-supplied
     // `agentHomeRoots` set, which this function does not receive -- it happens in
