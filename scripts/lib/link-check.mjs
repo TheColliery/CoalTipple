@@ -65,39 +65,44 @@ export function extractLinkTargets(text) {
   return out;
 }
 
-// SLUG ALGORITHM, matching GitHub's own heading-anchor rules (github-slugger's
-// published behaviour, re-implemented here rather than vendored, per Phoenix #2):
-// lowercase -> trim -> collapse each WHITESPACE RUN to one hyphen FIRST -> THEN strip
-// every character that is not a Unicode letter, Unicode number, underscore, or the
-// ASCII hyphen. The ORDER of those last two steps is the part a guess gets wrong: an
+// SLUG ALGORITHM, matching GitHub's own heading-anchor rules: lowercase -> trim ->
+// collapse each WHITESPACE RUN to one hyphen FIRST -> THEN strip every character
+// that is not a Unicode letter, Unicode MARK, Unicode number, underscore, or the
+// ASCII hyphen. The ORDER of the last two steps is the part a guess gets wrong: an
 // emoji-prefixed heading like `🚀 Getting started` collapses its leading space to a
 // hyphen BEFORE the emoji is stripped, so the emoji vanishes and the hyphen that
 // separated it from the text is LEFT BEHIND -- producing a LEADING hyphen in the
 // slug, not a clean one. Unicode letters are kept (`\p{L}`, not `[a-z]`) so a Thai or
-// CJK heading slugs to its own BASE letters -- never to an empty string.
+// CJK heading slugs to its own letters, never to an empty string.
 //
-// THE NAMED BOUND (findings-back, CW-017 round 1 MEDIUM-1/MEDIUM-2 -- both widened
-// past the head's first draft, which claimed more than it had measured): this strip
-// class drops `\p{M}` (Unicode COMBINING MARKS) along with everything else it is not
-// listed to keep, and the mark class is exactly what carries a Thai vowel/tone sign
-// or emoji's VARIATION SELECTOR (U+FE0F) -- so a Thai heading with real vowels/tones
-// slugs to CONSONANTS ONLY (`ตัวอย่าง` -> `ตวอยาง`, pinned in link-check.test.mjs, the
-// case a prior fixture in this room avoided), never to an empty
-// string but genuinely lossy. Whether GitHub's own real algorithm ALSO drops `\p{M}`
-// (github-slugger's own reported U+FE0F behaviour) is an UNVERIFIED VENDOR CLAIM --
-// no authoritative source is cited for it here, and this room's own source-grounding
-// rule names that state explicitly (never "settled"). MEASURED, not assumed: across
-// this room's own 12-file live scope, 6 of 174 headings carry `\p{M}` (all six are
-// emoji VARIATION SELECTORS, not Thai) and exactly 0 in-tree anchor citations point
-// at any of the six -- the DISCRIMINATING POPULATION between "drop `\p{M}`" and
-// "keep `\p{M}`" is ZERO here today, so this bound is prospective correctness, not a
-// live defect, and no code change follows from it.
+// CONFORMS to `github-slugger` (the de-facto reference implementation of GitHub's
+// heading-slug rule, package `github-slugger`, `Flet/github-slugger` on GitHub) --
+// findings-back, CW-017 round 2, correcting round 1's own MEDIUM-2: that round
+// added `\p{M}` (Unicode COMBINING MARKS) to the strip class, on the belief that
+// github-slugger's real strip-set ALSO drops it (an "unverified vendor claim" at
+// the time). Re-measured directly against the reference's own generated `regex.js`
+// + `index.js` (`value.toLowerCase().replace(regex, '').replace(/ /g, '-')`) rather
+// than assumed: github-slugger's strip-set does NOT match U+FE0F (the emoji
+// variation selector trailing an emoji like `🖥️`) and does NOT match Thai combining
+// marks (`ั`, `่`, ...) -- it DOES strip the emoji BASE character (the
+// `\uD83D`-lead surrogate pair), which is why an emoji with no dual presentation
+// form (`🚀`) slugs identically either way and never discriminated the two rules.
+// Run against this room's own 12-file live scope + a real combining-mark Thai
+// heading, 7 of 11 cases disagreed with the strip-`\p{M}` shape round 1 shipped;
+// keeping `\p{M}` (this version) matches the reference on all 11. This is not a
+// stylistic vendor-alignment choice: this function's whole JOB is PREDICTING the
+// anchor id GitHub will actually render, so a divergence here is a correctness gap
+// against the exact ground truth it exists to predict, not a place for a named
+// house deviation (unlike pointer-check.mjs's own OUTSIDE regex, which has no such
+// ground truth to match). Population today is still 0 (no live citation depends on
+// the six emoji-VS headings either way) -- conformed anyway, before it is a defect,
+// not after.
 export function slugifyHeading(text) {
   return String(text)
     .toLowerCase()
     .trim()
     .replace(/[\t\n\v\f\r ]+/g, '-')
-    .replace(/[^\p{L}\p{N}_-]/gu, '');
+    .replace(/[^\p{L}\p{M}\p{N}_-]/gu, '');
 }
 
 // HEADING EXTRACTION + PER-FILE DEDUPLICATION. GitHub scopes anchor uniqueness to

@@ -188,15 +188,21 @@ test('slugifyHeading: a synthetic CJK heading slugs to its own letters too (CJK 
 // a keep-`\p{M}` rule and pins NOTHING about which one this engine actually
 // implements -- a claim ("slugs to its OWN letters") tested with a fixture that
 // avoids the input where the claim breaks. A REAL Thai heading with vowels/tones
-// (unlike the ASCII-transliterated fixture above) DOES carry combining marks, and
-// this engine's strip class drops them -- CONSONANTS SURVIVE, VOWELS AND TONE MARKS
-// DO NOT. This is the engine's actual, current, LOSSY behaviour for that input, and
-// this test pins exactly that (not "letters preserved") so it can fail if the strip
-// class ever changes shape.
-test('slugifyHeading: a REAL Thai heading WITH combining marks (vowels/tones) loses them -- consonants survive, the claim "slugs to its own letters" does NOT hold unqualified', () => {
+// (unlike the ASCII-transliterated fixture above) DOES carry combining marks.
+//
+// ROUND 2 CORRECTION: this test used to pin the LOSSY round-1 behaviour
+// (consonants survive, vowels/tones dropped). That behaviour was found to
+// DIVERGE from github-slugger, the reference implementation of GitHub's own
+// heading-slug rule (`Flet/github-slugger`, `index.js`+`regex.js`, re-measured
+// directly against a fetched copy of the source, `slugifyHeading`'s own comment
+// in this file's sibling `link-check.mjs` carries the reasoning in full) --
+// the reference KEEPS `\p{M}`, we dropped it. Conformed: the strip class now keeps `\p{M}`, so this heading's
+// combining marks SURVIVE and the slug matches GitHub's real rendered anchor.
+// This test now pins the CORRECT, conformant behaviour, not the old lossy one.
+test('slugifyHeading: a REAL Thai heading WITH combining marks (vowels/tones) KEEPS them -- conforms to github-slugger, the reference implementation of GitHub\'s heading-slug rule', () => {
   const heading = 'ตัวอย่าง หัวข้อ ไทย'; // 4 combining marks (verified: 4 code points in \p{M})
   assert.equal([...heading].filter((ch) => /\p{M}/u.test(ch)).length, 4, 'fixture assumption broken -- this heading must carry combining marks for the test to mean anything');
-  assert.equal(slugifyHeading(heading), 'ตวอยาง-หวขอ-ไทย');
+  assert.equal(slugifyHeading(heading), 'ตัวอย่าง-หัวข้อ-ไทย');
 });
 
 test('extractHeadingSlugs: a duplicate-heading pair de-duplicates with -1, -2 -- CHANGELOG.md\'s own repeated "### Fixed"/"### Changed" shape', () => {
