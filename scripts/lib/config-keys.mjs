@@ -445,17 +445,38 @@ export function checkConfigKeys({
 // and platform-configs/.coaltipple.json's header comment + README.md's own Configure
 // section both say every key + default lives in "the commented template".
 //
-// PLAIN \b<key>\b TEXT MATCH, not the backtick/row shape the STRUCTURED PASS above uses --
-// deliberately, because both surfaces name a real key by a shape that pass would miss.
-// The factory template documents `modelTiers` ONLY inside a COMMENTED-OUT worked example
-// (never a live JSON key -- optional and unset by design, so a JSON-key presence check
-// would false-FAIL it). SKILL.md's own Config table packs `updateMode`+`updateCheckDays`
-// into ONE row joined by " · " (KEY_TABLES' own comment above already names this row as
-// unsplittable by ROW_KEY). A row-shaped check would false-FAIL both; a plain word-
-// boundary match over the raw region/file text does not care which shape carries the name.
+// TWO DIFFERENT SHAPES, one per surface, per INSPECT's r34 findings-back (MEDIUM-1/LOW-1):
+// the original comment justified BOTH legs with one binary ("a row/JSON-key check would
+// false-FAIL both traps") and that binary was MEASURED FALSE. A `"k"\s*:` JSON-key-SHAPE
+// check (live OR commented) misses 0 of 24 keys on this room's real factory template AND
+// still passes the `modelTiers` trap (it matches inside `// "modelTiers": { ... }` too) --
+// so the factory leg uses that tighter shape, not a plain word match.
+//
+// FACTORY LEG -- `"k"\s*:` (JSON-key shape, live or commented-out). This is still not a
+// live-JSON-parse: `modelTiers` is documented ONLY inside a COMMENTED-OUT worked example
+// (never a live key -- optional and unset by design), and the shape deliberately accepts
+// that commented mention as documentation, same as a live one. What it does NOT accept
+// any more: a bare English-word or cross-reference mention with no `"key":` shape beside
+// it -- `language` was previously satisfied by the prose "## The language for conductor
+// prompts", and `mode` by the substring inside `fast-mode`; neither proves the key is
+// actually documented with its default, and both now correctly FAIL if their real
+// `"key":` line is deleted.
+//
+// SKILL.md LEG -- kept as a PLAIN \b<key>\b word-boundary match, not the backtick/row
+// shape the STRUCTURED PASS above uses -- because SKILL.md's own Config table packs
+// `updateMode`+`updateCheckDays` into ONE row joined by " · " (KEY_TABLES' own comment
+// above already names this row as unsplittable by ROW_KEY), and a row-shaped check would
+// false-FAIL that real, correctly-documented row. DECLARED BOUND (LOW-1, no code change):
+// this leg proves the key NAME appears somewhere inside the bounded Config region -- it
+// does NOT prove the key has its own table row. A row replaced by in-region prose (e.g.
+// "see fableConsent above" in place of the real `fableConsent` row) still satisfies it.
+// Narrower than the factory leg's old hole: every real per-key TABLE ROW delete is still
+// caught 24/24 (no key has a second in-region mention today), and a backtick shape would
+// not close this bound either -- prose can backtick a key name too.
 export function checkSchemaCompleteness({ schemaKeys, skillMdText, factoryText }) {
   const findings = [];
   const seen = (text, k) => new RegExp(BS + 'b' + k + BS + 'b').test(text);
+  const factoryKeyShape = (text, k) => new RegExp('"' + k + '"' + BS + 's*:').test(text);
 
   const region = tableRegion(skillMdText, 'Config');
   if (region === null) {
@@ -491,12 +512,13 @@ export function checkSchemaCompleteness({ schemaKeys, skillMdText, factoryText }
     }
   }
 
-  const missingFactory = schemaKeys.filter((k) => !seen(factoryText, k)).sort();
+  const missingFactory = schemaKeys.filter((k) => !factoryKeyShape(factoryText, k)).sort();
   if (missingFactory.length) {
     findings.push({
       level: 'FAIL',
-      msg: 'schema key(s) missing from platform-configs/.coaltipple.json (README.md '
-        + 'claims every key documents there): ' + missingFactory.join(', '),
+      msg: 'schema key(s) missing from platform-configs/.coaltipple.json -- no `"key":` shape '
+        + '(live or commented) names them, though README.md claims every key documents '
+        + 'there: ' + missingFactory.join(', '),
     });
   }
 

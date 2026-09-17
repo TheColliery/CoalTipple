@@ -325,6 +325,21 @@ test('checkSchemaCompleteness (b): a schema key missing from the factory templat
   assert.ok(f, 'expected a FAIL naming the missing mode mention');
 });
 
+test('checkSchemaCompleteness: MEDIUM-1 -- a deleted live factory key is caught even when a bare PROSE mention of the same word survives', () => {
+  // Regression pin for r34 INSPECT MEDIUM-1: the OLD plain \b<key>\b factory leg was
+  // satisfied by a comment or an English word alone (measured on the real template --
+  // `language` via "## The language for conductor prompts", `mode` via the substring in
+  // "fast-mode") -- 7 of 24 real keys stayed silently GREEN under a deleted live line.
+  // The tightened `"k"\s*:` shape must NOT be fooled the same way: this fixture deletes
+  // qualityBar's real `"qualityBar": 60,` line and leaves a bare prose mention with no
+  // JSON-key shape beside it, exactly the trap that fooled the old check.
+  const withProseGhost = SC_FACTORY.replace('  "qualityBar": 60,\n', '')
+    + '  // qualityBar is also documented in SKILL.md (no shape here, just the word)\n';
+  const { findings } = checkSchemaCompleteness({ schemaKeys: SC_SCHEMA, skillMdText: SC_SKILL_MD, factoryText: withProseGhost });
+  const f = findLevel(findings, 'FAIL').find((x) => x.msg.includes('qualityBar') && x.msg.includes('platform-configs'));
+  assert.ok(f, 'a bare prose mention with no "key": shape must not satisfy the tightened factory leg');
+});
+
 test('checkSchemaCompleteness (c): a stale heading count is a FAIL, never silently trusted', () => {
   const stale = SC_SKILL_MD.replace('all 6 config keys', 'all 7 config keys');
   const { findings } = checkSchemaCompleteness({ schemaKeys: SC_SCHEMA, skillMdText: stale, factoryText: SC_FACTORY });
