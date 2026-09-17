@@ -300,12 +300,22 @@ function main() {
     // note above). Complements (never replaces) the English hint above.
     const nonLatin = hasNonLatinScript(prompt);
     const nonEnglish = nonLatin ? ' Non-English prompt -- grade by MEANING and apply the sensitive-gate by intent; the English keyword flags will not fire.' : '';
-    // Double-hook arbitration cue (CB↔CT coordination, DOUBLE-HOOK-FIX.md): CONDITIONAL on a
-    // hint or non-Latin signal -- those mirror CoalBoard's own AND-gate seeds, so they are the
-    // only turns it might also fire on; a signal-free turn has nothing to arbitrate. Lets the
-    // model arbitrate silently rather than act on both / surface a "conflict" (Phoenix #13
-    // zero-noise).
-    const cue = (h || nonLatin) ? ' Triage (binds even when only ONE hook fired): STAKES = your Layer-2 verdict that the TASK is stakes-domain work (security · crypto · migration · money); fired keywords of any vocabulary are Layer-1 evidence only, never the verdict, and a Layer-2 acquittal STANDS -- no keyword re-arms it. Stakes -> CoalBoard leads: HALT and ask the user before acting; CoalTipple = tier-lever. No stakes: CoalTipple leads only if the WORK\'s OWN size/complexity calls for delegate-down or escalate-up -- a fired grade is evidence, never the verdict -- else neither. Layer 2 genuinely undecidable -> CoalBoard. Both conductors fired -> ARBITRATE silently by this same rule: act on one, never surface it.' : '';
+    // Double-hook arbitration cue (CB<->CT coordination). CONDITIONAL ON WORDING, NOT ON AN
+    // INSTALL PROBE (main's ruling, r35a, R9 -- INSPECT C MEDIUM-3, scratchpad/r34/inspect-c-return.md
+    // SS5): the OLD text named "CoalBoard leads" / "-> CoalBoard" unconditionally, so a
+    // CoalTipple-only user's agent was told an ABSENT plugin leads -- CoalBoard's own mirrored
+    // cue has the identical defect the other way. Fixed by making the SENTENCE conditional on
+    // PRESENCE the agent already knows (which hooks fired, which skills are listed) rather than
+    // adding a runtime probe (zero-dep, Phoenix #7 offline/no-new-dependency): sibling present
+    // -> the arbitration reads as it always did; sibling absent -> stakes work STILL HALTS and
+    // asks the user, and no absent plugin is named as the leader. CoalTipple authors this
+    // sentence; CoalBoard's own conductor conforms to the identical text second.
+    //
+    // Fires CONDITIONAL on a hint or non-Latin signal -- those mirror CoalBoard's own AND-gate
+    // seeds, so they are the only turns it might also fire on; a signal-free turn has nothing to
+    // arbitrate. Lets the model arbitrate silently rather than act on both / surface a "conflict"
+    // (Phoenix #13 zero-noise).
+    const cue = (h || nonLatin) ? ' Triage (binds even when only ONE hook fired): STAKES = your Layer-2 verdict that the TASK is stakes-domain work (security · crypto · migration · money); fired keywords of any vocabulary are Layer-1 evidence only, never the verdict, and a Layer-2 acquittal STANDS -- no keyword re-arms it. Stakes -> HALT and ask the user before acting, always; if CoalBoard is present this session (its hook fired or its skill is listed) it leads and CoalTipple, if present, is its tier-lever -- a plugin that is not present leads nothing. No stakes: CoalTipple, if present, leads only if the WORK\'s OWN size/complexity calls for delegate-down or escalate-up -- a fired grade is evidence, never the verdict -- else neither. Layer 2 genuinely undecidable -> treat it as stakes. Both conductors fired -> ARBITRATE silently by this same rule: act on one, never surface it.' : '';
     // HOOK-LEAN (2026-07-15): the full routing rubric is RESIDENT from SessionStart (incl. a
     // :compact re-inject); this per-turn line is a POINTER to it, not a re-teach. Honest caveat:
     // on a very long session that never compacts, early-context attention on that resident

@@ -135,6 +135,40 @@ test('UserPromptSubmit with a hot keyword -> grade-5 hint that feeds grade + qua
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 });
 
+test('r35a R9: the arbitration cue HALTS unconditionally and names no absent plugin as leader', () => {
+  const tmp = mk();
+  try {
+    const r = run({ hook_event_name: 'UserPromptSubmit', prompt: 'fix the auth token check' }, tmp);
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /HALT and ask the user before acting, always/, 'stakes work must always halt, sibling present or not');
+    assert.match(r.stdout, /a plugin that is not present leads nothing/, 'a CoalTipple-only user must never be told an absent plugin leads');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
+test('r35a R9: the OLD unconditional "CoalBoard leads" / "-> CoalBoard" wording is gone', () => {
+  const tmp = mk();
+  try {
+    const r = run({ hook_event_name: 'UserPromptSubmit', prompt: 'fix the auth token check' }, tmp);
+    assert.equal(r.status, 0);
+    assert.doesNotMatch(r.stdout, /Stakes -> CoalBoard leads/, 'the unconditional leader clause must not survive the wording fix');
+    assert.doesNotMatch(r.stdout, /undecidable -> CoalBoard\./, 'undecidable now maps to stakes, not to naming CoalBoard directly');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
+test('r35a R9: the emitted cue matches the head-authored sentence BYTE FOR BYTE (pinned reference for CoalBoard\'s own conformance)', () => {
+  const tmp = mk();
+  try {
+    const r = run({ hook_event_name: 'UserPromptSubmit', prompt: 'fix the auth token check' }, tmp);
+    assert.equal(r.status, 0);
+    const marker = ' Triage (binds even when only ONE hook fired):';
+    const idx = r.stdout.indexOf(marker);
+    assert.notEqual(idx, -1, 'the cue must be present on this signal turn');
+    const cue = r.stdout.slice(idx);
+    const expected = ' Triage (binds even when only ONE hook fired): STAKES = your Layer-2 verdict that the TASK is stakes-domain work (security · crypto · migration · money); fired keywords of any vocabulary are Layer-1 evidence only, never the verdict, and a Layer-2 acquittal STANDS -- no keyword re-arms it. Stakes -> HALT and ask the user before acting, always; if CoalBoard is present this session (its hook fired or its skill is listed) it leads and CoalTipple, if present, is its tier-lever -- a plugin that is not present leads nothing. No stakes: CoalTipple, if present, leads only if the WORK\'s OWN size/complexity calls for delegate-down or escalate-up -- a fired grade is evidence, never the verdict -- else neither. Layer 2 genuinely undecidable -> treat it as stakes. Both conductors fired -> ARBITRATE silently by this same rule: act on one, never surface it.';
+    assert.equal(cue, expected, 'the emitted cue must match the head-authored sentence byte for byte -- CoalBoard conforms to this exact text second');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
 test('UserPromptSubmit on a signal-free turn -> the lean one-liner, no complexity hint, no arbitration cue (HOOK-LEAN)', () => {
   const tmp = mk();
   try {
