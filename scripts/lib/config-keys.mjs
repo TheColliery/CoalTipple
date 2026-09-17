@@ -436,3 +436,69 @@ export function checkConfigKeys({
 
   return { findings, coverage };
 }
+
+// SCHEMA COMPLETENESS -- the REVERSE direction from checkConfigKeys() above (CWK-060
+// findings-back r34, ITEM 5). checkConfigKeys asks "does every NAMED key resolve in the
+// schema"; this asks "does every SCHEMA key appear on a surface that CLAIMS to be
+// complete". Two surfaces make that claim, both true today by measurement, neither
+// checked before this: SKILL.md's own "### Config" heading states "all N config keys",
+// and platform-configs/.coaltipple.json's header comment + README.md's own Configure
+// section both say every key + default lives in "the commented template".
+//
+// PLAIN \b<key>\b TEXT MATCH, not the backtick/row shape the STRUCTURED PASS above uses --
+// deliberately, because both surfaces name a real key by a shape that pass would miss.
+// The factory template documents `modelTiers` ONLY inside a COMMENTED-OUT worked example
+// (never a live JSON key -- optional and unset by design, so a JSON-key presence check
+// would false-FAIL it). SKILL.md's own Config table packs `updateMode`+`updateCheckDays`
+// into ONE row joined by " · " (KEY_TABLES' own comment above already names this row as
+// unsplittable by ROW_KEY). A row-shaped check would false-FAIL both; a plain word-
+// boundary match over the raw region/file text does not care which shape carries the name.
+export function checkSchemaCompleteness({ schemaKeys, skillMdText, factoryText }) {
+  const findings = [];
+  const seen = (text, k) => new RegExp(BS + 'b' + k + BS + 'b').test(text);
+
+  const region = tableRegion(skillMdText, 'Config');
+  if (region === null) {
+    // Hard Rule 1, same as every other locator in this module: an absent heading is the
+    // gate itself being wrong, never a silent "nothing to check".
+    findings.push({ level: 'FAIL', msg: 'SKILL.md "### Config" heading not found -- cannot verify schema completeness against it' });
+  } else {
+    const regionText = region.join(NL);
+    const missing = schemaKeys.filter((k) => !seen(regionText, k)).sort();
+    if (missing.length) {
+      findings.push({
+        level: 'FAIL',
+        msg: 'schema key(s) missing from SKILL.md\'s "### Config" section, which claims '
+          + 'completeness ("all N config keys"): ' + missing.join(', '),
+      });
+    }
+    const lines = skillMdText.split(NL);
+    const headingLine = lines.find((l) => /^#{1,6}\s/.test(l) && l.includes('Config'));
+    const m = /all (\d+) config keys/.exec(headingLine ?? '');
+    if (!m) {
+      findings.push({
+        level: 'FAIL',
+        msg: 'SKILL.md\'s "### Config" heading no longer states "all N config keys" -- the '
+          + 'count claim itself is gone; fix the heading or this check',
+      });
+    } else if (Number(m[1]) !== schemaKeys.length) {
+      findings.push({
+        level: 'FAIL',
+        msg: 'SKILL.md\'s "### Config" heading claims "all ' + m[1] + ' config keys" but '
+          + 'CONFIG_SCHEMA has ' + schemaKeys.length + ' -- the count is stale, fix the '
+          + 'heading (it is typed prose, never derived, so it does not move on its own)',
+      });
+    }
+  }
+
+  const missingFactory = schemaKeys.filter((k) => !seen(factoryText, k)).sort();
+  if (missingFactory.length) {
+    findings.push({
+      level: 'FAIL',
+      msg: 'schema key(s) missing from platform-configs/.coaltipple.json (README.md '
+        + 'claims every key documents there): ' + missingFactory.join(', '),
+    });
+  }
+
+  return { findings };
+}

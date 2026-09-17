@@ -275,6 +275,22 @@ try {
   for (const m of coverage.mdFiles) console.log(`  cov  markdown ${m.file}: ${m.readable ? `${m.candidates} candidate(s)` : 'UNREADABLE'}`);
   for (const n of coverage.noticeSites) console.log(`  cov  notice "${n.name}" (${n.file}): ${n.readable ? `${n.lines} line(s), ${n.candidates} candidate(s)` : 'UNREADABLE'}`);
   for (const t of coverage.keyTables) console.log(`  cov  key table ${t.file} "${t.heading}": ${t.readable ? `${t.rows} row(s)` : 'UNREADABLE'}`);
+
+  // SCHEMA COMPLETENESS (CWK-060 findings-back r34, ITEM 5) -- the direction the check
+  // above never covered: does every SCHEMA key appear on a surface that CLAIMS to be
+  // complete (SKILL.md's own "all N config keys" heading, and the factory template
+  // README.md says documents every key). Same conceptual gate (doc-vs-schema key drift),
+  // now bidirectional -- kept under this one "config keys:" header rather than a second,
+  // to avoid fragmenting one drift concern into two report sections.
+  const skillMdText = fs.readFileSync(path.join(repo, 'skills', 'coaltipple', 'SKILL.md'), 'utf8');
+  const factoryText = fs.readFileSync(path.join(repo, 'platform-configs', '.coaltipple.json'), 'utf8');
+  const sc = ck.checkSchemaCompleteness({
+    schemaKeys: CONFIG_SCHEMA.map((e) => e.key),
+    skillMdText,
+    factoryText,
+  });
+  if (sc.findings.length === 0) ok(`all ${CONFIG_SCHEMA.length} schema keys appear on both completeness-claiming surfaces (SKILL.md Config heading + factory template), and the heading's own count matches`);
+  for (const f of sc.findings) fail(f.msg);
 } catch (e) { fail(`config-key check crashed: ${e.message}`); }
 
 console.log('pointer check (ship-text path citations resolve in this repo -- scripts/lib/pointer-check.mjs owns the detection rule, the funnel measurement, the three CoalTipple-specific fixes, and the four named blind spots; PATH only, section/symbol not checked -- CoalMine\'s + CoalBoard\'s own measurement is why that half stays unbuilt):');

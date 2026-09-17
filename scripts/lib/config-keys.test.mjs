@@ -7,7 +7,7 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
-  checkConfigKeys, NOTICE_SITES, KEY_TABLES,
+  checkConfigKeys, checkSchemaCompleteness, NOTICE_SITES, KEY_TABLES,
   PENDING_KEYS, NOT_CONFIG, BLIND_KEYS, RETIRED_KEYS,
 } from './config-keys.mjs';
 
@@ -256,6 +256,100 @@ test('EMPTY PENDING_KEYS (this room\'s actual state) is proven, not just assumed
   assert.deepEqual(findLevel(findings, 'FAIL').filter((f) => f.msg.includes('syntheticPendingKey')), []);
 });
 
+// ---- checkSchemaCompleteness: the REVERSE direction (CWK-060 findings-back r34, ITEM 5) ----
+// checkConfigKeys above asks "does every NAMED key resolve"; this asks "does every SCHEMA
+// key appear on a surface that claims completeness". Fixture text built with the same two
+// traps this room's real surfaces carry, so a fixture-only pass can never disagree with
+// what the real integration test below proves.
+
+const SC_SCHEMA = ['enableRouting', 'mode', 'qualityBar', 'modelTiers', 'updateMode', 'updateCheckDays'];
+const SC_SKILL_MD = [
+  '### Config -- all 6 config keys in 5 rows.',
+  '',
+  '| key | default |',
+  '|---|---|',
+  '| `enableRouting` | true |',
+  '| `mode` | auto |',
+  '| `qualityBar` | 60 |',
+  '| `modelTiers` | {} |',
+  '| `updateMode` · `updateCheckDays` | ask · 14 |',
+  '',
+  '### Next section',
+  '',
+].join('\n');
+const SC_FACTORY = [
+  '{',
+  '  "enableRouting": true,',
+  '  "mode": "auto",',
+  '  "qualityBar": 60,',
+  '  // "modelTiers": { "reasoning": ["future-model"] },',
+  '  "updateMode": "ask",',
+  '  "updateCheckDays": 14',
+  '}',
+].join('\n');
+
+test('checkSchemaCompleteness: a clean fixture (mirroring this room\'s two real traps) has zero findings', () => {
+  const { findings } = checkSchemaCompleteness({ schemaKeys: SC_SCHEMA, skillMdText: SC_SKILL_MD, factoryText: SC_FACTORY });
+  assert.deepEqual(findings, []);
+});
+
+test('checkSchemaCompleteness: a COMMENTED-OUT factory key (modelTiers -- optional, unset by design) does NOT false-FAIL', () => {
+  // Regression pin for the exact reason this check is a plain \b<key>\b text match and
+  // not a JSON-key-presence check: modelTiers is never a live JSON key in the shipped
+  // template, only a commented worked example. A stricter check would false-FAIL here.
+  const { findings } = checkSchemaCompleteness({ schemaKeys: SC_SCHEMA, skillMdText: SC_SKILL_MD, factoryText: SC_FACTORY });
+  assert.deepEqual(findings, []);
+  assert.ok(!findings.some((f) => f.msg.includes('modelTiers')), 'modelTiers must not be reported missing');
+});
+
+test('checkSchemaCompleteness: a SHARED table row (updateMode + updateCheckDays in one cell) does NOT false-FAIL either key', () => {
+  // Regression pin for the other named trap: the row-shaped STRUCTURED PASS (ROW_KEY)
+  // cannot split "`updateMode` · `updateCheckDays`" into two keys -- this check must not
+  // inherit that blind spot.
+  const { findings } = checkSchemaCompleteness({ schemaKeys: SC_SCHEMA, skillMdText: SC_SKILL_MD, factoryText: SC_FACTORY });
+  assert.deepEqual(findings, []);
+  assert.ok(!findings.some((f) => f.msg.includes('updateMode') || f.msg.includes('updateCheckDays')), 'the shared row must not false-FAIL either key');
+});
+
+test('checkSchemaCompleteness (a): a schema key missing from SKILL.md\'s Config section is a FAIL naming it', () => {
+  const missing = SC_SKILL_MD.replace('| `qualityBar` | 60 |\n', '');
+  const { findings } = checkSchemaCompleteness({ schemaKeys: SC_SCHEMA, skillMdText: missing, factoryText: SC_FACTORY });
+  const f = findLevel(findings, 'FAIL').find((x) => x.msg.includes('qualityBar') && x.msg.includes('SKILL.md'));
+  assert.ok(f, 'expected a FAIL naming the missing qualityBar row');
+});
+
+test('checkSchemaCompleteness (b): a schema key missing from the factory template is a FAIL naming it', () => {
+  const missing = SC_FACTORY.replace('  "mode": "auto",\n', '');
+  const { findings } = checkSchemaCompleteness({ schemaKeys: SC_SCHEMA, skillMdText: SC_SKILL_MD, factoryText: missing });
+  const f = findLevel(findings, 'FAIL').find((x) => x.msg.includes('mode') && x.msg.includes('platform-configs'));
+  assert.ok(f, 'expected a FAIL naming the missing mode mention');
+});
+
+test('checkSchemaCompleteness (c): a stale heading count is a FAIL, never silently trusted', () => {
+  const stale = SC_SKILL_MD.replace('all 6 config keys', 'all 7 config keys');
+  const { findings } = checkSchemaCompleteness({ schemaKeys: SC_SCHEMA, skillMdText: stale, factoryText: SC_FACTORY });
+  const f = findLevel(findings, 'FAIL').find((x) => x.msg.includes('stale'));
+  assert.ok(f, 'expected a FAIL naming the stale count');
+  assert.match(f.msg, /claims "all 7 config keys" but CONFIG_SCHEMA has 6/);
+});
+
+test('checkSchemaCompleteness: a Config heading with no "all N config keys" phrase at all is a FAIL naming the gone claim', () => {
+  const noCount = SC_SKILL_MD.replace('### Config -- all 6 config keys in 5 rows.', '### Config -- the knob set.');
+  const { findings } = checkSchemaCompleteness({ schemaKeys: SC_SCHEMA, skillMdText: noCount, factoryText: SC_FACTORY });
+  const f = findLevel(findings, 'FAIL').find((x) => x.msg.includes('count claim itself is gone'));
+  assert.ok(f);
+});
+
+test('checkSchemaCompleteness: heading absent entirely FAILS LOUDLY (Hard Rule 1), never a silent pass', () => {
+  const noHeading = SC_SKILL_MD.replace('### Config -- all 6 config keys in 5 rows.', '### Knobs -- the heading word was renamed away entirely.');
+  const { findings } = checkSchemaCompleteness({ schemaKeys: SC_SCHEMA, skillMdText: noHeading, factoryText: SC_FACTORY });
+  const f = findLevel(findings, 'FAIL').find((x) => x.msg.includes('heading not found'));
+  assert.ok(f);
+  // and the factory-side check still runs independently of the SKILL.md-side failure --
+  // one surface's locator problem must never mask the other surface's own check.
+  assert.deepEqual(findLevel(findings, 'FAIL').filter((x) => x.msg.includes('platform-configs')), []);
+});
+
 // ---- integration: the REAL repo, no fixture ----
 
 const repo = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..', '..');
@@ -318,4 +412,12 @@ test('INTEGRATION: the SKILL.md Config table and README Configure table both res
   const skillTable = coverage.keyTables.find((t) => t.file === 'skills/coaltipple/SKILL.md');
   assert.equal(readmeTable.rows, 6, 'README Configure: enableRouting/mode/qualityBar/delegateMinLines/fableConsent/modelTiers');
   assert.ok(skillTable.rows >= 20, "SKILL.md's own Config table is the room's most complete surface");
+});
+
+test('INTEGRATION: checkSchemaCompleteness -- the real SKILL.md Config heading and the real factory template both name every schema key, and the heading count is not stale', async () => {
+  const schemaKeys = await CONFIG_SCHEMA_KEYS();
+  const skillMdText = fs.readFileSync(path.join(repo, 'skills', 'coaltipple', 'SKILL.md'), 'utf8');
+  const factoryText = fs.readFileSync(path.join(repo, 'platform-configs', '.coaltipple.json'), 'utf8');
+  const { findings } = checkSchemaCompleteness({ schemaKeys, skillMdText, factoryText });
+  assert.deepEqual(findings, []);
 });
