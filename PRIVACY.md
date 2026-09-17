@@ -1,10 +1,10 @@
 # CoalTipple Privacy Policy
 
-**CoalTipple collects nothing, and the only thing it ever reads over the network is a public tag list—and only when you ask it to.**
+**CoalTipple collects nothing, and the only thing it ever reads over the network is a public tag list—a manual `/coaltipple update` or your own `auto` cadence, never anything else.**
 
 - **No telemetry.** No usage data, analytics, or identifiers are collected, stored, or transmitted—by the skill, the conductor hook, the installer, or any bundled component.
 - **No network calls from the hook.** The conductor hook is offline by design (Phoenix Commandment #7): it reads `.coaltipple.json` and the prompt locally and emits an advisory routing hint. It opens no sockets and makes no requests.
-- **The self-update check is the one exception, and it is a plain read.** Running `/coaltipple update`—or the `updateMode: auto` cadence—runs `git ls-remote --tags` against this repo's own public GitHub URL to read the latest published tag name; it sends no user data, no prompt content, no identifiers, nothing beyond what any anonymous visitor to the repo's tags page would see. `off`/`ask`/`remind` never fire the check on their own—but a manual `/coaltipple update` still runs the check on request, whatever `updateMode` is set to.
+- **The self-update check is the one exception, and it is a plain read.** It runs `git ls-remote --tags` against this repo's own public GitHub URL to read the latest published tag name; it sends no user data, no prompt content, no identifiers, nothing beyond what any anonymous visitor to the repo's tags page would see. It fires under `updateMode: auto` (its cadence, or a manual `/coaltipple update`) and under `remind` on a manual run only ("if invoked manually, run the auto check above on request"). `ask` presents the mode choice and saves your pick—no check; `off` does nothing—neither ever fires it, manual or not.
 - **Routing runs inside YOUR agent.** CoalTipple itself operates no servers and receives no traffic. When it routes, it spawns a worker through your agent's *own* native subagent tool, on your account, under your platform's own permission gate—CoalTipple does not call any model API itself and does not bypass that gate.
 - **The `/coaltipple stats` figure is a local estimate.** There is no cost API behind it; nothing is reported anywhere.
 - **Error reports are manual.** When a component misbehaves, your agent may *offer* to open a pre-filled GitHub issue; nothing is ever submitted automatically, and you see and edit the full contents before sending.
