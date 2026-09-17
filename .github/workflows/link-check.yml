@@ -67,10 +67,16 @@ jobs:
       # fixture and 0 on this room's real 12-file scope; the step below (bare
       # invocation, no wrapper) reproduces both exit codes unchanged.
       #
-      # FAILS OPEN ON AN EMPTY FILE LIST -- kept from CoalLedger's own precedent
-      # (that room's findings-back LOW-1): the empty-list guard covers a DIFFERENT
-      # hole than the wrapper above (nothing scanned at all, not a scanned-and-clean
-      # run) and stays regardless of which engine shape is on the other side of it.
+      # FAILS CLOSED ON AN EMPTY FILE LIST -- ported from CoalLedger's own FIX for
+      # this exact hole (that room's findings-back CWK-092 LOW-1), not the hole
+      # itself: an empty file list is asserted and exits 1 BEFORE the engine ever
+      # runs, naming the scope filter as broken rather than the tree. Without this
+      # guard a layout change moving every doc under an excluded prefix would scan
+      # nothing and the engine's own native exit-0-on-no-findings would read that
+      # as a clean pass -- a silently-inert gate. This guard covers a DIFFERENT
+      # hole than the "NOT WRAPPED" note above (nothing scanned at all, not a
+      # scanned-and-clean run) and stays regardless of which engine shape is on
+      # the other side of it.
       - run: |
           files=$(git ls-files '*.md' | grep -v '^plugin/' | grep -v '^scripts/fixtures/')
           if [ -z "$files" ]; then
