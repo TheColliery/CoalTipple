@@ -182,7 +182,7 @@ Three real prompts, put through the shipped grader so nothing below is invented�
 | **escalate-up** (real difficulty) | `node scripts/grade-task.mjs --prompt "Prove this numerical algorithm converges by working through the formal mathematical proof step by step"` | `{"grade":5,"tier":"reasoning","reasons":["keyword math(5):mathematical proof"],"sensitive":false,...}` |
 | **sensitive, never-down** | `node scripts/grade-task.mjs --prompt "Write the function that verifies an auth token signature before granting access"` | `{"grade":4,"tier":"heavy","reasons":["keyword security(4):token"],"sensitive":true,...}` |
 
-The grader only decides the *starting* tier from the prompt text—everything past that point is `SKILL.md`'s behavior, not something this table observed: a delegate-down grade like the first row routes the mechanical bulk to a cheaper worker; the sensitive third row can still climb the staircase but never falls below `heavy`, whatever the grade; and a climb that reaches the fable rung stops at a consent ask (`fableConsent`) before it spends real money.
+The grader only decides the *starting* tier from the prompt text—everything past that point is `SKILL.md`'s behavior, not something this table observed: a delegate-down grade like the first row routes the mechanical bulk to a cheaper worker; the sensitive third row can still climb the staircase but never falls below its graded `heavy` start; and a climb that reaches the fable rung stops at a consent ask before it spends real money—unless `fableConsent` is already `true`.
 
 **Turn it off:** `/coaltipple off` disables routing for this session only. `enableRouting: false` in this project's `.coaltipple.json` disables it for the whole project.
 
@@ -208,17 +208,21 @@ Full key reference: every key + default lives in [`scripts/lib/config-schema.mjs
 ## 🔧 Troubleshooting
 
 * **First check:** is routing running at all? `enableRouting: false` (global or project) turns it off entirely; `/coaltipple off` turns it off for just this session.
-* **State lives in files you can read** (same paths [Privacy](PRIVACY.md) documents): the config—`~/.claude/.coaltipple.json`, overlaid by the first-found of `<gitroot>/.claude/coal/coaltipple.json` → `.agents/coal/coaltipple.json` → `.gemini/coal/coaltipple.json` → legacy `<gitroot>/.claude/.coaltipple.json`—and the model ranking at `~/.claude/coal/coaltipple/ranking.json`. A broken or missing ranking fails safe: routing goes off rather than routing on broken state (see [The Lock](#-the-lock--safe-routing-states)).
+* **State lives in files you can read** (same paths [Privacy](PRIVACY.md) documents): the config—`~/.claude/.coaltipple.json`, overlaid by the first-found of `<gitroot>/.claude/coal/coaltipple.json` → `.agents/coal/coaltipple.json` → `.gemini/coal/coaltipple.json` → legacy `<gitroot>/.claude/.coaltipple.json`—and the model ranking at `~/.claude/coal/coaltipple/ranking.json`. A missing or broken ranking is rebuilt on the spot from the alias floor; only if it genuinely cannot be built does routing go off (see [The Lock](#-the-lock--safe-routing-states)).
 * **A worker spawn failing** falls to the next available tier on its own (see [Damage Control](#damage-control))—no action needed unless every tier is unavailable, in which case the route hands back.
 
 ## 🗑️ Uninstall
 
-Removing the plugin (`claude plugin uninstall coaltipple@coaltipple` or deleting a file-copy install's `coaltipple/` directory) removes the SKILL and the CONDUCTOR HOOK only. **It does not remove, and never has removed, your state**—by design, so a reinstall recovers exactly where you left off:
+Removing the **plugin** (`claude plugin uninstall coaltipple@coaltipple`) removes the skill, the conductor hook, and the four `/coaltipple` commands—the platform's own plugin-cache install, gone in one step.
+
+Removing a **file-copy install** by deleting its `coaltipple/` skill directory removes only the skill. The conductor hook it seeded at `<gitroot>/.claude/.coaltipple/hooks/coaltipple-conductor.js` is a separate file outside that directory and is not touched—delete it by hand too if you wired it into your own settings.
+
+Neither path removes, and neither ever has removed, your state—by design, so a reinstall recovers exactly where you left off:
 
 * the config files (`~/.claude/.coaltipple.json` and any per-project override)
 * the model ranking (`~/.claude/coal/coaltipple/ranking.json`)
 * the self-update stamp (`~/.claude/coal/coaltipple/update-check`)
-* the per-project `<gitroot>/.claude/.coaltipple/` directory (`proposed/` sandbox + `state.json` journal)
+* the per-project `<gitroot>/.claude/.coaltipple/` directory (`proposed/` sandbox, `state.json` journal, and—for a file-copy install—the `hooks/coaltipple-conductor.js` copy named above)
 
 Delete these by hand if you want a clean slate—they are plain files under `.claude/`, nothing hidden.
 
