@@ -2,6 +2,14 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.5.6] - 2026-09-18
+
+### Fixed
+- **R9 — `skills/coaltipple/SKILL.md` stops telling a CoalTipple-only agent that an absent CoalBoard means no halt.** The conductor's arbitration `cue` (`hooks/coaltipple-conductor.js`, `b7acdbd`) was corrected: with a stakes signal present, CoalBoard being ABSENT this turn no longer means "nothing leads" — it means the work still halts and asks the user before acting, with no absent plugin named as the one that leads; the sensitive hard gate then governs routing afterward as usual (never-down, escalate up). `SKILL.md:48` (P13) and `:181` still said "no CoalBoard installed → this rule is INERT," which is exactly the stale reading the hook fix closed. Both rewritten to the halt-and-ask wording; the CoalBoard-present half (CB leads, CT becomes its tier-lever, one consent) is unchanged. Keyed on "present this turn" (its hook fired or its skill is listed), never "installed," matching the cue's own test. P-numbering and rail count intact — the enumerability ledger still counts 17 P-rules. A grep sweep (`stand-down|double-hook|arbitrat|tier-lever` across `README.md`, `commands/*.md`, `skills/coaltipple/SKILL.md`) found no other restatement of the arbitration outside these two sites; the `[1.2.0]` CHANGELOG history describing what shipped then is untouched.
+- **R2 — `PRIVACY.md`'s self-update bullet matches `commands/update.md`'s actual per-mode behavior.** Both clauses were wrong: the opening line implied `git ls-remote` runs on `updateMode: auto`'s cadence alone, and the bullet claimed a manual `/coaltipple update` always runs the check "whatever `updateMode` is set to" — false for `ask` (presents the 3-way choice, saves the pick, no check) and `off` (no update activity, ever). Rewritten so every clause matches the mode table exactly: the check fires under `auto` (its cadence, or a manual run) and under `remind` on a manual run only; `ask` and `off` never fire it, manual or not. The "plain read, no user data" substance is unchanged. The opening sentence (line 3) was also updated to name the manual command and the `auto` cadence explicitly rather than the ambiguous "only when you ask it to."
+
+Named deviation (head's call, weekly gauge `seven_day` 0.76 against a 0.80 ceiling): the doc-writer also ran the mechanical ASSEMBLE step this once — bumped `.claude-plugin/plugin.json` to `1.5.6`, ran `scripts/build-plugin.mjs` then `scripts/build-dist.mjs`. No other code touched; INSPECT checks the assembled unit.
+
 ## [1.5.5] - 2026-09-10
 
 ### Fixed
