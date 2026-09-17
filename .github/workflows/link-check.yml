@@ -77,8 +77,19 @@ jobs:
       # hole than the "NOT WRAPPED" note above (nothing scanned at all, not a
       # scanned-and-clean run) and stays regardless of which engine shape is on
       # the other side of it.
+      #
+      # `|| true` ON THE ASSIGNMENT (r34 INSPECT LOW-2) -- without it the message above
+      # is UNREACHABLE under GitHub's own default shell (`bash -e {0}`): an empty scope
+      # means the LAST `grep -v` selects no line and exits 1 itself, `set -e` (the
+      # default, no `set -euo pipefail` in THIS step) aborts the run AT THE ASSIGNMENT,
+      # and the `if [ -z ]` guard below it never executes -- the run still fails closed
+      # (the property holds), but as a bare "Process completed with exit code 1" on the
+      # `files=` line with no `::error::` annotation naming the real cause, sending a
+      # reader hunting for a broken link that does not exist. `|| true` makes the
+      # PIPELINE's own exit status non-fatal so the GUARD is what fails and names it --
+      # verified both shapes directly, old unreachable / new reachable, before and after.
       - run: |
-          files=$(git ls-files '*.md' | grep -v '^plugin/' | grep -v '^scripts/fixtures/')
+          files=$(git ls-files '*.md' | grep -v '^plugin/' | grep -v '^scripts/fixtures/' || true)
           if [ -z "$files" ]; then
             echo "::error::link-check found NO markdown files to scan -- the scope filter is broken, not the tree"
             exit 1
