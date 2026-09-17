@@ -1,12 +1,13 @@
 # CoalTipple Privacy Policy
 
-**CoalTipple collects nothing and phones nowhere.**
+**CoalTipple collects nothing, and the only thing it ever reads over the network is a public tag list—and only when you ask it to.**
 
-- **No telemetry.** No usage data, analytics, or identifiers are collected, stored, or transmitted — by the skill, the conductor hook, the installer, or any bundled component.
+- **No telemetry.** No usage data, analytics, or identifiers are collected, stored, or transmitted—by the skill, the conductor hook, the installer, or any bundled component.
 - **No network calls from the hook.** The conductor hook is offline by design (Phoenix Commandment #7): it reads `.coaltipple.json` and the prompt locally and emits an advisory routing hint. It opens no sockets and makes no requests.
-- **Routing runs inside YOUR agent.** CoalTipple itself operates no servers and receives no traffic. When it routes, it spawns a worker through your agent's *own* native subagent tool, on your account, under your platform's own permission gate — CoalTipple does not call any model API itself and does not bypass that gate.
+- **The self-update check is the one exception, and it is a plain read.** Running `/coaltipple update`—or the `updateMode: auto` cadence—runs `git ls-remote --tags` against this repo's own public GitHub URL to read the latest published tag name; it sends no user data, no prompt content, no identifiers, nothing beyond what any anonymous visitor to the repo's tags page would see. `updateMode: off` (or `ask`/`remind`, which never fire the check on their own) keeps this off entirely.
+- **Routing runs inside YOUR agent.** CoalTipple itself operates no servers and receives no traffic. When it routes, it spawns a worker through your agent's *own* native subagent tool, on your account, under your platform's own permission gate—CoalTipple does not call any model API itself and does not bypass that gate.
 - **The `/coaltipple stats` figure is a local estimate.** There is no cost API behind it; nothing is reported anywhere.
 - **Error reports are manual.** When a component misbehaves, your agent may *offer* to open a pre-filled GitHub issue; nothing is ever submitted automatically, and you see and edit the full contents before sending.
-- **Local files only.** All state lives in files you can read: the config (`~/.claude/.coaltipple.json` and an optional per-project `<gitroot>/.claude/.coaltipple.json`), the GLOBAL model ranking at `~/.claude/.coaltipple/ranking.json`, and the per-project `.claude/.coaltipple/` directory (the `proposed/` sandbox and the `state.json` resume journal).
+- **Local files only.** All state lives in files you can read: the config (`~/.claude/.coaltipple.json`, or `$CLAUDE_CONFIG_DIR/.coaltipple.json` when set, and an optional per-project override—the first-found of `<gitroot>/.claude/coal/coaltipple.json` → `.agents/coal/coaltipple.json` → `.gemini/coal/coaltipple.json` → legacy `<gitroot>/.claude/.coaltipple.json`), the GLOBAL model ranking at `~/.claude/coal/coaltipple/ranking.json`, the self-update check's own stamp at `~/.claude/coal/coaltipple/update-check`, and the per-project `<gitroot>/.claude/.coaltipple/` directory (the `proposed/` sandbox and the `state.json` resume journal).
 
 Questions: open an issue at <https://github.com/TheColliery/CoalTipple/issues>.
