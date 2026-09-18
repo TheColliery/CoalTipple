@@ -1,0 +1,97 @@
+name: link-check
+
+# on: paths -- SAFE HERE, and the reason is worth stating (findings-back, CW-017
+# round 1 LOW-1): CWK-058 moved path filtering OUT of ci.yml and codeql.yml, the two
+# workflows holding this room's REQUIRED status checks, because a path-skipped
+# workflow leaves its required context PENDING rather than green -- an unsatisfiable
+# ruleset. link-check.yml is not, and is not meant to become, a required context (it
+# is a repo-hygiene gate this room chose to add, not one GitHub's branch protection
+# enforces); `markdownlint.yml` and `scorecard.yml` are the room's other two
+# `on: paths`-filtered, non-required workflows, for the same reason. If link-check is
+# ever made required, this `on: paths` block owes the SAME job-level-classifier fix
+# CWK-058 already gave ci.yml/codeql.yml -- do not just delete this comment.
+on:
+  push:
+    branches: [main]
+    paths:
+      - '**.md'
+  pull_request:
+    branches: [main]
+    paths:
+      - '**.md'
+
+permissions:
+  contents: read
+
+# cancel-in-progress: TRUE (CWK-058, canon: .github/SKILL-REPO-PATTERN.md) -- this
+# workflow reads files and publishes nothing, so a superseded run leaves nothing
+# half-done to clean up (the atomicity test, applied at this workflow's own site).
+concurrency:
+  group: link-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      # NOT continue-on-error, unlike markdownlint.yml -- this is a real gate, not a
+      # report-only cleanup pass (say why, since the two sit side by side and a
+      # reader will ask): markdownlint checks markdown FORMAT and this room accepted
+      # it report-only because format drift is cosmetic; a BROKEN LINK is a real
+      # defect a reader hits, so it blocks.
+      #
+      # ENGINE: this room's own scripts/lib/link-check.mjs (CW-017, zero-dep,
+      # regex-based -- .github/SKILL-REPO-PATTERN.md:91's own DEFAULT reading). No
+      # AST vendored; CoalLedger's own link-check uses its doc-structure canary's
+      # vendored CommonMark+GFM engine instead, a different room's different budget.
+      #
+      # SCOPE: every TRACKED root/skill/command .md file, excluding `plugin/**` (the
+      # GENERATED dist copy -- scanning it double-reports every finding the source
+      # copy already caught) and `scripts/fixtures/**` (the engine's OWN test
+      # fixtures, which deliberately carry planted defects its unit tests assert
+      # against -- scanning them here would fail this gate by design, forever).
+      #
+      # NOT WRAPPED (a genuine divergence from CoalLedger's own workflow, named
+      # rather than copied past): CoalLedger's engine (md-checks.mjs) always exits 0
+      # -- its OTHER consumer reads `--json` and never relies on the process exit --
+      # so its workflow wraps the call in a `grep -qE '^0 finding'` predicate to turn
+      # that into a real gate. Ours (link-check.mjs) exits non-zero NATIVELY on a
+      # finding (scripts-quality.md's fail-LOUD CLI discipline) -- adding the same
+      # wrapper here would be a SECOND mechanism for a property the engine already
+      # guarantees, the over-hardening this flock bans. Proven both directions before
+      # shipping (CW-017's own return): the engine exits 1 on a planted-defect
+      # fixture and 0 on this room's real 12-file scope; the step below (bare
+      # invocation, no wrapper) reproduces both exit codes unchanged.
+      #
+      # FAILS CLOSED ON AN EMPTY FILE LIST -- ported from CoalLedger's own FIX for
+      # this exact hole (that room's findings-back CWK-092 LOW-1), not the hole
+      # itself: an empty file list is asserted and exits 1 BEFORE the engine ever
+      # runs, naming the scope filter as broken rather than the tree. Without this
+      # guard a layout change moving every doc under an excluded prefix would scan
+      # nothing and the engine's own native exit-0-on-no-findings would read that
+      # as a clean pass -- a silently-inert gate. This guard covers a DIFFERENT
+      # hole than the "NOT WRAPPED" note above (nothing scanned at all, not a
+      # scanned-and-clean run) and stays regardless of which engine shape is on
+      # the other side of it.
+      #
+      # `|| true` ON THE ASSIGNMENT (r34 INSPECT LOW-2) -- without it the message above
+      # is UNREACHABLE under GitHub's own default shell (`bash -e {0}`): an empty scope
+      # means the LAST `grep -v` selects no line and exits 1 itself, `set -e` (the
+      # default, no `set -euo pipefail` in THIS step) aborts the run AT THE ASSIGNMENT,
+      # and the `if [ -z ]` guard below it never executes -- the run still fails closed
+      # (the property holds), but as a bare "Process completed with exit code 1" on the
+      # `files=` line with no `::error::` annotation naming the real cause, sending a
+      # reader hunting for a broken link that does not exist. `|| true` makes the
+      # PIPELINE's own exit status non-fatal so the GUARD is what fails and names it --
+      # verified both shapes directly, old unreachable / new reachable, before and after.
+      - run: |
+          files=$(git ls-files '*.md' | grep -v '^plugin/' | grep -v '^scripts/fixtures/' || true)
+          if [ -z "$files" ]; then
+            echo "::error::link-check found NO markdown files to scan -- the scope filter is broken, not the tree"
+            exit 1
+          fi
+          node scripts/lib/link-check.mjs $files
