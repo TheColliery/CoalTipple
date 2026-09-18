@@ -1,0 +1,290 @@
+// Install integration test — spawns the real installer into a sandbox.
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+
+const INSTALL = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'install.mjs');
+// Sandbox HOME too: a throwaway home so the GLOBAL-config code path (the ~/.claude
+// global-dest check AND the shared ranking) can never read or write the real config.
+function mkHome() { return fs.mkdtempSync(path.join(os.tmpdir(), 'ct-install-home-')); }
+const run = (cwd, home, ...a) =>
+  spawnSync(process.execPath, [INSTALL, ...a],
+    { cwd, env: { ...process.env, USERPROFILE: home, HOME: home, CLAUDE_CONFIG_DIR: undefined }, encoding: 'utf8', timeout: 30000 });
+
+// Canonical NEW paths (everything under .claude): the project config + state live at
+// <cwd>/.claude; the SHARED model ranking lives at <home>/.claude/.coaltipple/.
+// Namespace campaign (#69+#39): on a fresh target (nothing on disk yet), the project
+// config seeds at the own-dir NEW shape, not the LEGACY .claude/.coaltipple.json --
+// install.mjs already delegates to config-load.mjs's projectConfigPath (line 155),
+// so its OWN source needed no edit; only this test's fixture path did.
+const projCfg = (tmp) => path.join(tmp, '.claude', 'coal', 'coaltipple.json');
+const projState = (tmp) => path.join(tmp, '.claude', '.coaltipple');
+// Namespace campaign (#69+#39 part 2): the shared ranking home moved too.
+const globalRanking = (home) => path.join(home, '.claude', 'coal', 'coaltipple', 'ranking.json');
+const oldGlobalRanking = (home) => path.join(home, '.claude', '.coaltipple', 'ranking.json');
+const globalCfg = (home) => path.join(home, '.claude', '.coaltipple.json');
+
+// A minimal SANDBOX copy of the repo so the destructive-path tests (H10) run — and their
+// red-proofs (neutralize the fix -> the source IS deleted) — WITHOUT ever touching the REAL
+// source skill. install.mjs derives skillSrc from its own location, so we spawn a COPY of the
+// installer whose source is the sandbox's own skills/coaltipple.
+const REPO = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+function mkSandboxRepo() {
+  const sb = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-sbrepo-'));
+  for (const d of ['scripts', 'platform-configs', 'hooks']) fs.cpSync(path.join(REPO, d), path.join(sb, d), { recursive: true });
+  fs.mkdirSync(path.join(sb, 'skills', 'coaltipple'), { recursive: true });
+  fs.writeFileSync(path.join(sb, 'skills', 'coaltipple', 'SKILL.md'), '# sandbox source skill\n', 'utf8');
+  return sb;
+}
+const runSandbox = (sb, home, ...a) =>
+  spawnSync(process.execPath, [path.join(sb, 'scripts', 'install.mjs'), ...a],
+    { cwd: sb, env: { ...process.env, USERPROFILE: home, HOME: home, CLAUDE_CONFIG_DIR: undefined }, encoding: 'utf8', timeout: 30000 });
+
+test('install to a PATH: copies skill, seeds project config + conductor + the shared global ranking', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-install-'));
+  const home = mkHome();
+  const dest = path.join(tmp, 'skills');
+  try {
+    const r = run(tmp, home, dest);
+    assert.equal(r.status, 0, `install must pass:\n${r.stdout}${r.stderr}`);
+    assert.ok(fs.existsSync(path.join(dest, 'coaltipple', 'SKILL.md')), 'SKILL.md installed');
+    assert.ok(fs.existsSync(projCfg(tmp)), 'project config seeded under <cwd>/.claude');
+    // Seeds the POPULATED factory keywords (visible + editable), with repo-build markers/comment stripped.
+    const seeded = fs.readFileSync(projCfg(tmp), 'utf8');
+    assert.match(seeded, /"concurrency":/, 'seeded config ships the populated keyword groups');
+    assert.doesNotMatch(seeded, /coaltipple-shared:/, 'no repo-build markers leak into a user config');
+    assert.doesNotMatch(seeded, /GENERATED from keywords\.mjs/, 'no build-machinery comment leaks into a user config');
+    // The ranking is GLOBAL (platform-level, shared) — any install seeds it under ~/.claude.
+    const ranking = JSON.parse(fs.readFileSync(globalRanking(home), 'utf8'));
+    assert.equal(ranking.complete, true, 'ranking is complete');
+    assert.ok(ranking.tiers.low.includes('haiku'), 'alias floor: low=haiku');
+    assert.ok(ranking.tiers.heavy.includes('opus'), 'alias floor: heavy=opus');
+    assert.ok(fs.existsSync(path.join(projState(tmp), 'hooks', 'coaltipple-conductor.js')), 'conductor copied under <cwd>/.claude');
+    // A PATH install seeds the shared ranking but must NOT seed the global CONFIG.
+    assert.ok(!fs.existsSync(globalCfg(home)), 'PATH install leaves the global config alone');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); }
+});
+
+test('PATH target: project config + conductor land AT THE TARGET root, not in the invoker cwd (the PATH-target footgun)', () => {
+  // The skill installs into <target>/skills/coaltipple. The project config + conductor must
+  // anchor on the TARGET (its skills-dir parent), NOT silently in the unrelated invoker cwd.
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-pathcwd-'));   // where the user runs the installer
+  const target = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-pathtgt-')); // an unrelated project to configure
+  const home = mkHome();
+  const dest = path.join(target, 'skills');
+  try {
+    const r = run(cwd, home, dest);
+    assert.equal(r.status, 0, `install must pass:\n${r.stdout}${r.stderr}`);
+    assert.ok(fs.existsSync(path.join(dest, 'coaltipple', 'SKILL.md')), 'SKILL.md installed at the target');
+    // Config + conductor land under the TARGET root (skills-dir parent), no .git present.
+    assert.ok(fs.existsSync(projCfg(target)), 'project config seeded under the TARGET root/.claude');
+    assert.ok(fs.existsSync(path.join(projState(target), 'hooks', 'coaltipple-conductor.js')), 'conductor under the TARGET root/.claude');
+    // The invoker cwd is left untouched — no stray .claude there (the footgun fixed).
+    assert.ok(!fs.existsSync(projCfg(cwd)), 'no stray project config in the invoker cwd');
+    assert.ok(!fs.existsSync(path.join(cwd, '.claude')), 'no stray .claude in the invoker cwd');
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+    fs.rmSync(target, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('GLOBAL install (--global): seeds the global config + shared ranking, NO project files', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-global-'));
+  const home = mkHome();
+  try {
+    const r = run(tmp, home, '--global', path.join(home, '.claude', 'skills'));
+    assert.equal(r.status, 0, `global install must pass:\n${r.stdout}${r.stderr}`);
+    assert.ok(fs.existsSync(globalCfg(home)), 'global config seeded under ~/.claude');
+    assert.ok(fs.existsSync(globalRanking(home)), 'shared ranking seeded under ~/.claude/.coaltipple');
+    // No-clutter: a global install must NOT create any project file (config / ranking).
+    assert.ok(!fs.existsSync(projCfg(tmp)), 'no project config from a global install');
+    assert.ok(!fs.existsSync(path.join(projState(tmp), 'ranking.json')), 'no project ranking from a global install');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); }
+});
+
+// Namespace campaign (#69+#39 part 2): the shared ranking home moved under coal/.
+test('ranking migration: an OLD-location ranking is moved to the NEW location on install, and the old file is gone', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-global-'));
+  const home = mkHome();
+  try {
+    fs.mkdirSync(path.dirname(oldGlobalRanking(home)), { recursive: true });
+    const oldRanking = { schemaVer: 1, complete: true, listHash: 'x', tiers: { local: [], low: ['haiku'], mid: ['sonnet'], heavy: ['opus'], reasoning: ['fable'] }, source: 'old-format' };
+    fs.writeFileSync(oldGlobalRanking(home), JSON.stringify(oldRanking), 'utf8');
+    const r = run(tmp, home, '--global', path.join(home, '.claude', 'skills'));
+    assert.equal(r.status, 0, `global install must pass:\n${r.stdout}${r.stderr}`);
+    assert.ok(fs.existsSync(globalRanking(home)), 'new-location ranking must exist after migration');
+    const migrated = JSON.parse(fs.readFileSync(globalRanking(home), 'utf8'));
+    assert.equal(migrated.source, 'old-format', 'migrated content matches the OLD ranking, not a fresh floor');
+    assert.ok(!fs.existsSync(oldGlobalRanking(home)), 'the OLD ranking file must be gone after migration');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); }
+});
+
+test('ranking migration: a CORRUPT old-location ranking is dropped (never stranded), not carried forward or left behind', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-global-'));
+  const home = mkHome();
+  try {
+    fs.mkdirSync(path.dirname(oldGlobalRanking(home)), { recursive: true });
+    fs.writeFileSync(oldGlobalRanking(home), '{ not valid json', 'utf8');
+    const r = run(tmp, home, '--global', path.join(home, '.claude', 'skills'));
+    assert.equal(r.status, 0, `global install must pass:\n${r.stdout}${r.stderr}`);
+    assert.ok(fs.existsSync(globalRanking(home)), 'a fresh valid ranking must exist at the new location');
+    const fresh = JSON.parse(fs.readFileSync(globalRanking(home), 'utf8'));
+    assert.equal(fresh.source, 'install-floor', 'a corrupt old ranking must fall through to a fresh floor-seed, not fabricate content');
+    assert.ok(!fs.existsSync(oldGlobalRanking(home)), 'the corrupt OLD ranking file must be gone, not stranded forever (INSPECT Finding 4)');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); }
+});
+
+test('ranking migration: a NEW-location ranking already present is left untouched, and an old one (if present too) is left alone', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-global-'));
+  const home = mkHome();
+  try {
+    fs.mkdirSync(path.dirname(globalRanking(home)), { recursive: true });
+    fs.writeFileSync(globalRanking(home), JSON.stringify({ listHash: 'new', tiers: {}, source: 'already-migrated' }), 'utf8');
+    fs.mkdirSync(path.dirname(oldGlobalRanking(home)), { recursive: true });
+    fs.writeFileSync(oldGlobalRanking(home), JSON.stringify({ listHash: 'old', tiers: {}, source: 'old-format' }), 'utf8');
+    const r = run(tmp, home, '--global', path.join(home, '.claude', 'skills'));
+    assert.equal(r.status, 0, `global install must pass:\n${r.stdout}${r.stderr}`);
+    const kept = JSON.parse(fs.readFileSync(globalRanking(home), 'utf8'));
+    assert.equal(kept.source, 'already-migrated', 'an existing new-location ranking must be preserved, not overwritten');
+    assert.ok(fs.existsSync(oldGlobalRanking(home)), 'migration only fires when the new location is ABSENT -- an already-migrated setup leaves the old file alone');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); }
+});
+
+test('GLOBAL config preservation: reinstall keeps a customized global config; --reset --global restores factory', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-gpreserve-'));
+  const home = mkHome();
+  const gcfg = globalCfg(home);
+  try {
+    run(tmp, home, '--global');                          // first: seed factory global config
+    fs.writeFileSync(gcfg, '{ "qualityBar": 77 }', 'utf8'); // user customizes the global config
+    run(tmp, home, '--global');                          // re-run -> must PRESERVE
+    assert.match(fs.readFileSync(gcfg, 'utf8'), /77/, 'reinstall PRESERVES the global config');
+    const reset = run(tmp, home, '--reset', '--global'); // explicit global reset
+    assert.equal(reset.status, 0, `reset must pass:\n${reset.stdout}${reset.stderr}`);
+    assert.doesNotMatch(fs.readFileSync(gcfg, 'utf8'), /"qualityBar": 77/, 'reset --global OVERWRITES to factory');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); }
+});
+
+test('reinstall is clean (no stale skill files); uninstall removes the skill', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-reinstall-'));
+  const home = mkHome();
+  const dest = path.join(tmp, 'skills');
+  try {
+    run(tmp, home, dest);
+    fs.writeFileSync(path.join(dest, 'coaltipple', 'STALE.md'), 'old', 'utf8');
+    run(tmp, home, dest);
+    assert.ok(!fs.existsSync(path.join(dest, 'coaltipple', 'STALE.md')), 'reinstall wipes stale files');
+    assert.ok(fs.existsSync(path.join(dest, 'coaltipple', 'SKILL.md')), 'skill still present');
+
+    const un = run(tmp, home, '--uninstall', dest);
+    assert.equal(un.status, 0);
+    assert.ok(!fs.existsSync(path.join(dest, 'coaltipple')), 'skill removed on uninstall');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); }
+});
+
+test('project config preservation: reinstall never overwrites it; a project --reset does, but leaves the shared ranking alone', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-preserve-'));
+  const home = mkHome();
+  const dest = path.join(tmp, 'skills');
+  const cfg = projCfg(tmp);
+  const rp = globalRanking(home); // the ranking is shared / global now
+  try {
+    run(tmp, home, dest);                                    // first install -> project config + shared ranking
+    fs.writeFileSync(cfg, '{ "qualityBar": 95 }', 'utf8');   // user customizes their project config
+    const r0 = JSON.parse(fs.readFileSync(rp, 'utf8'));
+    r0.source = 'user-refined';                              // mark the shared ranking as user-refined (e.g. pinned)
+    fs.writeFileSync(rp, JSON.stringify(r0), 'utf8');
+
+    run(tmp, home, dest);                                    // REINSTALL (a skill update)
+    assert.match(fs.readFileSync(cfg, 'utf8'), /95/, 'reinstall PRESERVES the project config');
+    assert.equal(JSON.parse(fs.readFileSync(rp, 'utf8')).source, 'user-refined', 'reinstall PRESERVES the shared ranking');
+
+    const reset = run(tmp, home, '--reset');                 // project-scoped reset (config only)
+    assert.equal(reset.status, 0, `reset must pass:\n${reset.stdout}${reset.stderr}`);
+    assert.doesNotMatch(fs.readFileSync(cfg, 'utf8'), /"qualityBar": 95/, 'project --reset OVERWRITES the project config to factory');
+    assert.equal(JSON.parse(fs.readFileSync(rp, 'utf8')).source, 'user-refined', 'a project --reset leaves the GLOBAL ranking alone (reset it with --reset --global)');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); }
+});
+
+test('H10: install AND uninstall REFUSE a target whose <dir>/coaltipple IS the source skill (no silent source-wipe)', () => {
+  const sb = mkSandboxRepo();
+  const home = mkHome();
+  try {
+    const srcSkill = path.join(sb, 'skills', 'coaltipple', 'SKILL.md');
+    assert.ok(fs.existsSync(srcSkill), 'precondition: sandbox source skill present');
+    // dest = <sb>/skills -> the mutation target <sb>/skills/coaltipple == the source skill.
+    // The old `dest === skillSrc` guard was one level too shallow and let this through.
+    const ri = runSandbox(sb, home, path.join(sb, 'skills'));
+    assert.notEqual(ri.status, 0, `install must REFUSE the self-target:\n${ri.stdout}${ri.stderr}`);
+    assert.ok(fs.existsSync(srcSkill), 'source intact after a refused install');
+    // uninstall has NO stage+rename — the guard is its SOLE protection, so this is the
+    // clean red-proof surface: revert the guard and this rm's the source outright.
+    const ru = runSandbox(sb, home, '--uninstall', path.join(sb, 'skills'));
+    assert.notEqual(ru.status, 0, `uninstall must REFUSE the self-target:\n${ru.stdout}${ru.stderr}`);
+    assert.ok(fs.existsSync(srcSkill), 'source intact after a refused uninstall (the guard, not stage+rename, protects here)');
+  } finally { fs.rmSync(sb, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); }
+});
+
+test('H10: a self-target reached THROUGH a symlink/junction is refused too (the macOS /private evasion)', (t) => {
+  // The macOS-only CI failure this guards: install.mjs derives skillSrc from a realpath'd
+  // import.meta.url but dest from a LEXICAL resolve of argv, so a self-target under a symlinked
+  // path (macOS /var -> /private/var tmpdirs) compares DIFFERENT lexically and slips past the
+  // guard -> silent source-wipe. Reproduce the asymmetry on ANY OS with a dir junction/symlink:
+  // spawn + target BOTH through the link (entry gets realpath'd to the real dir, arg stays lexical)
+  // -> the exact resolved-source vs unresolved-target split. The guard must realpath both sides.
+  const sb = mkSandboxRepo();
+  const home = mkHome();
+  const link = path.join(path.dirname(sb), path.basename(sb) + '-link');
+  try {
+    try { fs.symlinkSync(sb, link, process.platform === 'win32' ? 'junction' : 'dir'); }
+    catch { t.skip('dir symlink/junction not permitted here (needs the privilege on Windows)'); return; }
+    const srcSkill = path.join(sb, 'skills', 'coaltipple', 'SKILL.md');
+    const env = { ...process.env, USERPROFILE: home, HOME: home, CLAUDE_CONFIG_DIR: undefined };
+    const linkInstall = path.join(link, 'scripts', 'install.mjs');
+    const ri = spawnSync(process.execPath, [linkInstall, path.join(link, 'skills')],
+      { cwd: sb, env, encoding: 'utf8', timeout: 30000 });
+    assert.notEqual(ri.status, 0, `install must REFUSE a symlinked self-target:\n${ri.stdout}${ri.stderr}`);
+    assert.ok(fs.existsSync(srcSkill), 'source intact after a refused symlinked install');
+    const ru = spawnSync(process.execPath, [linkInstall, '--uninstall', path.join(link, 'skills')],
+      { cwd: sb, env, encoding: 'utf8', timeout: 30000 });
+    assert.notEqual(ru.status, 0, `uninstall must REFUSE a symlinked self-target:\n${ru.stdout}${ru.stderr}`);
+    assert.ok(fs.existsSync(srcSkill), 'source intact after a refused symlinked uninstall');
+  } finally {
+    fs.rmSync(sb, { recursive: true, force: true });          // real dir first -> the link now dangles
+    try { fs.unlinkSync(link); } catch { try { fs.rmdirSync(link); } catch { /* dangling link */ } }
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('H10: a failed reinstall (unreadable source) leaves the existing install intact — stage-first, not delete-then-write', (t) => {
+  // chmod 000 only denies reads for a non-root POSIX user; Windows ignores the mode and root
+  // bypasses it, so the copy would not fail there. Visible skip per the capability-gate lesson.
+  if (process.platform === 'win32' || typeof process.getuid !== 'function' || process.getuid() === 0) {
+    t.skip('POSIX non-root only (chmod 000 must actually deny reads)');
+    return;
+  }
+  const sb = mkSandboxRepo();
+  const home = mkHome();
+  const dest = path.join(sb, 'target-skills');
+  try {
+    const r1 = runSandbox(sb, home, dest);                       // 1. a clean install = the "existing install"
+    assert.equal(r1.status, 0, `first install must pass:\n${r1.stdout}${r1.stderr}`);
+    const installed = path.join(dest, 'coaltipple', 'SKILL.md');
+    assert.ok(fs.existsSync(installed), 'precondition: existing install present');
+    const before = fs.readFileSync(installed, 'utf8');
+    const srcFile = path.join(sb, 'skills', 'coaltipple', 'SKILL.md');
+    fs.chmodSync(srcFile, 0o000);                                // 2. break the SOURCE -> the reinstall copy fails
+    const r2 = runSandbox(sb, home, dest);
+    fs.chmodSync(srcFile, 0o644);                                //    restore so cleanup can rm the tree
+    assert.notEqual(r2.status, 0, 'a failed copy must surface a non-zero exit');
+    // 3. stage-first: the existing install is UNTOUCHED (delete-then-write would have wiped it first)
+    assert.ok(fs.existsSync(installed), 'existing install survives a failed reinstall');
+    assert.equal(fs.readFileSync(installed, 'utf8'), before, 'existing install content unchanged');
+    assert.ok(!fs.existsSync(path.join(dest, 'coaltipple.new')), 'no staging litter left behind');
+  } finally { fs.rmSync(sb, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); }
+});

@@ -1,0 +1,113 @@
+// Single source of truth for every .coaltipple.json key.
+// verify.mjs validates the factory config against it — a key added here is
+// automatically validated and documented. The `flags`/`help` fields keep the
+// schema CLI-ready for the `configure` command (`scripts/configure.mjs`).
+// (Mirrors CoalMine's config-schema.mjs pattern for series parity.)
+//
+// Spec fields:
+//   key       canonical .coaltipple.json key
+//   type      'bool' | 'int' | 'enum' | 'strArr' | 'obj'
+//   values    allowed values for 'enum' (compared case-insensitively)
+//   lower     lowercase each 'strArr' item on write
+//   flags     extra CLI aliases besides --<key> (legacy names included)
+//   noFlag    validated + documented but not CLI-settable (nested objects)
+//   help      one-line description for --help
+
+export const CONFIG_SCHEMA = [
+  { key: 'language', type: 'enum', values: ['auto', 'th', 'en', 'ja', 'zh', 'es'], flags: ['-l'], help: 'Language override for prompts and nudges (auto, th, en, ja, zh, es)' },
+  { key: 'enableRouting', type: 'bool', flags: ['-r', '--routing'], help: 'Master switch for model/effort routing (default: true)' },
+  { key: 'mode', type: 'enum', values: ['auto', 'delegation', 'escalation', 'off'], flags: ['-m'], help: 'Routing mode: auto, delegation (down for tokens), escalation (up for quality), off' },
+  { key: 'qualityBar', type: 'int', min: 0, max: 100, flags: ['-Q'], help: 'Acceptable-quality bar (0-100): a result must clear it or routing climbs the model ladder (0 = anything passes, cheapest tier always; 100 = only the top tier passes). Default 60. Full climb/verify mechanic in SKILL.md.' },
+  { key: 'delegateMinLines', type: 'int', min: 1, max: 100000, flags: ['-d'], help: 'Min task size (lines for code, words/chars for text) below which delegate-down is skipped and done in-session — the spawn-overhead break-even floor. Range 1-100000, default 120' },
+  { key: 'maxTotalAttempts', type: 'int', min: 1, max: 5, flags: ['-a'], help: 'Escalation staircase budget: max spawn+retry attempts across tiers before jump-to-top/hand-back (range 1-5; 1 = jump too fast, 4-5 = death by a thousand cuts, 2-3 = sweet spot). Default 2.' },
+  { key: 'subagentTimeoutSeconds', type: 'int', min: 5, max: 3600, flags: ['-s'], help: 'Seconds before a stalled background sub-worker is marked failed. Range 5-3600, default 150' },
+  { key: 'maxConcurrentSubagents', type: 'int', min: 1, max: 16, flags: ['-c'], help: 'Cap on concurrent sub-workers in a fan-out (they share one rate limit). Range 1-16 (platform concurrency ceiling), default 4' },
+  { key: 'requireTaskContract', type: 'bool', flags: ['-T'], help: 'Require a compact task contract (goal+constraints+interface+done) on every delegation — the outbound briefing (default: true)' },
+  { key: 'qaOnMerge', type: 'enum', values: ['strict', 'standard', 'off'], flags: ['-q'], help: 'Verify a sub-worker output before accepting it on merge (strict, standard, off; default: standard)' },
+  { key: 'fastModeOnLatencyRequest', type: 'bool', flags: ['-F'], help: 'Allow attaching fast-mode only on an explicit human latency request — never as a routing rung (default: true)' },
+  { key: 'preserveVoiceForUserFacing', type: 'bool', flags: ['-V'], help: 'Never delegate final user-facing prose/answers to a cheaper model (default: true)' },
+  { key: 'gitRecoveryBoundary', type: 'enum', values: ['auto', 'on', 'off'], flags: ['-G'], help: 'Use git commits as an extra recovery boundary when inside a git repo (auto, on, off; default: auto)' },
+  // TOMBSTONED (B2 — Core-Lock simplification): `rankingMode` (auto|manual) and
+  // `rankingRefreshDays` removed. The ranking is now ALWAYS the alias floor + `modelTiers` pins —
+  // there is no "who builds it" choice (no introspection layer) and the alias floor does not go
+  // stale, so there is no cadence to re-enumerate. A leftover key in a user's .coaltipple.json is
+  // harmless: configure.mjs ignores an unknown flag and the conductor/cascade ignore unknown keys.
+  // (Same tombstone-by-removal pattern as hardEnforce / skillUpdateCheckDays in earlier versions.)
+  // TOMBSTONED (round-2 audit — dead-key removal): `ultracodeEnabled` (bool) removed. It was never
+  // read by any consumer — the SKILL.md ultracode top rung gates on `maxConcurrentSubagents` +
+  // `fastModeOnLatencyRequest`, not on this key. Harmless if left in a user's .coaltipple.json
+  // (ignored, same as above); disabling the ultracode rung is done by lowering `maxConcurrentSubagents`.
+  { key: 'sensitivePaths', type: 'strArr', flags: ['--sensitive'], help: 'Comma-separated path fragments that force the High/Reasoning tier (e.g. auth, crypto, payments, migrations)' },
+  { key: 'excludePaths', type: 'strArr', lower: true, flags: ['-X', '--exclude'], help: 'Comma-separated dirs skipped when grading (default: node_modules, .git, dist, vendor, build)' },
+  { key: 'hotKeywords', type: 'strArr', lower: true, flags: ['--keywords'], help: 'LEGACY flat keyword list (prefer the structured `keywords` groups). Still merges as a grade-4 sensitive group. Comma-separated' },
+  { key: 'keywords', type: 'obj', noFlag: true, validate: validateKeywordGroups, help: 'Routing keyword GROUPS by task type — each { grade (1-5 floor), sensitive? (never-delegate-down), preserveVoice? (keep the user-facing deliverable), words: [...] }. Overrides/extends the factory groups (concurrency, crypto, security, coding, audit, math, knowledge, domain, creative): add/remove a word or change a grade per group' },
+  { key: 'disableRouting', type: 'strArr', lower: true, flags: ['-x', '--disable'], help: 'Comma-separated task domains to never route — coding, text, math, research (the domain is inferred from the task content + its matched keyword group) — or "all"' },
+  { key: 'contextFiles', type: 'strArr', flags: ['-C', '--context'], help: 'Memory-anchor file(s) a fresh worker reads for project context/conventions beyond the task contract (any name). Empty = rely on platform memory (CLAUDE.md/AGENTS.md). Comma-separated paths' },
+  { key: 'memoryOffer', type: 'enum', values: ['auto', 'off'], flags: ['--memory'], help: 'When no memory anchor exists, offer (lazily, once) to set one up: auto (default) or off (disabled/skipped; re-enable via /coaltipple memory)' },
+  { key: 'updateMode', type: 'enum', values: ['ask', 'auto', 'remind', 'off'], flags: ['-u', '--update-mode'], help: 'Self-update behavior at session start (ask, auto, remind, off; default: ask). Orthogonal to routing — its own off-switch' },
+  { key: 'updateCheckDays', type: 'int', min: 1, max: 365, flags: ['-P', '--update-days'], help: 'Days between self-update checks/reminders (range 1-365, default: 14). Short flag -P (uppercase; -p is reserved for --project)' },
+  { key: 'modelTiers', type: 'obj', noFlag: true, validate: validateModelTiers, help: 'Optional user pins overriding auto-classification: { low|mid|heavy|reasoning: "model" | ["priority","chain"] }' },
+  { key: 'fableConsent', type: 'bool', flags: ['-f'], help: 'Standing consent to route to the fable rung (the top rung above opus, a real-money spawn) WITHOUT asking each time: true = spawn fable whenever routing selects it; false/unset = ask once per fable escalation (once / always-this-project / no). Set per-project with --project. Default: false (ask)' },
+];
+// Tombstoned keys — do NOT resurrect without their trigger:
+//   'callFable' (shipped 1.1.0, withdrawn 1.1.1 — premature: a SKILL.md flag cannot hard-block a
+//   spawn the way commented-out code blocks execution. The real-money Fable gate SHIPPED as
+//   'fableConsent' in v1.3.0 — do NOT resurrect 'callFable'; the consent ask is the gate).
+
+// Validate an already-parsed JSON value against a spec.
+// Returns an error message fragment ("must be ...") or null when valid.
+export function validateValue(spec, v) {
+  switch (spec.type) {
+    case 'bool':
+      return typeof v === 'boolean' ? null : 'must be a boolean';
+    case 'int':
+      if (typeof v !== 'number' || !Number.isFinite(v)) return 'must be a finite number';
+      if (!Number.isInteger(v)) return 'must be an integer';
+      if (spec.min != null && v < spec.min) return `must be >= ${spec.min}`;
+      if (spec.max != null && v > spec.max) return `must be <= ${spec.max}`;
+      return null;
+    case 'enum':
+      return typeof v === 'string' && spec.values.includes(v.toLowerCase())
+        ? null
+        : `must be one of: ${spec.values.join(', ')}`;
+    case 'strArr':
+      return Array.isArray(v) && v.every((x) => typeof x === 'string')
+        ? null
+        : 'must be an array of strings';
+    case 'obj':
+      if (!(v && typeof v === 'object' && !Array.isArray(v))) return 'must be an object';
+      return spec.validate ? spec.validate(v) : null;
+    default:
+      return `has an unknown spec type '${spec.type}'`;
+  }
+}
+
+// Deep validator for the `keywords` groups (validateValue calls it for that key; verify.mjs +
+// configure.mjs surface its message). A malformed group fails loud rather than silently grading wrong:
+// an out-of-range grade is the input-boundary the grader would otherwise turn into an undefined tier.
+// Deep validator for `modelTiers` pins. Each value is a model name (string) or a
+// priority chain (array of strings). A typo'd object pin ({ heavy: { model: 'opus' } })
+// would pass the bare 'obj' type check, then applyPins String()-coerces it to
+// "[object Object]" — a non-existent model name that makes resolveWorker yield null
+// (route silently fails). Reject a non-string entry at the config boundary instead.
+function validateModelTiers(pins) {
+  for (const tier of Object.keys(pins)) {
+    const v = pins[tier];
+    if (typeof v === 'string') continue;
+    if (Array.isArray(v) && v.every((m) => typeof m === 'string')) continue;
+    return `pin '${tier}' must be a model name (string) or an array of model names`;
+  }
+  return null;
+}
+
+function validateKeywordGroups(groups) {
+  for (const name of Object.keys(groups)) {
+    const g = groups[name];
+    if (!g || typeof g !== 'object' || Array.isArray(g)) return `group '${name}' must be an object`;
+    if (!Array.isArray(g.words) || !g.words.every((w) => typeof w === 'string')) return `group '${name}'.words must be an array of strings`;
+    if (g.grade != null && !(Number.isInteger(g.grade) && g.grade >= 1 && g.grade <= 5)) return `group '${name}'.grade must be an integer 1-5`;
+    if (g.sensitive != null && typeof g.sensitive !== 'boolean') return `group '${name}'.sensitive must be a boolean`;
+    if (g.preserveVoice != null && typeof g.preserveVoice !== 'boolean') return `group '${name}'.preserveVoice must be a boolean`;
+  }
+  return null;
+}
