@@ -229,14 +229,24 @@ try {
   // projectConfigCandidates resolves the git root INTERNALLY (config-load.mjs), so
   // configure.mjs needs no git-root helper of its own — requiring one here would
   // pin an incidental implementation detail, not the real invariant.
-  const seg = "'.claude', '.coaltipple.json'";
+  // UMB-133: the walk carries TWO legacy shapes, so the gate pins BOTH, in BOTH files -- a gate
+  // that guards one segment while the walk grows a second reads green over exactly the drift it
+  // exists to catch. The order of the whole walk is pinned by the behavioural test
+  // (conductor.test.mjs "walk equivalence"), which spawns the hook; this gate is the cheap
+  // presence guard that fails at verify time without running one.
+  const segs = [
+    ["'.claude', '.coaltipple.json'", 'LEGACY-1 (.claude/.coaltipple.json)'],
+    ["root, '.coaltipple.json'", 'LEGACY-2 (<gitroot>/.coaltipple.json)'],
+  ];
   for (const [label, rel] of [
     ['config-load.mjs', ['scripts', 'lib', 'config-load.mjs']],
     ['coaltipple-conductor.js', ['hooks', 'coaltipple-conductor.js']],
   ]) {
     const s = fs.readFileSync(path.join(repo, ...rel), 'utf8');
-    if (s.includes(seg)) ok(`${label} references the .claude project-config path`);
-    else fail(`${label} lost ${seg} — project-config path DRIFTED from config-load (the SSoT)`);
+    for (const [seg, what] of segs) {
+      if (s.includes(seg)) ok(`${label} references the ${what} project-config path`);
+      else fail(`${label} lost ${seg} (${what}) — project-config path DRIFTED from config-load (the SSoT)`);
+    }
   }
   const configureSrc = fs.readFileSync(path.join(repo, 'scripts', 'configure.mjs'), 'utf8');
   const importsIt = /import\s*\{[^}]*\bprojectConfigCandidates\b[^}]*\}\s*from\s*['"]\.\/lib\/config-load\.mjs['"]/.test(configureSrc);

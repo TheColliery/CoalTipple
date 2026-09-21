@@ -79,9 +79,11 @@ export function findGitRoot(startDir = process.cwd()) {
 //      separate check.
 //   2. Other known agent dirs, fixed order: `.claude` -> `.agents` -> `.gemini`
 //      (first FOUND wins).
-//   3. LEGACY: <project>/.claude/.coaltipple.json — CT's own CURRENT shape as of
+//   3. LEGACY-1: <project>/.claude/.coaltipple.json — CT's own CURRENT shape as of
 //      this campaign (never a bare root dotfile, unlike CoalWash's legacy) —
 //      read normally, no breakage for an existing user.
+//   4. LEGACY-2 (UMB-133): <project>/.coaltipple.json — the bare root dotfile every
+//      sibling room's legacy list carries. First EXISTING file wins across all five.
 // WRITE target = where the config was found; absent everywhere, the running
 // agent's own dir. Hooks never perform this move on a READ (Phoenix #5, no side
 // effects) — CT DOES have a project-config writer (`configure.mjs`, including the
@@ -92,11 +94,21 @@ export function findGitRoot(startDir = process.cwd()) {
 // list rather than a hand-copied second one -- a hand-copied list is the exact drift class
 // this ticket exists to remove.
 export const AGENT_DIR_ORDER = ['.claude', '.agents', '.gemini'];
+// The LEGACY shapes, in read order, exported on their own (UMB-133) so a consumer never has to
+// infer "legacy = the tail of projectConfigCandidates" by position -- configure.mjs's
+// projectWriteTarget did exactly that, and growing the walk by one entry would have turned
+// LEGACY-1 into a write target. projectConfigCandidates below is built FROM this list.
+export function projectLegacyPaths(cwd = process.cwd()) {
+  const root = findGitRoot(cwd);
+  return [
+    path.join(root, '.claude', '.coaltipple.json'), // LEGACY-1: CT's own pre-campaign shape
+    path.join(root, '.coaltipple.json'), // LEGACY-2 (UMB-133): the bare root dotfile -- what a user reasonably writes; never a candidate until now
+  ];
+}
 export function projectConfigCandidates(cwd = process.cwd()) {
   const root = findGitRoot(cwd);
   const candidates = AGENT_DIR_ORDER.map((d) => path.join(root, d, 'coal', 'coaltipple.json'));
-  candidates.push(path.join(root, '.claude', '.coaltipple.json')); // LEGACY, always last
-  return candidates;
+  return candidates.concat(projectLegacyPaths(cwd)); // LEGACY, always last
 }
 export function projectConfigPath(cwd = process.cwd()) {
   const candidates = projectConfigCandidates(cwd);

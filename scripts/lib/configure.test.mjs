@@ -279,3 +279,41 @@ test('shadowed legacy: a legacy file coexisting with an already-migrated new-sha
     assert.ok(!fs.existsSync(legacy), 'the shadowed legacy file must be dropped, not left behind forever');
   } finally { cleanup(p); }
 });
+
+// UMB-133: the SECOND legacy shape (<gitroot>/.coaltipple.json). Two things must hold that a
+// positional "legacy = the last candidate" would have broken: (1) a root-only legacy is the
+// migration SEED and is dropped; (2) with BOTH legacies present LEGACY-1 is the seed (it is what a
+// READ resolves) and the shadowed LEGACY-2 is dropped with it -- neither is ever a write target.
+test('UMB-133 move-on-write: a root-only LEGACY-2 (<gitroot>/.coaltipple.json) is the migration seed and is dropped -- its real values land at canonical', () => {
+  const p = freshProject();
+  try {
+    const rootLegacy = path.join(p.dir, '.coaltipple.json');
+    fs.writeFileSync(rootLegacy, JSON.stringify({ fableConsent: true, mode: 'off', qualityBar: 91 }), 'utf8');
+    const r = run(p, '--project', '--updateCheckDays', '30');
+    assert.equal(r.status, 0, r.stderr);
+    const migrated = stripJsonc(fs.readFileSync(projectPath(p.dir), 'utf8'));
+    assert.equal(migrated.fableConsent, true, 'the always-this-project consent record survived the root-legacy migration');
+    assert.equal(migrated.mode, 'off', 'a non-factory value survived -- not reset to the factory auto');
+    assert.equal(migrated.qualityBar, 91);
+    assert.equal(migrated.updateCheckDays, 30, 'the edit landed at canonical');
+    assert.ok(!fs.existsSync(rootLegacy), 'the root legacy is gone -- moved, not duplicated');
+    assert.doesNotMatch(r.stdout, /seeding from factory/);
+  } finally { cleanup(p); }
+});
+
+test('UMB-133 move-on-write: BOTH legacies present -> LEGACY-1 is the seed (what a read resolves), and BOTH are dropped; neither is written in place', () => {
+  const p = freshProject();
+  try {
+    const legacy1 = path.join(p.dir, '.claude', '.coaltipple.json');
+    const legacy2 = path.join(p.dir, '.coaltipple.json');
+    fs.mkdirSync(path.dirname(legacy1), { recursive: true });
+    fs.writeFileSync(legacy1, JSON.stringify({ qualityBar: 71 }), 'utf8');
+    fs.writeFileSync(legacy2, JSON.stringify({ qualityBar: 72, language: 'th' }), 'utf8');
+    const r = run(p, '--project', '--updateCheckDays', '30');
+    assert.equal(r.status, 0, r.stderr);
+    const migrated = stripJsonc(fs.readFileSync(projectPath(p.dir), 'utf8'));
+    assert.equal(migrated.qualityBar, 71, 'seeded from LEGACY-1, the one a read resolves');
+    assert.ok(!('language' in migrated), 'the shadowed LEGACY-2 content did not leak in');
+    assert.ok(!fs.existsSync(legacy1) && !fs.existsSync(legacy2), 'both legacy files dropped -- no leftover');
+  } finally { cleanup(p); }
+});

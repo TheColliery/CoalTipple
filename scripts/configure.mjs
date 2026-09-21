@@ -27,7 +27,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CONFIG_SCHEMA, validateValue } from './lib/config-schema.mjs';
-import { loadMergedConfig, globalConfigPath, projectConfigCandidates, projectConfigPath } from './lib/config-load.mjs';
+import { loadMergedConfig, globalConfigPath, projectConfigCandidates, projectConfigPath, projectLegacyPaths } from './lib/config-load.mjs';
 import { stripJsonc } from './lib/jsonc.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -42,13 +42,19 @@ const factoryCfg = path.join(repo, 'platform-configs', '.coaltipple.json');
 // present, e.g. an interrupted prior migration) is just as much a leftover the
 // no-old-version-leftover rule bans (INSPECT Finding 5, 2026-08-08). One flag,
 // independent of which candidate is the actual write target.
+//
+// UMB-133: there are now TWO legacy shapes. The old code found "the" legacy as the LAST
+// candidate by position; with a second trailing entry that would have made LEGACY-1 a
+// WRITE TARGET (a legacy-only project written in place, never migrated). The list is now
+// asked for explicitly. legacyToRemove = the legacy a READ would have resolved (first
+// existing: it is the migration SEED); legacyAlso = any further existing legacy, which is
+// dead config after the write and is dropped with it (same no-leftover rule).
 function projectWriteTarget(cwd) {
-  const candidates = projectConfigCandidates(cwd);
-  const legacy = candidates[candidates.length - 1];
-  const newCandidates = candidates.slice(0, -1);
-  const legacyToRemove = fs.existsSync(legacy) ? legacy : null;
+  const legacy = projectLegacyPaths(cwd);
+  const newCandidates = projectConfigCandidates(cwd).filter((c) => !legacy.includes(c));
+  const existingLegacy = legacy.filter((l) => fs.existsSync(l));
   const target = newCandidates.find((c) => fs.existsSync(c)) || newCandidates[0];
-  return { target, legacyToRemove };
+  return { target, legacyToRemove: existingLegacy[0] || null, legacyAlso: existingLegacy.slice(1) };
 }
 
 function printHelp() {
@@ -274,6 +280,7 @@ function main() {
     // delete never undoes a successful write (CoalWash's writeUpdateStamp idiom).
     if (toProject && writeTarget.legacyToRemove) {
       try { fs.rmSync(writeTarget.legacyToRemove, { force: true }); } catch {}
+      for (const extra of writeTarget.legacyAlso) { try { fs.rmSync(extra, { force: true }); } catch {} }
     }
     // Echo back the parsed effective config so the user sees the result.
     const eff = parseConfig(text);

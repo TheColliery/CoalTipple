@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { loadMergedConfig, globalConfigPath, globalStateDir, oldGlobalStateDir, projectConfigPath, projectConfigCandidates, projectStateDir, claudeBaseDir, findGitRoot } from './config-load.mjs';
+import { loadMergedConfig, globalConfigPath, globalStateDir, oldGlobalStateDir, projectConfigPath, projectConfigCandidates, projectLegacyPaths, projectStateDir, claudeBaseDir, findGitRoot } from './config-load.mjs';
 
 // Build a sandbox with optional global/project file bodies; returns { home, cwd }.
 function sandbox({ global, project } = {}) {
@@ -268,16 +268,71 @@ test('CLAUDE_CONFIG_DIR redirects the GLOBAL paths (#6); comma-list -> first ent
 // see projectConfigPath's own header comment for the full rail wording.
 // ---------------------------------------------------------------------------
 
-test('projectConfigCandidates: the rail order is .claude -> .agents -> .gemini -> LEGACY, always relative to the resolved git root', () => {
+test('projectConfigCandidates: the rail order is .claude -> .agents -> .gemini -> LEGACY-1 -> LEGACY-2, always relative to the resolved git root', () => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-proj-'));
   try {
     assert.deepEqual(projectConfigCandidates(cwd), [
       path.join(cwd, '.claude', 'coal', 'coaltipple.json'),
       path.join(cwd, '.agents', 'coal', 'coaltipple.json'),
       path.join(cwd, '.gemini', 'coal', 'coaltipple.json'),
-      path.join(cwd, '.claude', '.coaltipple.json'),
+      path.join(cwd, '.claude', '.coaltipple.json'), // LEGACY-1
+      path.join(cwd, '.coaltipple.json'), // LEGACY-2 (UMB-133): the bare root dotfile, the row's incident file
     ]);
+    // the legacy list is exported on its own so a consumer never has to slice by position (configure.mjs did)
+    assert.deepEqual(projectLegacyPaths(cwd), [path.join(cwd, '.claude', '.coaltipple.json'), path.join(cwd, '.coaltipple.json')]);
   } finally { fs.rmSync(cwd, { recursive: true, force: true }); }
+});
+
+// UMB-133 hole (2): BOTH legacy shapes are found. Each alone is what projectConfigPath returns AND
+// what loadMergedConfig actually reads (a path that resolves but is never read would still be dead config).
+for (const [label, rel] of [['LEGACY-1 (.claude/.coaltipple.json)', ['.claude', '.coaltipple.json']], ['LEGACY-2 (<gitroot>/.coaltipple.json)', ['.coaltipple.json']]]) {
+  test(`UMB-133 walk: ${label} alone is FOUND and its values are READ`, () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-proj-'));
+    try {
+      const file = path.join(cwd, ...rel);
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, JSON.stringify({ qualityBar: 77 }), 'utf8');
+      assert.equal(projectConfigPath(cwd), file);
+      assert.equal(loadMergedConfig({ cwd, home: cwd }).qualityBar, 77, 'the value is read through the cascade, not just the path resolved');
+    } finally { fs.rmSync(cwd, { recursive: true, force: true }); }
+  });
+}
+
+test('UMB-133 walk: canonical wins over BOTH legacies; LEGACY-1 wins over LEGACY-2; first EXISTING file wins', () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-proj-'));
+  try {
+    const [canon, , , legacy1, legacy2] = projectConfigCandidates(cwd);
+    for (const f of [legacy2, legacy1]) { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, JSON.stringify({ qualityBar: f === legacy1 ? 11 : 22 }), 'utf8'); }
+    assert.equal(projectConfigPath(cwd), legacy1, 'legacy-1 beats legacy-2');
+    assert.equal(loadMergedConfig({ cwd, home: cwd }).qualityBar, 11);
+    fs.mkdirSync(path.dirname(canon), { recursive: true });
+    fs.writeFileSync(canon, JSON.stringify({ qualityBar: 99 }), 'utf8');
+    assert.equal(projectConfigPath(cwd), canon, 'canonical beats both legacies');
+    assert.equal(loadMergedConfig({ cwd, home: cwd }).qualityBar, 99);
+  } finally { fs.rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('UMB-133 walk: an existing-but-CORRUPT candidate STOPS the walk -- a valid LEGACY-2 below it is never read (semantics unchanged)', () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-proj-'));
+  try {
+    const [canon, , , , legacy2] = projectConfigCandidates(cwd);
+    fs.mkdirSync(path.dirname(canon), { recursive: true });
+    fs.writeFileSync(canon, '{ this is not json', 'utf8');
+    fs.writeFileSync(legacy2, JSON.stringify({ qualityBar: 55 }), 'utf8');
+    assert.equal(projectConfigPath(cwd), canon, 'the corrupt canonical still wins the walk');
+    assert.equal(loadMergedConfig({ cwd, home: cwd }).qualityBar, undefined, 'and contributes nothing -- it does NOT fall through to the legacy below it');
+  } finally { fs.rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('UMB-133 clamp-unchanged: a LEGACY-2 (root) file is clamped exactly like any other project config (safer-value-wins, hooks-safety §9)', () => {
+  const s = sandbox({ global: JSON.stringify({ mode: 'off', updateMode: 'off' }) });
+  try {
+    fs.writeFileSync(path.join(s.cwd, '.coaltipple.json'), JSON.stringify({ mode: 'auto', updateMode: 'auto', qualityBar: 88 }), 'utf8');
+    const cfg = loadMergedConfig(s);
+    assert.equal(cfg.qualityBar, 88, 'proves the root legacy WAS read (a non-clamped key from the same file lands)');
+    assert.equal(cfg.mode, 'off', 'a root-legacy mode escalation is clamped to the global off');
+    assert.equal(cfg.updateMode, 'off', 'a root-legacy updateMode escalation is clamped to the global off');
+  } finally { cleanup(s); }
 });
 
 test('projectConfigPath precedence 1/3: own-dir (.claude/coal) wins even when every other candidate, including LEGACY, also exists', () => {

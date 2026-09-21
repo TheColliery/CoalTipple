@@ -251,3 +251,26 @@ test('verify.mjs pointer check: a REAL check-ignore derivation FAILURE reddens t
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+// UMB-133: the config-path sync gate pins BOTH legacy segments in BOTH walk copies. A gate that
+// guards one segment while the walk carries a second reads green over exactly the drift it exists
+// to catch, so each (file, segment) cell is broken in turn and must FAIL by name. Asserts only the
+// specific FAIL line -- never that the rest of the run is clean (the dist-sync leg is a separate concern).
+for (const [file, rel] of [['config-load.mjs', ['scripts', 'lib', 'config-load.mjs']], ['coaltipple-conductor.js', ['hooks', 'coaltipple-conductor.js']]]) {
+  for (const [seg, what] of [["'.claude', '.coaltipple.json'", 'LEGACY-1'], ["root, '.coaltipple.json'", 'LEGACY-2']]) {
+    test(`verify.mjs config-path sync (UMB-133): ${file} losing the ${what} segment FAILs the gate by name`, () => {
+      const tmp = mkSandbox();
+      try {
+        const target = path.join(tmp, ...rel);
+        const src = fs.readFileSync(target, 'utf8');
+        assert.ok(src.includes(seg), `the ${what} segment is no longer in ${file} -- update this test's patch target`);
+        fs.writeFileSync(target, src.split(seg).join(seg.replace('.coaltipple.json', '.coaltipple.jsonX')), 'utf8');
+        const r = runVerify(tmp);
+        assert.equal(r.status, 1, 'a drifted legacy segment must FAIL the gate');
+        assert.match(r.stdout, new RegExp(`FAIL ${file.replace('.', '\\.')} lost .*${what}.*project-config path DRIFTED`), `the FAIL line names ${file} and ${what}:\n${r.stdout}`);
+      } finally {
+        fs.rmSync(tmp, { recursive: true, force: true });
+      }
+    });
+  }
+}

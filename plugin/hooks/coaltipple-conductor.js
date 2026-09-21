@@ -37,12 +37,14 @@ function findGitRoot(startDir) {
 }
 // Namespace campaign (#69+#39): first-found-wins over the SAME order as
 // config-load.mjs's projectConfigCandidates -- own agent dir (always .claude for
-// this room) -> .agents -> .gemini -> LEGACY <gitroot>/.claude/.coaltipple.json.
+// this room) -> .agents -> .gemini -> LEGACY-1 <gitroot>/.claude/.coaltipple.json
+// -> LEGACY-2 <gitroot>/.coaltipple.json (UMB-133).
 const AGENT_DIR_ORDER = ['.claude', '.agents', '.gemini'];
 function projectConfigCandidates(cwd) {
   const root = findGitRoot(cwd);
   const candidates = AGENT_DIR_ORDER.map((d) => path.join(root, d, 'coal', 'coaltipple.json'));
-  candidates.push(path.join(root, '.claude', '.coaltipple.json')); // LEGACY, always last
+  candidates.push(path.join(root, '.claude', '.coaltipple.json')); // LEGACY-1
+  candidates.push(path.join(root, '.coaltipple.json')); // LEGACY-2, always last
   return candidates;
 }
 function readCfgFile(file) {
@@ -74,6 +76,9 @@ const SAFER_ENUM = { mode: ['off', 'delegation', 'escalation', 'auto'], updateMo
 // never needed this and isn't part of the discussion the config-load.mjs comment records.
 const SCHEMA_DEFAULT_ENUM = { mode: 'auto', updateMode: 'ask' };
 let _cfg;
+// What the walk resolved, kept for the SessionStart report (UMB-133): the git root, the candidate
+// list, and the index of the winning EXISTING candidate (-1 = none exists).
+let _walk = null;
 function loadCfg() {
   if (_cfg !== undefined) return _cfg;
   // CLAUDE_CONFIG_DIR (#6) redirects ~/.claude (portable / multi-account / CI); first entry if a comma-list.
@@ -83,8 +88,11 @@ function loadCfg() {
   // exactly) -- an existing-but-corrupt file still stops the walk there and
   // contributes nothing (readCfgFile returns null), it does NOT fall through to
   // a lower-priority candidate's real content.
-  const candidates = projectConfigCandidates(process.cwd());
-  const projectPath = candidates.find((c) => fs.existsSync(c)) || candidates[0];
+  const root = findGitRoot(process.cwd()); // idempotent: projectConfigCandidates(root) resolves the same root
+  const candidates = projectConfigCandidates(root);
+  const hitIdx = candidates.findIndex((c) => fs.existsSync(c));
+  _walk = { root, candidates, hitIdx };
+  const projectPath = hitIdx === -1 ? candidates[0] : candidates[hitIdx];
   const project = readCfgFile(projectPath);
   // Merge only when something loaded; keep null (= "no config") if neither did, so
   // the existing `if (cfg && ...)` guards in main() behave exactly as before.
@@ -276,6 +284,40 @@ function routingOff(cfg) {
   return false;
 }
 
+// UMB-133 -- a project config the walk will NOT read must be NAMED, never silently walked
+// past (a fableConsent written to <gitroot>/.coaltipple.json sat dead for 14 days, and silence
+// read as "honoured"), and a config read from a LEGACY shape is told where to move.
+// SessionStart ONLY: this is session state, not turn state, so the per-prompt forcer never
+// carries it (Phoenix #13: the sanctioned surfaces, no stderr). The probe is a FIXED list of
+// near-miss shapes under the SAME roots the walk reads -- never a crawl (Phoenix #3 budgets the
+// work this hook ADDS): 2 + 3 agent dirs x (2, +1 for the two non-.claude dirs) = 10 existsSync.
+// <gitroot>/.coaltipple.json is NOT on it: it is LEGACY-2, a candidate.
+// routingOff / disableRouting:'all' return in main() BEFORE this runs and that is deliberate:
+// a user who silenced the conductor is not re-armed by this report.
+const CANON_REL = '.claude/coal/coaltipple.json';
+function projectConfigNotices() {
+  const lines = [];
+  try {
+    if (!_walk) return lines;
+    const { root, candidates, hitIdx } = _walk;
+    const rel = (p) => path.relative(root, p).split(path.sep).join('/');
+    if (hitIdx >= AGENT_DIR_ORDER.length) { // the winner is one of the LEGACY shapes (they sit after the canonical dirs)
+      lines.push(`[CoalTipple] LEGACY: ${rel(candidates[hitIdx])} is read as this project's config but is deprecated; canonical = ${CANON_REL} -- move it there.`);
+    }
+    const candSet = new Set(candidates.map(rel));
+    const near = ['coaltipple.json', 'coal/coaltipple.json'];
+    for (const d of AGENT_DIR_ORDER) {
+      near.push(`${d}/coaltipple.json`, `${d}/coal/.coaltipple.json`);
+      if (d !== '.claude') near.push(`${d}/.coaltipple.json`); // .claude/.coaltipple.json is LEGACY-1, a candidate
+    }
+    for (const n of near) {
+      if (candSet.has(n)) continue;
+      if (fs.existsSync(path.join(root, ...n.split('/')))) lines.push(`[CoalTipple] IGNORED: ${n} is not a config path; canonical = ${CANON_REL}`);
+    }
+  } catch {}
+  return lines;
+}
+
 function main() {
   const cfg = loadCfg();
   if (routingOff(cfg)) return;
@@ -330,6 +372,7 @@ function main() {
   // disabled (routingOff / disableRouting:all both returned above). Its own off-switch
   // is updateMode:"off". The per-prompt forcer (UserPromptSubmit, above) is untouched.
   let out = contract(cfg);
+  for (const n of projectConfigNotices()) out += '\n' + n; // UMB-133: LEGACY hit / IGNORED non-candidates, SessionStart only
   let updateMode = 'ask';
   let updateCheckDays = 14;
   if (cfg && typeof cfg.updateMode === 'string') {

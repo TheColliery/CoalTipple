@@ -8,8 +8,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { projectConfigCandidates, projectConfigPath } from './config-load.mjs';
 
-const HOOK = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'hooks', 'coaltipple-conductor.js');
+const HOOK =path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'hooks', 'coaltipple-conductor.js');
 
 // `home` sandboxes the GLOBAL config layer: point USERPROFILE/HOME at a throwaway
 // dir so os.homedir() inside the hook resolves there, never the real machine.
@@ -330,4 +331,173 @@ test('valid-but-non-object stdin (null / number / array) -> exit 0, no crash, de
       assert.match(r.stdout, /\[CoalTipple\]/, `contract injected (input fell back to {}) for stdin ${payload}`);
     }
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
+// ---------------------------------------------------------------------------
+// UMB-133 -- the config-path unification (holes 1 + 2). The hook is the SHIPPED walk copy
+// (Phoenix #9: inlined, never imports scripts/), so everything here spawns the REAL hook.
+// Cleanup is registered the line after allocation (scripts-quality.md section 2).
+// ---------------------------------------------------------------------------
+const CANON = '.claude/coal/coaltipple.json';
+// A git-anchored project holding exactly `files` ({ relPosixPath: object|string }) + a sandboxed HOME
+// (optionally holding a GLOBAL config). Both registered for cleanup immediately.
+function proj(t, files, globalCfg) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-umb133-'));
+  const home = globalCfg ? mkHomeGlobal(globalCfg) : fs.mkdtempSync(path.join(os.tmpdir(), 'ct-umb133-home-'));
+  t.after(() => { fs.rmSync(dir, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); });
+  fs.mkdirSync(path.join(dir, '.git'));
+  for (const [rel, body] of Object.entries(files)) {
+    const abs = path.join(dir, ...rel.split('/'));
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.writeFileSync(abs, typeof body === 'string' ? body : JSON.stringify(body), 'utf8');
+  }
+  return { dir, home };
+}
+const session = ({ dir, home }, cwd = dir) => run({ hook_event_name: 'SessionStart' }, cwd, home);
+const lines = (stdout, tag) => stdout.split('\n').filter((l) => l.startsWith(`[CoalTipple] ${tag}:`));
+
+test('UMB-133 legacy hit: <gitroot>/.coaltipple.json (LEGACY-2) is READ and emits ONE migration line naming what was read and the canonical path', (t) => {
+  const p = proj(t, { '.coaltipple.json': { language: 'th' } });
+  const r = session(p);
+  assert.equal(r.status, 0); assert.equal(r.stderr, '');
+  assert.match(r.stdout, /Respond to the user in Thai/, 'the root file is actually READ (the incident: it never was)');
+  const notice = lines(r.stdout, 'LEGACY');
+  assert.equal(notice.length, 1, `exactly one LEGACY line, got: ${JSON.stringify(notice)}`);
+  assert.match(notice[0], /\.coaltipple\.json/, 'names the path that was read');
+  assert.ok(notice[0].includes(CANON), 'names the canonical path to move it to');
+  assert.equal(lines(r.stdout, 'IGNORED').length, 0, 'a candidate is never reported as IGNORED');
+});
+
+test('UMB-133 legacy hit: .claude/.coaltipple.json (LEGACY-1) also emits the migration line', (t) => {
+  const p = proj(t, { '.claude/.coaltipple.json': { language: 'ja' } });
+  const r = session(p);
+  assert.equal(r.status, 0); assert.equal(r.stderr, '');
+  assert.match(r.stdout, /Respond to the user in Japanese/);
+  const notice = lines(r.stdout, 'LEGACY');
+  assert.equal(notice.length, 1);
+  assert.ok(notice[0].includes('.claude/.coaltipple.json') && notice[0].includes(CANON));
+});
+
+test('UMB-133 canonical hit emits NO notice of any kind', (t) => {
+  const p = proj(t, { [CANON]: { language: 'zh' } });
+  const r = session(p);
+  assert.equal(r.status, 0); assert.equal(r.stderr, '');
+  assert.match(r.stdout, /Respond to the user in Chinese/, 'positive state effect: the canonical config was read');
+  assert.equal(lines(r.stdout, 'LEGACY').length + lines(r.stdout, 'IGNORED').length, 0);
+});
+
+test('UMB-133 no project config at all emits NO notice (nothing to migrate, nothing ignored)', (t) => {
+  const p = proj(t, {});
+  const r = session(p);
+  assert.equal(r.status, 0);
+  assert.match(r.stdout, /\[CoalTipple\] Model\/effort routing active/);
+  assert.equal(lines(r.stdout, 'LEGACY').length + lines(r.stdout, 'IGNORED').length, 0);
+});
+
+// The fixed probe list, spelled out LITERALLY here (never derived from the hook) so a probe
+// silently dropped from the hook goes red. Each is a plausible near-miss of the canonical path.
+// <gitroot>/.coaltipple.json is deliberately ABSENT: after hole (2) it is a candidate.
+const NON_CANDIDATES = [
+  'coaltipple.json',
+  'coal/coaltipple.json',
+  '.claude/coaltipple.json',
+  '.claude/coal/.coaltipple.json',
+  '.agents/coaltipple.json',
+  '.agents/.coaltipple.json',
+  '.agents/coal/.coaltipple.json',
+  '.gemini/coaltipple.json',
+  '.gemini/.coaltipple.json',
+  '.gemini/coal/.coaltipple.json',
+];
+for (const rel of NON_CANDIDATES) {
+  test(`UMB-133 IGNORED: a config at the non-candidate path ${rel} is REPORTED, never silently walked past (and never applied)`, (t) => {
+    const p = proj(t, { [rel]: { language: 'th' } });
+    const r = session(p);
+    assert.equal(r.status, 0); assert.equal(r.stderr, '');
+    assert.ok(r.stdout.includes(`[CoalTipple] IGNORED: ${rel} is not a config path; canonical = ${CANON}`), `IGNORED line for ${rel} missing:\n${r.stdout}`);
+    assert.doesNotMatch(r.stdout, /Respond to the user in Thai/, 'a non-candidate file is reported, NOT read');
+  });
+}
+
+test('UMB-133 IGNORED reports EVERY non-candidate hit, not just the first', (t) => {
+  const p = proj(t, { 'coaltipple.json': {}, '.claude/coaltipple.json': {}, '.gemini/.coaltipple.json': {} });
+  const r = session(p);
+  const ignored = lines(r.stdout, 'IGNORED');
+  assert.equal(ignored.length, 3, `expected 3 IGNORED lines, got ${JSON.stringify(ignored)}`);
+});
+
+test('UMB-133 IGNORED co-exists with a real canonical config: the real one is read, the stray one is named', (t) => {
+  const p = proj(t, { [CANON]: { language: 'zh' }, '.claude/coaltipple.json': { language: 'th' } });
+  const r = session(p);
+  assert.match(r.stdout, /Respond to the user in Chinese/);
+  assert.doesNotMatch(r.stdout, /Respond to the user in Thai/);
+  assert.equal(lines(r.stdout, 'IGNORED').length, 1);
+  assert.equal(lines(r.stdout, 'LEGACY').length, 0);
+});
+
+test('UMB-133 the probe is anchored at the GIT ROOT, not the cwd: a subdir session still sees the root legacy and the root near-miss', (t) => {
+  const p = proj(t, { '.coaltipple.json': { language: 'th' }, 'coal/coaltipple.json': {} });
+  const sub = path.join(p.dir, 'src', 'deep');
+  fs.mkdirSync(sub, { recursive: true });
+  const r = session(p, sub);
+  assert.equal(r.status, 0);
+  assert.match(r.stdout, /Respond to the user in Thai/);
+  assert.equal(lines(r.stdout, 'LEGACY').length, 1);
+  assert.equal(lines(r.stdout, 'IGNORED').length, 1);
+});
+
+test('UMB-133 channel: the notice is SessionStart-only -- the per-prompt UserPromptSubmit forcer never carries it', (t) => {
+  const p = proj(t, { '.coaltipple.json': { language: 'th' }, 'coaltipple.json': {} });
+  const r = run({ hook_event_name: 'UserPromptSubmit', prompt: 'hello' }, p.dir, p.home);
+  assert.equal(r.status, 0); assert.equal(r.stderr, '');
+  assert.match(r.stdout, /^\[CoalTipple\] Route this turn per the resident routing contract\./, 'the forcer still fires (positive effect)');
+  assert.doesNotMatch(r.stdout, /LEGACY:|IGNORED:/);
+});
+
+test('UMB-133 the off-switch stays ABSOLUTE: routing off -> silence, even with a legacy hit and a stray non-candidate (named residual, not a regression)', (t) => {
+  const p = proj(t, { '.coaltipple.json': { mode: 'off' }, 'coaltipple.json': {} });
+  const r = session(p);
+  assert.equal(r.status, 0); assert.equal(r.stderr, '');
+  assert.equal(r.stdout, '', 'a user who silenced the conductor is not re-armed by this unit');
+  // control: same project WITHOUT mode:off DOES speak, so the silence above is the switch and not a broken probe
+  const c = proj(t, { '.coaltipple.json': { language: 'th' }, 'coaltipple.json': {} });
+  assert.match(session(c).stdout, /LEGACY:/);
+});
+
+test('UMB-133 clamp-unchanged (hooks-safety section 9): a root-legacy updateMode:auto cannot escalate past a global updateMode:off', (t) => {
+  const p = proj(t, { '.coaltipple.json': { updateMode: 'auto', language: 'th' } }, { updateMode: 'off' });
+  const r = session(p);
+  assert.equal(r.status, 0); assert.equal(r.stderr, '');
+  assert.match(r.stdout, /Respond to the user in Thai/, 'proves the root legacy WAS read (a non-clamped key from the same file lands)');
+  assert.doesNotMatch(r.stdout, /self-update/, 'the escalation to auto was clamped to the global off -> no self-update directive');
+  assert.equal(lines(r.stdout, 'LEGACY').length, 1);
+});
+
+// The two walk copies (this hook, config-load.mjs) must agree on WHICH FILE WINS -- not just on the
+// presence of two path segments. Each candidate carries a DISTINCT language; for every pair the
+// hook must read the earlier candidate's language, and config-load must resolve the same file.
+const LANG_OF = ['th', 'ja', 'zh', 'es', 'en'];
+const LANG_NAME_OF = { th: 'Thai', ja: 'Japanese', zh: 'Chinese', es: 'Spanish', en: 'English' };
+test('UMB-133 walk equivalence: for EVERY candidate alone and EVERY pair of the five, the hook reads the SAME winner config-load resolves', (t) => {
+  const p = proj(t, {});
+  const cands = projectConfigCandidates(p.dir);
+  assert.equal(cands.length, 5, 'canonical x3 + LEGACY-1 + LEGACY-2');
+  // Singles FIRST: a pair never exposes a candidate MISSING from the hook's walk when it is the
+  // LATER of the two (the earlier one just wins) -- only "this file alone" does.
+  for (let k = 0; k < cands.length; k++) {
+    fs.mkdirSync(path.dirname(cands[k]), { recursive: true });
+    fs.writeFileSync(cands[k], JSON.stringify({ language: LANG_OF[k] }), 'utf8');
+    assert.equal(projectConfigPath(p.dir), cands[k], `config-load resolves candidate ${k} alone`);
+    assert.match(session(p).stdout, new RegExp(`Respond to the user in ${LANG_NAME_OF[LANG_OF[k]]}`), `hook must read candidate ${k} (${path.relative(p.dir, cands[k])}) alone`);
+    fs.rmSync(cands[k], { force: true });
+  }
+  for (let i = 0; i < cands.length; i++) {
+    for (let j = i + 1; j < cands.length; j++) {
+      for (const k of [i, j]) { fs.mkdirSync(path.dirname(cands[k]), { recursive: true }); fs.writeFileSync(cands[k], JSON.stringify({ language: LANG_OF[k] }), 'utf8'); }
+      assert.equal(projectConfigPath(p.dir), cands[i], `config-load: candidate ${i} beats ${j}`);
+      const r = session(p);
+      assert.match(r.stdout, new RegExp(`Respond to the user in ${LANG_NAME_OF[LANG_OF[i]]}`), `hook: candidate ${i} (${path.relative(p.dir, cands[i])}) must beat ${j}`);
+      for (const k of [i, j]) fs.rmSync(cands[k], { force: true });
+    }
+  }
 });
