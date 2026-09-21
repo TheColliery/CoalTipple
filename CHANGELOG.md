@@ -2,6 +2,18 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.6.0] - 2026-09-21
+
+### Added
+- **The project-config walk now also honours a bare `<gitroot>/.coaltipple.json`.** It is the last of five candidates, after `<gitroot>/.claude/.coaltipple.json`; the first existing file wins across `.claude/coal/coaltipple.json` → `.agents/coal/coaltipple.json` → `.gemini/coal/coaltipple.json` → `.claude/.coaltipple.json` → `.coaltipple.json`, and the safer-value-wins clamp on `mode` / `updateMode` / `fableConsent` applies to it exactly as to any project config. Before this, a config written there was silently never read, and nothing said so.
+- **The conductor's session-start message now names a project config it will not read.** A config sitting at one of ten fixed near-miss paths under the git root (never a directory crawl) gets one `IGNORED: <path> is not a config path; canonical = .claude/coal/coaltipple.json` line each, and one `LEGACY:` line says so when a deprecated path is the one that was read. Session start only, never per prompt, and silent while routing is off.
+
+### Changed
+- `configure.mjs --project` migrates from either legacy path and removes every legacy file it finds, so a project never keeps a second, dead config behind the one it just wrote.
+
+### Deprecated
+- **`<gitroot>/.claude/.coaltipple.json` and `<gitroot>/.coaltipple.json` as project-config locations.** Both are still read (in that order, after the three canonical paths), so nothing that worked stops working. **Replacement:** `<gitroot>/.claude/coal/coaltipple.json` (or the `.agents` / `.gemini` equivalent). **Window:** deprecated in 1.6.0, removable no sooner than the next MAJOR release. **Migration owner:** CoalTipple. Move the file by hand, or run `node scripts/configure.mjs --project <key> <value>`, which writes the canonical file (seeded from the legacy one when it does not exist yet) and removes the legacy file(s). The README's Configure section carries the full notice.
+
 ## [1.5.6] - 2026-09-18
 
 ### Fixed

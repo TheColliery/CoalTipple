@@ -82,7 +82,7 @@ claude plugin install coaltipple@coaltipple
 # Restart Claude Code to load the /coaltipple commands (stats | off | memory | update)
 ```
 
-Optional per-project config override, first-found wins: `<project>/.claude/coal/coaltipple.json` → `.agents/coal/coaltipple.json` → `.gemini/coal/coaltipple.json` → legacy `.claude/.coaltipple.json`.
+Optional per-project config override, first-found wins: `<project>/.claude/coal/coaltipple.json` → `.agents/coal/coaltipple.json` → `.gemini/coal/coaltipple.json` → two deprecated legacy paths (`.claude/.coaltipple.json`, then `.coaltipple.json` at the git root; see Configure below).
 
 ### Other platforms — no install (routing cannot actuate)
 
@@ -190,7 +190,7 @@ The grader only decides the *starting* tier from the prompt text—everything pa
 
 ## ⚙️ Configure
 
-Everything is tunable in `.coaltipple.json`—a global `~/.claude/.coaltipple.json` overlaid per key by the first-found project config (`<gitroot>/.claude/coal/coaltipple.json` → `.agents/coal/coaltipple.json` → `.gemini/coal/coaltipple.json` → legacy `.claude/.coaltipple.json`; project wins), so you can **tune or shut off a globally-installed skill per project** (off-switch: `enableRouting: false`)—a skill you don't need in a given project stops loading (and burning tokens) there. Ships zero-config with optimal defaults. The high-impact keys:
+Everything is tunable in `.coaltipple.json`—a global `~/.claude/.coaltipple.json` overlaid per key by the first-found project config (`<gitroot>/.claude/coal/coaltipple.json` → `.agents/coal/coaltipple.json` → `.gemini/coal/coaltipple.json` → deprecated `.claude/.coaltipple.json` → deprecated `.coaltipple.json`; project wins), so you can **tune or shut off a globally-installed skill per project** (off-switch: `enableRouting: false`)—a skill you don't need in a given project stops loading (and burning tokens) there. Ships zero-config with optimal defaults. The high-impact keys:
 
 | Key | Default | What it does |
 |---|---|---|
@@ -203,12 +203,14 @@ Everything is tunable in `.coaltipple.json`—a global `~/.claude/.coaltipple.js
 
 Full key reference: every key + default lives in [`scripts/lib/config-schema.mjs`](scripts/lib/config-schema.mjs) and the commented template [`platform-configs/.coaltipple.json`](platform-configs/.coaltipple.json)—or run `node scripts/configure.mjs --help`.
 
+**Deprecated project-config paths.** `<gitroot>/.claude/.coaltipple.json` and `<gitroot>/.coaltipple.json` are still read (in that order, after the three canonical paths), so nothing that worked stops working, but both are deprecated. Move the file to `<gitroot>/.claude/coal/coaltipple.json`, or run `node scripts/configure.mjs --project <key> <value>`, which writes the canonical file (seeded from the legacy one when it does not exist yet) and removes the legacy file(s). **Window:** deprecated as of 1.6.0 (a MINOR release), removable no sooner than the next MAJOR release, never on a calendar. **Owner of the migration:** this repo (CoalTipple). **Where you are told:** here and in the [CHANGELOG](CHANGELOG.md)'s `### Deprecated` entry, plus one runtime line: when a legacy file is the one that was read, the conductor's session-start message carries a single `LEGACY:` note, and a config sitting at a path CoalTipple never reads (ten fixed near-miss spots under the git root, no directory crawl) is named with an `IGNORED:` line instead of being silently skipped. Both appear at session start only, never per prompt, and not at all while routing is off. **No louder warning is coming:** the hook may speak only through three sanctioned surfaces (Phoenix Commandment #13), and the session-start context is one of them; a stderr warning or console nag is not, so it does not exist.
+
 ---
 
 ## 🔧 Troubleshooting
 
 * **First check:** is routing running at all? `enableRouting: false` (global or project) turns it off entirely; `/coaltipple off` turns it off for just this session.
-* **State lives in files you can read** (same paths [Privacy](PRIVACY.md) documents): the config—`~/.claude/.coaltipple.json`, overlaid by the first-found of `<gitroot>/.claude/coal/coaltipple.json` → `.agents/coal/coaltipple.json` → `.gemini/coal/coaltipple.json` → legacy `<gitroot>/.claude/.coaltipple.json`—and the model ranking at `~/.claude/coal/coaltipple/ranking.json`. A missing or broken ranking is rebuilt on the spot from the alias floor; only if it genuinely cannot be built does routing go off (see [The Lock](#-the-lock--safe-routing-states)).
+* **State lives in files you can read** (same paths [Privacy](PRIVACY.md) documents): the config—`~/.claude/.coaltipple.json`, overlaid by the first-found of `<gitroot>/.claude/coal/coaltipple.json` → `.agents/coal/coaltipple.json` → `.gemini/coal/coaltipple.json` → the two deprecated legacy paths (see Configure)—and the model ranking at `~/.claude/coal/coaltipple/ranking.json`. A missing or broken ranking is rebuilt on the spot from the alias floor; only if it genuinely cannot be built does routing go off (see [The Lock](#-the-lock--safe-routing-states)).
 * **A worker spawn failing** falls to the next available tier on its own (see [Damage Control](#damage-control))—no action needed unless every tier is unavailable, in which case the route hands back.
 
 ## 🗑️ Uninstall

@@ -173,7 +173,8 @@ function seedGlobalRanking(force = false) {
 }
 
 // PROJECT files (a non-global install) — all under <cwd>/.claude:
-//   .claude/.coaltipple.json        per-project config override (create-if-absent)
+//   .claude/coal/coaltipple.json    per-project config override (create-if-absent; a config
+//                                   already found anywhere on the read walk is kept)
 //   .claude/.coaltipple/hooks/...   the conductor copy (CODE -> always refreshed)
 // The ranking is NOT here (it is global + shared). CONFIG PRESERVATION: the config is
 // created only when ABSENT; the ONLY overwrite is the explicit --reset.
