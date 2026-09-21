@@ -115,6 +115,32 @@ export function projectConfigPath(cwd = process.cwd()) {
   for (const c of candidates) if (fs.existsSync(c)) return c;
   return candidates[0]; // nothing found anywhere -- own-dir is both the read and write target
 }
+// WHERE A PROJECT CONFIG IS WRITTEN (UMB-133 bounce 1). A READ walks every candidate, so
+// projectConfigPath may legitimately return a LEGACY file; a WRITE must never go there -- it
+// lands on the first EXISTING new-shape candidate, else the own-dir canonical, and the legacy
+// files are reported separately so the caller can migrate them. One helper, two writers
+// (configure.mjs --project, install.mjs --reset): the target rule was fixed in configure and
+// missed in install once already, which is exactly what a shared function prevents.
+//   target        the canonical write path
+//   legacyToRemove  the legacy a READ would have resolved (first existing) -- the migration SEED
+//   legacyAlso      any further existing legacy
+export function projectWriteTarget(cwd = process.cwd()) {
+  const legacy = projectLegacyPaths(cwd);
+  const newCandidates = projectConfigCandidates(cwd).filter((c) => !legacy.includes(c));
+  const existingLegacy = legacy.filter((l) => fs.existsSync(l));
+  const target = newCandidates.find((c) => fs.existsSync(c)) || newCandidates[0];
+  return { target, legacyToRemove: existingLegacy[0] || null, legacyAlso: existingLegacy.slice(1) };
+}
+// Retire a legacy config the tool did NOT read this run: rename it to <path>.superseded
+// (numbered on collision, never overwriting an earlier one) instead of deleting it. The tool
+// cannot claim the contents of a file it never opened are superseded -- it knows only that the
+// PATH is no longer a candidate, and moving it aside satisfies that. Returns the new path.
+export function moveLegacyAside(file) {
+  let to = `${file}.superseded`;
+  for (let n = 1; fs.existsSync(to); n++) to = `${file}.superseded.${n}`;
+  fs.renameSync(file, to);
+  return to;
+}
 // State dirs — hold the ranking / work-state, NOT config. The GLOBAL state dir holds
 // the shared platform model-ranking; the PROJECT state dir holds per-project
 // work-state (proposed/, state.json) and the optional project conductor copy.

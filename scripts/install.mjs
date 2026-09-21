@@ -17,7 +17,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { TARGETS, detectPresentAgents } from './lib/targets.mjs';
 import { buildFloorRanking, writeRankingAtomic, loadRanking } from './lib/classify.mjs';
-import { globalConfigPath, projectConfigPath, globalStateDir, oldGlobalStateDir, projectStateDir, findGitRoot } from './lib/config-load.mjs';
+import { globalConfigPath, projectConfigPath, projectWriteTarget, moveLegacyAside, globalStateDir, oldGlobalStateDir, projectStateDir, findGitRoot } from './lib/config-load.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const skillSrc = path.join(repo, 'skills', 'coaltipple');
@@ -184,12 +184,26 @@ function seedGlobalRanking(force = false) {
 // not silently in the invoker's cwd.
 function seedProjectFiles(force = false, projectRoot = process.cwd()) {
   try {
-    const dest = projectConfigPath(projectRoot);
+    // A READ may resolve to a LEGACY path, so create-if-absent keeps whatever the walk found
+    // (untouched). A WRITE (--reset) must never land on one: UMB-133 made <gitroot>/.coaltipple.json
+    // a candidate, and projectConfigPath then handed --reset the deprecated path to overwrite.
+    // --reset resolves to the canonical target (the same rule configure --project migrates to).
+    const wt = force ? projectWriteTarget(projectRoot) : null;
+    const dest = force ? wt.target : projectConfigPath(projectRoot);
     fs.mkdirSync(path.dirname(dest), { recursive: true }); // ensure <root>/.claude exists
     if (force || !fs.existsSync(dest)) {
       writeFactoryConfig(dest);
       console.log(`  ${force ? 'RESET settings to factory' : 'created default settings'} -> ${dest}`);
     } else console.log(`  settings PRESERVED (yours, untouched) -> ${dest}`);
+    if (force) {
+      // The factory config now shadows every legacy file. None was read this run, so none is
+      // deleted: each is moved aside (contents kept) and named.
+      for (const legacy of [wt.legacyToRemove, ...wt.legacyAlso]) {
+        if (!legacy) continue;
+        try { console.log(`  moved deprecated ${legacy} -> ${moveLegacyAside(legacy)} (contents kept; it is no longer a config path)`); }
+        catch (e) { console.warn(`  [warn] could not retire legacy ${legacy}: ${e.message}`); }
+      }
+    }
   } catch (e) { console.warn(`  [warn] settings: ${e.message}`); process.exitCode = 1; }
   // conductor hook = CODE -> always refreshed so an update ships the new hook.
   try {
@@ -241,8 +255,8 @@ if (isReset) {
     seedGlobalConfig(true);
     seedGlobalRanking(true);
   } else {
-    console.log(`\nCoalTipple --reset: restoring the factory project config under ${path.join(process.cwd(), '.claude')}`);
-    console.log('  OVERWRITES .claude/.coaltipple.json. (The shared ranking is global — reset it with --reset --global. Skill files untouched.)');
+    console.log('\nCoalTipple --reset: restoring the factory project config');
+    console.log(`  OVERWRITES ${projectWriteTarget(process.cwd()).target}. (The shared ranking is global — reset it with --reset --global. Skill files untouched.)`);
     seedProjectFiles(true);
   }
   console.log('\nReset done.');

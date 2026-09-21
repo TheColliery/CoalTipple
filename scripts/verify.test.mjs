@@ -274,3 +274,24 @@ for (const [file, rel] of [['config-load.mjs', ['scripts', 'lib', 'config-load.m
     });
   }
 }
+
+// UMB-133 bounce 1: both WRITERS take their target from the shared projectWriteTarget. install.mjs once
+// derived its own from the READ walk (--reset wrote the factory template into a deprecated path), so a
+// writer that stops importing the helper must FAIL the gate by name, each in turn.
+for (const file of ['configure.mjs', 'install.mjs']) {
+  test(`verify.mjs config-path sync (UMB-133 bounce 1): ${file} no longer importing projectWriteTarget FAILs the gate by name`, () => {
+    const tmp = mkSandbox();
+    try {
+      const target = path.join(tmp, 'scripts', file);
+      const src = fs.readFileSync(target, 'utf8');
+      const mutated = src.replace(/(import\s*\{[^}]*)\bprojectWriteTarget\b/, '$1projectWriteTargetX');
+      assert.notEqual(mutated, src, `the projectWriteTarget import is no longer in ${file} -- update this test's patch target`);
+      fs.writeFileSync(target, mutated, 'utf8');
+      const r = runVerify(tmp);
+      assert.equal(r.status, 1, 'a writer that stopped importing the shared helper must FAIL the gate');
+      assert.match(r.stdout, new RegExp(`FAIL ${file.replace('.', '\\.')} no longer imports projectWriteTarget`), `the FAIL line names ${file}:\n${r.stdout}`);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+}

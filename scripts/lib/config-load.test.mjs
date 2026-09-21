@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { loadMergedConfig, globalConfigPath, globalStateDir, oldGlobalStateDir, projectConfigPath, projectConfigCandidates, projectLegacyPaths, projectStateDir, claudeBaseDir, findGitRoot } from './config-load.mjs';
+import { loadMergedConfig, globalConfigPath, globalStateDir, oldGlobalStateDir, projectConfigPath, projectConfigCandidates, projectLegacyPaths, projectWriteTarget, moveLegacyAside, projectStateDir, claudeBaseDir, findGitRoot } from './config-load.mjs';
 
 // Build a sandbox with optional global/project file bodies; returns { home, cwd }.
 function sandbox({ global, project } = {}) {
@@ -393,4 +393,41 @@ test('clamp-unchanged regression: safer-value-wins applies identically no matter
 test('globalStateDir/oldGlobalStateDir return the two distinct expected paths', () => {
   assert.equal(globalStateDir('/h'), path.join('/h', '.claude', 'coal', 'coaltipple'));
   assert.equal(oldGlobalStateDir('/h'), path.join('/h', '.claude', '.coaltipple'));
+});
+
+// UMB-133 bounce 1: the shared WRITE-target helper (configure --project + install --reset).
+test('projectWriteTarget: the target is NEVER a legacy path, whatever exists on disk', () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-proj-'));
+  try {
+    const legacy = projectLegacyPaths(cwd);
+    const [canon, agents] = projectConfigCandidates(cwd);
+    // nothing exists -> own-dir canonical
+    assert.deepEqual(projectWriteTarget(cwd), { target: canon, legacyToRemove: null, legacyAlso: [] });
+    // only legacies exist -> STILL canonical (a read would return legacy[0]; a write must not)
+    for (const l of legacy) { fs.mkdirSync(path.dirname(l), { recursive: true }); fs.writeFileSync(l, '{}', 'utf8'); }
+    const t = projectWriteTarget(cwd);
+    assert.equal(t.target, canon);
+    assert.equal(projectConfigPath(cwd), legacy[0], 'control: the READ walk does resolve a legacy here');
+    assert.equal(t.legacyToRemove, legacy[0], 'the first existing legacy = what a read resolves = the migration seed');
+    assert.deepEqual(t.legacyAlso, [legacy[1]]);
+    // an existing sibling-agent-dir config is the write target (where the config already lives), still never a legacy
+    fs.mkdirSync(path.dirname(agents), { recursive: true }); fs.writeFileSync(agents, '{}', 'utf8');
+    assert.equal(projectWriteTarget(cwd).target, agents);
+  } finally { fs.rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('moveLegacyAside: renames to .superseded, numbers on collision, never overwrites, keeps the bytes', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-aside-'));
+  try {
+    const f = path.join(dir, '.coaltipple.json');
+    fs.writeFileSync(f, 'ONE', 'utf8');
+    assert.equal(moveLegacyAside(f), f + '.superseded');
+    assert.ok(!fs.existsSync(f));
+    fs.writeFileSync(f, 'TWO', 'utf8');
+    assert.equal(moveLegacyAside(f), f + '.superseded.1');
+    fs.writeFileSync(f, 'THREE', 'utf8');
+    assert.equal(moveLegacyAside(f), f + '.superseded.2');
+    assert.deepEqual([f + '.superseded', f + '.superseded.1', f + '.superseded.2'].map((p) => fs.readFileSync(p, 'utf8')), ['ONE', 'TWO', 'THREE']);
+    assert.throws(() => moveLegacyAside(f), /ENOENT/, 'a missing file is a real error the caller reports, not a silent no-op');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });

@@ -218,17 +218,17 @@ try {
 
 console.log('config-path sync (conductor inline vs config-load SSoT; configure imports it):');
 try {
-  // The LEGACY project-config path segment lives under .claude in config-load.mjs
-  // (the SSoT). The conductor inlines its OWN copy (the hook must be standalone,
-  // Phoenix #9 — it cannot import config-load), so a future edit to one could
-  // silently drift — assert both reference the same path segment (the path
-  // analogue of the hot-keyword sync above). configure.mjs is DIFFERENT since the
-  // namespace campaign (#69+#39): it is a plain script (no standalone constraint),
-  // so it IMPORTS projectConfigCandidates from config-load.mjs rather than
-  // duplicating the segment — assert the import instead of the literal string.
-  // projectConfigCandidates resolves the git root INTERNALLY (config-load.mjs), so
-  // configure.mjs needs no git-root helper of its own — requiring one here would
-  // pin an incidental implementation detail, not the real invariant.
+  // The LEGACY project-config path segments (two shapes since UMB-133: .claude/.coaltipple.json
+  // and the bare <gitroot>/.coaltipple.json) live in config-load.mjs (the SSoT). The conductor
+  // inlines its OWN copy (the hook must be standalone, Phoenix #9 — it cannot import
+  // config-load), so a future edit to one could silently drift — assert both reference the
+  // same path segments (the path analogue of the hot-keyword sync above). configure.mjs and
+  // install.mjs are DIFFERENT since the namespace campaign (#69+#39): plain scripts (no
+  // standalone constraint), so they IMPORT projectWriteTarget from config-load.mjs (which
+  // is built on the SSoT walk) rather than duplicating the segments — assert the import
+  // instead of the literal string. projectWriteTarget resolves the git root INTERNALLY
+  // (config-load.mjs), so the writers need no git-root helper of their own — requiring one
+  // here would pin an incidental implementation detail, not the real invariant.
   // UMB-133: the walk carries TWO legacy shapes, so the gate pins BOTH, in BOTH files -- a gate
   // that guards one segment while the walk grows a second reads green over exactly the drift it
   // exists to catch. The order of the whole walk is pinned by the behavioural test
@@ -248,10 +248,15 @@ try {
       else fail(`${label} lost ${seg} (${what}) — project-config path DRIFTED from config-load (the SSoT)`);
     }
   }
-  const configureSrc = fs.readFileSync(path.join(repo, 'scripts', 'configure.mjs'), 'utf8');
-  const importsIt = /import\s*\{[^}]*\bprojectConfigCandidates\b[^}]*\}\s*from\s*['"]\.\/lib\/config-load\.mjs['"]/.test(configureSrc);
-  if (importsIt) ok('configure.mjs imports projectConfigCandidates from config-load.mjs');
-  else fail('configure.mjs no longer imports projectConfigCandidates from config-load.mjs — project-config path DRIFTED from config-load (the SSoT)');
+  // UMB-133 bounce 1: BOTH writers (configure --project, install --reset) take their target from the
+  // one shared helper. install.mjs computed its own from the READ walk once (MEDIUM-2: --reset wrote
+  // the factory template into a deprecated path), so its import is pinned as well.
+  for (const file of ['configure.mjs', 'install.mjs']) {
+    const src = fs.readFileSync(path.join(repo, 'scripts', file), 'utf8');
+    const importsIt = /import\s*\{[^}]*\bprojectWriteTarget\b[^}]*\}\s*from\s*['"]\.\/lib\/config-load\.mjs['"]/.test(src);
+    if (importsIt) ok(`${file} imports projectWriteTarget from config-load.mjs`);
+    else fail(`${file} no longer imports projectWriteTarget from config-load.mjs — project-config write target DRIFTED from config-load (the SSoT)`);
+  }
 } catch (e) { fail(`config-path sync: ${e.message}`); }
 
 // config-key drift (CWK-060, ported from CoalMine 0019e09): every config key NAMED on

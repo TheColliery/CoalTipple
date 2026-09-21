@@ -228,9 +228,12 @@ test('M7b: -p resolves to --project (not updateCheckDays); -P sets updateCheckDa
 // cheap regression tripwire for the mechanism's continued EXISTENCE.
 // ---------------------------------------------------------------------------
 
-test('structural: configure.mjs DOES call fs.rmSync on a legacy path inside its write logic (move-on-write exists)', () => {
+test('structural: configure.mjs retires legacy paths inside its write logic -- rmSync ONLY for the seeded one, moveLegacyAside for the rest (move-on-write exists)', () => {
   const src = fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'configure.mjs'), 'utf8');
-  assert.match(src, /fs\.rmSync\(\s*writeTarget\.legacyToRemove/, 'expected the move-on-write drop-old call to still be present');
+  // UMB-133 bounce 1: the drop-old call used to be `fs.rmSync(writeTarget.legacyToRemove` for EVERY legacy.
+  // It is now gated on `legacy === seededFrom`, with `moveLegacyAside` for everything the run never read.
+  assert.match(src, /if \(legacy === seededFrom\)\s*\{\s*fs\.rmSync\(legacy/, 'expected the seeded-only drop-old call to still be present');
+  assert.match(src, /moveLegacyAside\(legacy\)/, 'expected the move-aside for unread legacies to still be present');
 });
 
 // INSPECT Finding 1 (2026-08-08, CRITICAL, empirically reproduced): the ORIGINAL
@@ -315,5 +318,73 @@ test('UMB-133 move-on-write: BOTH legacies present -> LEGACY-1 is the seed (what
     assert.equal(migrated.qualityBar, 71, 'seeded from LEGACY-1, the one a read resolves');
     assert.ok(!('language' in migrated), 'the shadowed LEGACY-2 content did not leak in');
     assert.ok(!fs.existsSync(legacy1) && !fs.existsSync(legacy2), 'both legacy files dropped -- no leftover');
+  } finally { cleanup(p); }
+});
+
+// ---------------------------------------------------------------------------
+// UMB-133 BOUNCE 1, MEDIUM-1 (INSPECT): the tool DELETED a legacy config it never opened, in
+// silence. Ruling: a legacy is deleted ONLY when this run actually read it as the migration seed
+// (its contents now live in the target -- genuinely superseded); every OTHER existing legacy is
+// moved aside to <path>.superseded, never deleted; and every path removed or moved is NAMED on
+// stdout. Distinct keys per file so a lost key is visible.
+// ---------------------------------------------------------------------------
+const L1 = (dir) => path.join(dir, '.claude', '.coaltipple.json');
+const L2 = (dir) => path.join(dir, '.coaltipple.json');
+const put = (f, obj) => { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, JSON.stringify(obj), 'utf8'); };
+
+test('UMB-133 B1 M1 case C (both legacies, no canonical): the UNREAD LEGACY-2 survives BYTE-FOR-BYTE as .superseded, and stdout names both paths', () => {
+  const p = freshProject();
+  try {
+    put(L1(p.dir), { qualityBar: 10, onlyInLegacy1: 'ALPHA' });
+    const l2Bytes = JSON.stringify({ qualityBar: 20, onlyInLegacy2: 'BETA' });
+    put(L2(p.dir), JSON.parse(l2Bytes));
+    const r = run(p, '--project', '--qualityBar', '85');
+    assert.equal(r.status, 0, r.stderr);
+    assert.ok(!fs.existsSync(L2(p.dir)), 'LEGACY-2 is no longer a config path');
+    assert.equal(fs.readFileSync(L2(p.dir) + '.superseded', 'utf8'), l2Bytes, 'its contents survive byte-for-byte -- the tool never read it, so it may not destroy it');
+    assert.ok(!fs.existsSync(L1(p.dir)), 'LEGACY-1 was the migration seed: its contents live in the target, so it is removed');
+    assert.match(r.stdout, /\.coaltipple\.json\.superseded/, 'stdout names where the moved-aside file went');
+    assert.ok(r.stdout.includes(L1(p.dir)), 'stdout names the removed seed legacy too (it was silent before)');
+    assert.equal(stripJsonc(fs.readFileSync(projectPath(p.dir), 'utf8')).onlyInLegacy1, 'ALPHA', 'the seed content still migrated');
+  } finally { cleanup(p); }
+});
+
+test('UMB-133 B1 M1 case D (canonical + both legacies): NOTHING is deleted, both survive as .superseded, and BOTH are named on stdout (before: 3 files -> 1, zero output)', () => {
+  const p = freshProject();
+  try {
+    put(projectPath(p.dir), { qualityBar: 60 });
+    put(L1(p.dir), { onlyInLegacy1: 'ALPHA' });
+    put(L2(p.dir), { onlyInLegacy2: 'BETA' });
+    const r = run(p, '--project', '--qualityBar', '85');
+    assert.equal(r.status, 0, r.stderr);
+    assert.ok(!fs.existsSync(L1(p.dir)) && !fs.existsSync(L2(p.dir)), 'neither is a candidate any more');
+    assert.equal(JSON.parse(fs.readFileSync(L1(p.dir) + '.superseded', 'utf8')).onlyInLegacy1, 'ALPHA', 'LEGACY-1 was never read this run (canonical existed) -> kept, not deleted');
+    assert.equal(JSON.parse(fs.readFileSync(L2(p.dir) + '.superseded', 'utf8')).onlyInLegacy2, 'BETA');
+    assert.ok(r.stdout.includes(L1(p.dir)) && r.stdout.includes(L2(p.dir)), `stdout must name both paths:\n${r.stdout}`);
+  } finally { cleanup(p); }
+});
+
+test('UMB-133 B1 M1 case B (root-only legacy = the seed): removed, and the removal is now REPORTED', () => {
+  const p = freshProject();
+  try {
+    put(L2(p.dir), { fableConsent: true, qualityBar: 91 });
+    const r = run(p, '--project', '--updateCheckDays', '30');
+    assert.equal(r.status, 0, r.stderr);
+    assert.ok(!fs.existsSync(L2(p.dir)) && !fs.existsSync(L2(p.dir) + '.superseded'), 'seeded -> its contents are in the target -> plain removal, no .superseded litter');
+    assert.ok(r.stdout.includes(L2(p.dir)), 'the removal names the path (it was only implied by the Migrating line for LEGACY-1, and silent for the drop)');
+    assert.match(r.stdout, /Removed/);
+  } finally { cleanup(p); }
+});
+
+test('UMB-133 B1 M1: a second run never overwrites an earlier .superseded (numbered suffix)', () => {
+  const p = freshProject();
+  try {
+    put(projectPath(p.dir), { qualityBar: 60 });
+    put(L2(p.dir), { gen: 1 });
+    assert.equal(run(p, '--project', '--qualityBar', '70').status, 0);
+    put(L2(p.dir), { gen: 2 });
+    assert.equal(run(p, '--project', '--qualityBar', '71').status, 0);
+    assert.equal(JSON.parse(fs.readFileSync(L2(p.dir) + '.superseded', 'utf8')).gen, 1, 'the first moved-aside file is untouched');
+    assert.equal(JSON.parse(fs.readFileSync(L2(p.dir) + '.superseded.1', 'utf8')).gen, 2, 'the second lands beside it');
   } finally { cleanup(p); }
 });

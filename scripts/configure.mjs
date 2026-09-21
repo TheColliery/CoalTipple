@@ -14,9 +14,9 @@
 // = your defaults for ALL projects. Pass --project to write the per-project override
 // instead — that file is created ONLY when you use --project (no-clutter; a global
 // install never auto-creates it), at whichever agent-dir candidate config-load.mjs's
-// projectConfigCandidates already resolves to (own dir if nothing exists yet; the
-// existing location otherwise — see projectWriteTarget below for the move-on-write
-// rule when only the LEGACY <gitroot>/.claude/.coaltipple.json is found). Effective
+// projectWriteTarget resolves to (own dir if nothing exists yet; the existing new-shape
+// location otherwise — see the move-on-write note below for what happens to a LEGACY
+// <gitroot>/.claude/.coaltipple.json or <gitroot>/.coaltipple.json that is found). Effective
 // precedence is project > global > schema default; `--list` shows that merged config.
 //   node scripts/configure.mjs --qualityBar 85 --mode delegation   # edits GLOBAL
 //   node scripts/configure.mjs --project --qualityBar 90            # edits THIS project
@@ -27,7 +27,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CONFIG_SCHEMA, validateValue } from './lib/config-schema.mjs';
-import { loadMergedConfig, globalConfigPath, projectConfigCandidates, projectConfigPath, projectLegacyPaths } from './lib/config-load.mjs';
+import { loadMergedConfig, globalConfigPath, projectConfigPath, projectWriteTarget, moveLegacyAside } from './lib/config-load.mjs';
 import { stripJsonc } from './lib/jsonc.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -43,19 +43,13 @@ const factoryCfg = path.join(repo, 'platform-configs', '.coaltipple.json');
 // no-old-version-leftover rule bans (INSPECT Finding 5, 2026-08-08). One flag,
 // independent of which candidate is the actual write target.
 //
-// UMB-133: there are now TWO legacy shapes. The old code found "the" legacy as the LAST
-// candidate by position; with a second trailing entry that would have made LEGACY-1 a
-// WRITE TARGET (a legacy-only project written in place, never migrated). The list is now
-// asked for explicitly. legacyToRemove = the legacy a READ would have resolved (first
-// existing: it is the migration SEED); legacyAlso = any further existing legacy, which is
-// dead config after the write and is dropped with it (same no-leftover rule).
-function projectWriteTarget(cwd) {
-  const legacy = projectLegacyPaths(cwd);
-  const newCandidates = projectConfigCandidates(cwd).filter((c) => !legacy.includes(c));
-  const existingLegacy = legacy.filter((l) => fs.existsSync(l));
-  const target = newCandidates.find((c) => fs.existsSync(c)) || newCandidates[0];
-  return { target, legacyToRemove: existingLegacy[0] || null, legacyAlso: existingLegacy.slice(1) };
-}
+// UMB-133: there are now TWO legacy shapes, and the target rule lives in ONE shared helper
+// (config-load.mjs projectWriteTarget, also used by install.mjs --reset). The old local copy
+// found "the" legacy as the LAST candidate by position, which a second trailing entry broke.
+// A legacy this run READ as the migration seed is removed (its contents now live in the
+// target); every other existing legacy was never opened, so it is MOVED ASIDE to
+// <path>.superseded, never deleted -- and every path removed or moved is named on stdout
+// (UMB-133 bounce 1, MEDIUM-1: the old code deleted an unread user file in silence).
 
 function printHelp() {
   const lines = [
@@ -238,6 +232,7 @@ function main() {
   // always-this-project record was destroyed). Neither exists (genuinely fresh
   // project) -> seed from factory, unchanged from before.
   let text;
+  let seededFrom = null; // the legacy file whose contents this run actually read into the target
   try {
     try {
       text = fs.readFileSync(configPath, 'utf8');
@@ -247,6 +242,7 @@ function main() {
       if (toProject && writeTarget.legacyToRemove) {
         text = fs.readFileSync(writeTarget.legacyToRemove, 'utf8');
         parseConfig(text); // same parse-before-touch guarantee as the normal path
+        seededFrom = writeTarget.legacyToRemove;
         console.log(`Migrating ${writeTarget.legacyToRemove} -> ${configPath}, applying your edits.`);
       } else {
         text = fs.readFileSync(factoryCfg, 'utf8');
@@ -278,9 +274,19 @@ function main() {
     // Move-on-write (namespace campaign #69+#39): the new file is written FIRST;
     // only after that succeeds do we best-effort drop the legacy one -- a failed
     // delete never undoes a successful write (CoalWash's writeUpdateStamp idiom).
-    if (toProject && writeTarget.legacyToRemove) {
-      try { fs.rmSync(writeTarget.legacyToRemove, { force: true }); } catch {}
-      for (const extra of writeTarget.legacyAlso) { try { fs.rmSync(extra, { force: true }); } catch {} }
+    if (toProject) {
+      for (const legacy of [writeTarget.legacyToRemove, ...writeTarget.legacyAlso]) {
+        if (!legacy) continue;
+        try {
+          if (legacy === seededFrom) {
+            fs.rmSync(legacy, { force: true }); // read + carried into the target -> genuinely superseded
+            console.log(`Removed ${legacy} (its contents were migrated into ${configPath}).`);
+          } else {
+            const to = moveLegacyAside(legacy); // never opened -> keep it, just stop it being a config path
+            console.log(`Moved ${legacy} -> ${to} (not read this run; it is no longer a config path and its contents are kept).`);
+          }
+        } catch (e) { console.warn(`  [warn] could not retire legacy ${legacy}: ${e.message}`); }
+      }
     }
     // Echo back the parsed effective config so the user sees the result.
     const eff = parseConfig(text);
