@@ -51,10 +51,19 @@ jobs:
           fetch-depth: 0
       - id: detect
         # DOCS_GLOBS comes from the workflow-level `env:` above, which GitHub exports into
-        # every step's shell -- no per-step re-declaration, which would be one more place to
-        # drift.
+        # every step's shell -- so it is deliberately NOT re-declared in this step's own
+        # `env:` below (one more place to drift). That step-level `env:` carries only the
+        # three event values.
         shell: bash
-        # UMB-154 placeholder (comment text is the doc-writer's): the three ${{ }} values arrive via env:.
+        # UMB-154. The three ${{ }} values reach the script through this step's `env:` and
+        # are read as "$EVENT_NAME" / "$EVENT_BEFORE" / "$HEAD_SHA", never spliced into the
+        # `run:` source. Actions substitutes ${{ }} as TEXT before bash parses the script, so
+        # a value carrying a quote would become code; an env var is data. HONEST SCOPE: these
+        # three are a SHA, a SHA and an event-name enum, not attacker-chosen text, so this is
+        # defense-in-depth and the same variable names CoalHearth's classifier uses, not the
+        # closing of a live hole. The attacker-chosen text in this step is the filenames in
+        # `$changed`, and those were never interpolated. Full reasoning: the comment on the
+        # `what this check actually did` step in `all-green`, further down.
         env:
           EVENT_NAME: ${{ github.event_name }}
           EVENT_BEFORE: ${{ github.event.before }}
