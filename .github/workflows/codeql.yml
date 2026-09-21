@@ -63,6 +63,11 @@ jobs:
           fetch-depth: 0
       - id: detect
         shell: bash
+        # UMB-154 placeholder (comment text is the doc-writer's): the three ${{ }} values arrive via env:.
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_BEFORE: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           # `set -f` (noglob) is LOAD-BEARING, not hygiene. Without it, `for g in $DOCS_GLOBS`
@@ -97,15 +102,15 @@ jobs:
             echo "${2:-}" >> "$GITHUB_OUTPUT"
             echo "$delim" >> "$GITHUB_OUTPUT"
           }
-          if [ "${{ github.event_name }}" != "push" ]; then
+          if [ "$EVENT_NAME" != "push" ]; then
             echo "not a push event -- treating as code (fail-safe)"; emit true ""; exit 0
           fi
-          before="${{ github.event.before }}"
+          before="$EVENT_BEFORE"
           if [ -z "$before" ] || [ "$before" = "0000000000000000000000000000000000000000" ] \
              || ! git rev-parse -q --verify "${before}^{commit}" >/dev/null 2>&1; then
             echo "no usable base commit -- treating as code (fail-safe)"; emit true ""; exit 0
           fi
-          changed="$(git diff --name-only "$before" "${{ github.sha }}" || true)"
+          changed="$(git diff --name-only "$before" "$HEAD_SHA" || true)"
           if [ -z "$changed" ]; then
             echo "empty diff -- treating as code (fail-safe)"; emit true ""; exit 0
           fi
