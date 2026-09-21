@@ -420,9 +420,11 @@ test('moveLegacyAside: renames to .superseded, numbers on collision, never overw
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-aside-'));
   try {
     const f = path.join(dir, '.coaltipple.json');
+    // The directory LISTING is asserted rather than existsSync(f): a check on `f` followed by a write to `f`
+    // is the check-then-use shape CodeQL's js/file-system-race keys on (it flagged this test in UMB-133).
     fs.writeFileSync(f, 'ONE', 'utf8');
     assert.equal(moveLegacyAside(f), f + '.superseded');
-    assert.ok(!fs.existsSync(f));
+    assert.deepEqual(fs.readdirSync(dir).sort(), ['.coaltipple.json.superseded'], 'the original name is gone, only the moved file remains');
     fs.writeFileSync(f, 'TWO', 'utf8');
     assert.equal(moveLegacyAside(f), f + '.superseded.1');
     fs.writeFileSync(f, 'THREE', 'utf8');
@@ -430,4 +432,40 @@ test('moveLegacyAside: renames to .superseded, numbers on collision, never overw
     assert.deepEqual([f + '.superseded', f + '.superseded.1', f + '.superseded.2'].map((p) => fs.readFileSync(p, 'utf8')), ['ONE', 'TWO', 'THREE']);
     assert.throws(() => moveLegacyAside(f), /ENOENT/, 'a missing file is a real error the caller reports, not a silent no-op');
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+// UMB-133 bounce 2 (CodeQL js/file-system-race). The helper's contract is NON-DESTRUCTION, and the old
+// `existsSync(to)` loop + `renameSync(file, to)` was check-then-act, so a `.superseded` that appeared between
+// the two was silently overwritten. A genuine thread race cannot be forced deterministically from a test, so
+// this SIMULATES the losing interleaving: the moment the helper tries to acquire the name with an exclusive
+// create, a competing writer has just taken it. It asserts two things, and says which is which:
+//  (1) `fired` -- the helper acquired the name by exclusive create (openSync 'wx'). This is the CONSTRUCTION
+//      property, and it is what the old code lacks (it never calls openSync), so this is where it goes red;
+//  (2) the racer's bytes survive and the moved file lands at the next suffix -- the invariant itself.
+// The old code's actual data loss is demonstrated separately (scratchpad/umb133/race-old.mjs), not asserted here.
+test('moveLegacyAside: a .superseded that appears at the worst instant is NEVER overwritten (exclusive create, not check-then-rename)', (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-aside-race-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const f = path.join(dir, '.coaltipple.json');
+  fs.writeFileSync(f, 'MINE', 'utf8');
+  const realOpen = fs.openSync;
+  let fired = false;
+  fs.openSync = (p, flags, ...rest) => {
+    if (!fired && p === f + '.superseded' && flags === 'wx') { fired = true; fs.writeFileSync(p, 'RACER', 'utf8'); } // the competing writer wins the name
+    return realOpen(p, flags, ...rest);
+  };
+  t.after(() => { fs.openSync = realOpen; });
+  const to = moveLegacyAside(f);
+  fs.openSync = realOpen;
+  assert.ok(fired, 'the helper must acquire the name by an exclusive create -- the old check-then-rename never did');
+  assert.equal(fs.readFileSync(f + '.superseded', 'utf8'), 'RACER', "the racer's file was NOT overwritten");
+  assert.equal(to, f + '.superseded.1', 'the loop advanced on the exclusive-create collision');
+  assert.equal(fs.readFileSync(to, 'utf8'), 'MINE', 'and the moved file kept its bytes');
+});
+
+test('moveLegacyAside: a failed move (source gone) leaves NO placeholder litter behind', (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-aside-fail-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  assert.throws(() => moveLegacyAside(path.join(dir, '.coaltipple.json')), /ENOENT/);
+  assert.deepEqual(fs.readdirSync(dir), [], 'the exclusive-create placeholder is removed when the rename fails');
 });

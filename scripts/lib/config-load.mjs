@@ -135,11 +135,32 @@ export function projectWriteTarget(cwd = process.cwd()) {
 // (numbered on collision, never overwriting an earlier one) instead of deleting it. The tool
 // cannot claim the contents of a file it never opened are superseded -- it knows only that the
 // PATH is no longer a candidate, and moving it aside satisfies that. Returns the new path.
+//
+// "Never overwrite an earlier .superseded" is made true BY CONSTRUCTION, not by checking first
+// (UMB-133 bounce 2, CodeQL js/file-system-race): the previous `existsSync(to)` loop followed by
+// `renameSync(file, to)` was check-then-act -- a path free at time T could be taken by T+1, and
+// the rename would silently overwrite whatever appeared, which is exactly the guarantee the
+// function exists to give. Now the NAME is acquired with an exclusive create (`wx` = O_CREAT|O_EXCL:
+// the kernel fails EEXIST if anything, a file or even a dangling symlink, already holds it), the
+// loop advances only on that EEXIST, and the rename then replaces OUR OWN empty placeholder. A
+// crash between the two steps leaves an empty `.superseded` litter file and the original untouched
+// -- never a lost byte. (An exclusive create rather than link+unlink: hard links are unsupported
+// on FAT/exFAT and some network shares, where this would throw on a config a user can legitimately have.)
 export function moveLegacyAside(file) {
-  let to = `${file}.superseded`;
-  for (let n = 1; fs.existsSync(to); n++) to = `${file}.superseded.${n}`;
-  fs.renameSync(file, to);
-  return to;
+  for (let n = 0; ; n++) {
+    const to = n === 0 ? `${file}.superseded` : `${file}.superseded.${n}`;
+    let fd;
+    try { fd = fs.openSync(to, 'wx'); } catch (e) {
+      if (e.code === 'EEXIST') continue; // someone (or an earlier run) holds this name -> next suffix
+      throw e;
+    }
+    fs.closeSync(fd);
+    try { fs.renameSync(file, to); } catch (e) {
+      try { fs.rmSync(to, { force: true }); } catch { /* best effort: the placeholder is ours and empty */ }
+      throw e; // e.g. ENOENT when `file` is gone: a real error the caller reports, and no litter is left
+    }
+    return to;
+  }
 }
 // State dirs — hold the ranking / work-state, NOT config. The GLOBAL state dir holds
 // the shared platform model-ranking; the PROJECT state dir holds per-project
