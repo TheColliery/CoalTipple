@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { loadMergedConfig, globalConfigPath, globalStateDir, oldGlobalStateDir, projectConfigPath, projectConfigCandidates, projectLegacyPaths, projectWriteTarget, moveLegacyAside, projectStateDir, claudeBaseDir, findGitRoot } from './config-load.mjs';
+import { loadMergedConfig, globalConfigPath, globalStateDir, oldGlobalStateDir, projectConfigPath, projectConfigCandidates, projectLegacyPaths, projectWriteTarget, moveLegacyAside, writeConfigAtomic, projectStateDir, claudeBaseDir, findGitRoot } from './config-load.mjs';
 
 // PR24 #3 -- claudeBaseDir() honors an ambient CLAUDE_CONFIG_DIR and IGNORES the
 // `home` argument entirely when it is set (config-load.mjs's own claudeBaseDir()),
@@ -440,6 +440,60 @@ test('moveLegacyAside: renames to .superseded, numbers on collision, never overw
     assert.deepEqual([f + '.superseded', f + '.superseded.1', f + '.superseded.2'].map((p) => fs.readFileSync(p, 'utf8')), ['ONE', 'TWO', 'THREE']);
     assert.throws(() => moveLegacyAside(f), /ENOENT/, 'a missing file is a real error the caller reports, not a silent no-op');
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+// PR24 #10 (configure.mjs) -- writeConfigAtomic never writes the new bytes into the
+// destination file directly; it writes a disposable temp sibling and swaps it in with
+// renameSync. Proven by targeting the mock at the DESTINATION path specifically: the
+// OLD code (a bare fs.writeFileSync(configPath, text) called directly on the real file)
+// would have thrown here immediately -- and a REAL disk-full/permission failure at that
+// same call site would already have truncated the user's live config before the throw.
+// The new code's only writeFileSync target during the write phase is the disposable temp
+// path, so a destination-targeted failure never fires and the swap lands cleanly.
+test('writeConfigAtomic: a failure writing the real destination path directly never fires -- only the disposable temp sibling is written before the atomic swap', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-atomic-'));
+  const configPath = path.join(dir, '.coaltipple.json');
+  fs.writeFileSync(configPath, '{"mode":"auto"}\n', 'utf8');
+  const realWrite = fs.writeFileSync;
+  fs.writeFileSync = (p, ...rest) => {
+    if (p === configPath) {
+      const e = new Error('simulated crash writing the live config directly');
+      e.code = 'ENOSPC';
+      throw e;
+    }
+    return realWrite(p, ...rest);
+  };
+  try {
+    assert.doesNotThrow(() => writeConfigAtomic(configPath, '{"mode":"delegation"}\n'));
+    assert.equal(fs.readFileSync(configPath, 'utf8'), '{"mode":"delegation"}\n');
+    const leftover = fs.readdirSync(dir).filter((f) => f !== '.coaltipple.json');
+    assert.deepEqual(leftover, [], 'no orphaned .tmp file after a clean run');
+  } finally {
+    fs.writeFileSync = realWrite;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// The companion direction: a failure writing the TEMP sibling itself (disk full before
+// the swap ever gets a chance to run) must propagate loudly -- Phoenix's fail-silent
+// discipline binds hooks, never a fail-loud CLI script -- and must leave the pre-existing
+// config byte-for-byte untouched, with no orphaned temp file left behind.
+test('writeConfigAtomic: a failure writing the temp sibling propagates loudly and leaves the pre-existing config byte-for-byte unchanged', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-atomic-'));
+  const configPath = path.join(dir, '.coaltipple.json');
+  const oldContent = '{"mode":"auto"}\n';
+  fs.writeFileSync(configPath, oldContent, 'utf8');
+  const realWrite = fs.writeFileSync;
+  fs.writeFileSync = () => { const e = new Error('no space left'); e.code = 'ENOSPC'; throw e; };
+  try {
+    assert.throws(() => writeConfigAtomic(configPath, '{"mode":"delegation"}\n'), /no space left/);
+    assert.equal(fs.readFileSync(configPath, 'utf8'), oldContent, 'pre-existing config untouched on a failed write');
+    const leftover = fs.readdirSync(dir).filter((f) => f !== '.coaltipple.json');
+    assert.deepEqual(leftover, [], 'the doomed temp file is cleaned up, not left as litter');
+  } finally {
+    fs.writeFileSync = realWrite;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 // UMB-133 bounce 2 (CodeQL js/file-system-race). The helper's contract is NON-DESTRUCTION, and the old

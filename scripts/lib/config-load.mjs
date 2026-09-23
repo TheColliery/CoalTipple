@@ -162,6 +162,37 @@ export function moveLegacyAside(file) {
     return to;
   }
 }
+
+// PR24 #10 (configure.mjs) -- atomic write (temp sibling + rename), same idiom as
+// CoalTipple's own classify.mjs writeRankingAtomic and the conductor's writeUpdateStamp:
+// a plain writeFileSync truncates the destination before writing the new bytes, so a
+// kill mid-write (a crash, Ctrl-C, disk-full) leaves the user's config file EMPTY or
+// half-written -- worse than the read failure it replaced, because there is no longer a
+// config to fall back to. Writing to a per-pid temp name first means a killed run leaves
+// only an orphaned .tmp file; the real config is untouched until the rename lands.
+// Lives here (not inlined in configure.mjs's main()) so it can be unit-tested directly
+// by monkey-patching fs.renameSync/fs.writeFileSync, without spawning configure.mjs as
+// a child process and without configure.mjs's own main() running against test argv.
+export function writeConfigAtomic(configPath, text) {
+  const tmpConfigPath = `${configPath}.${process.pid}.tmp`;
+  try {
+    fs.writeFileSync(tmpConfigPath, text, 'utf8');
+    try {
+      fs.renameSync(tmpConfigPath, configPath);
+    } catch (e) {
+      // Windows: configPath held open elsewhere (e.g. a live conductor read) -> renameSync
+      // throws EPERM/EBUSY. Fall back to a direct overwrite so the edit is never lost --
+      // same fallback classify.mjs's writeRankingAtomic already uses for this exact code.
+      if (e.code === 'EPERM' || e.code === 'EBUSY') fs.writeFileSync(configPath, text, 'utf8');
+      else throw e;
+    }
+  } finally {
+    // Phoenix #1 (zero-garbage): a failed write/rename never leaves a stray temp file.
+    // On the success path the rename already consumed tmpConfigPath, so this is a no-op.
+    try { if (fs.existsSync(tmpConfigPath)) fs.unlinkSync(tmpConfigPath); } catch {}
+  }
+}
+
 // State dirs — hold the ranking / work-state, NOT config. The GLOBAL state dir holds
 // the shared platform model-ranking; the PROJECT state dir holds per-project
 // work-state (proposed/, state.json) and the optional project conductor copy.

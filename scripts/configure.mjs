@@ -27,7 +27,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CONFIG_SCHEMA, validateValue } from './lib/config-schema.mjs';
-import { loadMergedConfig, globalConfigPath, projectConfigPath, projectWriteTarget, moveLegacyAside } from './lib/config-load.mjs';
+import { loadMergedConfig, globalConfigPath, projectConfigPath, projectWriteTarget, moveLegacyAside, writeConfigAtomic } from './lib/config-load.mjs';
 import { stripJsonc } from './lib/jsonc.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -319,7 +319,7 @@ function main() {
 
   try {
     fs.mkdirSync(path.dirname(configPath), { recursive: true }); // global target: ensure ~/.claude exists
-    fs.writeFileSync(configPath, text, 'utf8');
+    writeConfigAtomic(configPath, text);
     // Move-on-write (namespace campaign #69+#39): the new file is written FIRST;
     // only after that succeeds do we best-effort drop the legacy one -- a failed
     // delete never undoes a successful write (CoalWash's writeUpdateStamp idiom).
