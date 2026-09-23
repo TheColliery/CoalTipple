@@ -501,3 +501,121 @@ test('UMB-133 walk equivalence: for EVERY candidate alone and EVERY pair of the 
     }
   }
 });
+
+// ---------------------------------------------------------------------------
+// BOUNCE 1-3 / UMB-174(b) -- an EXISTING config that could not be turned into a
+// config (malformed JSON / a directory / unreadable / not a JSON object) is now
+// NAMED with its reason, never silently treated the same as an absent file. Each
+// test targets the CANONICAL path (CANON) so the UNREADABLE branch fires rather
+// than the LEGACY one -- the precedence between them is covered separately below.
+// ---------------------------------------------------------------------------
+test('UMB-174(b) UNREADABLE: malformed JSON at the winning candidate is named by reason, not silently treated as absent', (t) => {
+  const p = proj(t, { [CANON]: '{ this is not json' });
+  const r = session(p);
+  assert.equal(r.status, 0); assert.equal(r.stderr, '');
+  const notice = lines(r.stdout, 'UNREADABLE');
+  assert.equal(notice.length, 1, `expected one UNREADABLE line, got: ${JSON.stringify(notice)}`);
+  assert.ok(notice[0].includes(CANON) && notice[0].includes('malformed JSON') && notice[0].includes(`canonical = ${CANON}`), notice[0]);
+});
+
+test('UMB-174(b) UNREADABLE: the winning candidate path is a DIRECTORY (EISDIR), never crashes the hook', (t) => {
+  const p = proj(t, {});
+  const target = path.join(p.dir, ...CANON.split('/'));
+  fs.mkdirSync(target, { recursive: true });
+  const r = session(p);
+  assert.equal(r.status, 0); assert.equal(r.stderr, '');
+  const notice = lines(r.stdout, 'UNREADABLE');
+  assert.equal(notice.length, 1);
+  assert.ok(notice[0].includes('a directory'), notice[0]);
+});
+
+test('UMB-174(b) UNREADABLE: a valid JSON value that is NOT an object (an array) is named, never silently adopted', (t) => {
+  const p = proj(t, { [CANON]: '[1,2,3]' });
+  const r = session(p);
+  assert.equal(r.status, 0); assert.equal(r.stderr, '');
+  const notice = lines(r.stdout, 'UNREADABLE');
+  assert.equal(notice.length, 1);
+  assert.ok(notice[0].includes('not a JSON object'), notice[0]);
+});
+
+// EACCES/EPERM: capability-probed, visible skip when this box/user cannot produce a
+// genuinely unreadable file (Windows chmod does not gate reads the way POSIX mode bits
+// do -- confirmed by probing rather than assumed, per this room's own symlink-testing
+// convention for a platform capability that a `process.platform` guess would get wrong
+// in both directions).
+test('UMB-174(b) UNREADABLE: an existing file this process cannot read (EACCES/EPERM) is named, never silently treated as absent', (t) => {
+  const p = proj(t, { [CANON]: { mode: 'auto' } });
+  const target = path.join(p.dir, ...CANON.split('/'));
+  let capable;
+  try {
+    fs.chmodSync(target, 0o000);
+    try { fs.readFileSync(target, 'utf8'); capable = false; }
+    catch (e) { capable = e.code === 'EACCES' || e.code === 'EPERM'; }
+  } catch { capable = false; }
+  if (!capable) {
+    try { fs.chmodSync(target, 0o644); } catch {}
+    t.skip('cannot simulate an unreadable file on this box/user (chmod does not gate reads here) -- capability-gated, not asserting a false pass');
+    return;
+  }
+  try {
+    const r = session(p);
+    assert.equal(r.status, 0); assert.equal(r.stderr, '');
+    const notice = lines(r.stdout, 'UNREADABLE');
+    assert.equal(notice.length, 1);
+    assert.ok(notice[0].includes('unreadable'), notice[0]);
+  } finally {
+    try { fs.chmodSync(target, 0o644); } catch {} // restore so proj()'s cleanup can remove it
+  }
+});
+
+test('UMB-174(b) a BOM-prefixed VALID config is READ and applied, never reported as unreadable -- U+FEFF is stripped before classification', (t) => {
+  const p = proj(t, { [CANON]: '﻿' + JSON.stringify({ language: 'th' }) });
+  const r = session(p);
+  assert.equal(r.status, 0); assert.equal(r.stderr, '');
+  assert.match(r.stdout, /Respond to the user in Thai/, 'the BOM-prefixed file must actually be READ and applied, not merely tolerated');
+  assert.equal(lines(r.stdout, 'UNREADABLE').length, 0, 'a valid BOM-prefixed object is never reported as unreadable');
+});
+
+test('UMB-174(b) UNREADABLE takes precedence over LEGACY: a broken LEGACY-shape file is named as unreadable, never claimed to have been "read"', (t) => {
+  const p = proj(t, { '.coaltipple.json': '{ this is not json' }); // LEGACY-2, deliberately malformed
+  const r = session(p);
+  assert.equal(r.status, 0); assert.equal(r.stderr, '');
+  const unreadable = lines(r.stdout, 'UNREADABLE');
+  assert.equal(unreadable.length, 1, `expected one UNREADABLE line, got: ${JSON.stringify(unreadable)}`);
+  assert.ok(unreadable[0].includes('.coaltipple.json') && unreadable[0].includes('malformed JSON'), unreadable[0]);
+  assert.equal(lines(r.stdout, 'LEGACY').length, 0, 'a file that failed to parse was never actually "read" -- the LEGACY line must not also claim it was');
+});
+
+test('UMB-174(b) the GLOBAL config is reported too, independently of the project side, naming ITS OWN path as canonical (no other location exists for it)', (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-umb174-globalbad-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-umb174-proj-'));
+  t.after(() => { fs.rmSync(home, { recursive: true, force: true }); fs.rmSync(dir, { recursive: true, force: true }); });
+  fs.mkdirSync(path.join(dir, '.git'));
+  fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+  const globalPath = path.join(home, '.claude', '.coaltipple.json');
+  fs.writeFileSync(globalPath, '[1,2,3]', 'utf8'); // not a JSON object
+  const r = run({ hook_event_name: 'SessionStart' }, dir, home);
+  assert.equal(r.status, 0); assert.equal(r.stderr, '');
+  const notice = lines(r.stdout, 'UNREADABLE');
+  assert.equal(notice.length, 1, `expected one UNREADABLE line for the global config, got: ${JSON.stringify(notice)}`);
+  assert.ok(notice[0].includes(globalPath) && notice[0].includes('not a JSON object'), notice[0]);
+  // canonical = the SAME path -- there is nowhere else a global config could move to.
+  const canonCount = (notice[0].match(new RegExp(globalPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length;
+  assert.equal(canonCount, 2, `expected globalPath to appear twice (the reported path AND its own canonical), got: ${notice[0]}`);
+});
+
+test('UMB-174(b) global and project UNREADABLE co-exist: both files broken at once are BOTH named, neither masks the other', (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-umb174-both-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-umb174-both-proj-'));
+  t.after(() => { fs.rmSync(home, { recursive: true, force: true }); fs.rmSync(dir, { recursive: true, force: true }); });
+  fs.mkdirSync(path.join(dir, '.git'));
+  fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+  fs.writeFileSync(path.join(home, '.claude', '.coaltipple.json'), '{ bad', 'utf8');
+  const canonAbs = path.join(dir, ...CANON.split('/'));
+  fs.mkdirSync(path.dirname(canonAbs), { recursive: true });
+  fs.writeFileSync(canonAbs, '[1,2,3]', 'utf8');
+  const r = run({ hook_event_name: 'SessionStart' }, dir, home);
+  assert.equal(r.status, 0); assert.equal(r.stderr, '');
+  const notice = lines(r.stdout, 'UNREADABLE');
+  assert.equal(notice.length, 2, `expected two UNREADABLE lines, got: ${JSON.stringify(notice)}`);
+});
