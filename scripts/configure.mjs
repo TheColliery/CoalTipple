@@ -76,10 +76,20 @@ function printHelp() {
   console.log(lines.join('\n'));
 }
 
+// CWK-120 ride-along (a) -- `JSON.parse(x) || {}` only substitutes {} for a FALSY
+// parse result (null/0/false/''); a truthy non-object (`[1,2]`, `"str"`, a bare
+// number) passed straight through as the "config", the same class config-load.mjs's
+// readJsonc already guards (isPlainObj). Reject it here too, at the CLI's own
+// fail-loud boundary, rather than letting a malformed-but-truthy file silently
+// become the effective config.
 function parseConfig(content) {
   let c = content;
   if (c.charCodeAt(0) === 0xFEFF) c = c.slice(1); // BOM-safe
-  return JSON.parse(stripJsonc(c)) || {};
+  const parsed = JSON.parse(stripJsonc(c));
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('config is valid JSON but not a JSON object');
+  }
+  return parsed;
 }
 
 // Parse one raw CLI value against a spec. Returns { value } or { error }.

@@ -37,6 +37,17 @@ const run = ({ dir, home }, ...a) =>
     { cwd: dir, env: { ...process.env, USERPROFILE: home, HOME: home, CLAUDE_CONFIG_DIR: undefined }, encoding: 'utf8', timeout: 60000 });
 const cleanup = ({ dir, home }) => { fs.rmSync(dir, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); };
 
+test('CWK-120 ride-along (a): an existing config file that is valid JSON but NOT an object fails loud rather than being adopted as-is', () => {
+  const p = freshProject();
+  try {
+    fs.mkdirSync(path.dirname(globalPath(p.home)), { recursive: true });
+    fs.writeFileSync(globalPath(p.home), '[1, 2, 3]', 'utf8'); // a valid-JSON array, not an object
+    const r = run(p, '--qualityBar', '85');
+    assert.notEqual(r.status, 0, 'a non-object config must fail loud, not be silently treated as {}');
+    assert.match(r.stderr, /not a JSON object/);
+  } finally { cleanup(p); }
+});
+
 test('default target is GLOBAL: a flag writes ~/.claude/.coaltipple.json (seeds from factory, comments preserved)', () => {
   const p = freshProject();
   try {
