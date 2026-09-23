@@ -509,13 +509,18 @@ test('UMB-133 walk equivalence: for EVERY candidate alone and EVERY pair of the 
 // test targets the CANONICAL path (CANON) so the UNREADABLE branch fires rather
 // than the LEGACY one -- the precedence between them is covered separately below.
 // ---------------------------------------------------------------------------
-test('UMB-174(b) UNREADABLE: malformed JSON at the winning candidate is named by reason, not silently treated as absent', (t) => {
+// BOUNCE 2 (B2-1) -- ONE FLOCK ONE COLOR: the UNREADABLE string is byte-exact across every
+// room (source of truth: scratchpad/dispatch/umb174-room.md "The string -- ONE wording,
+// every room verbatim"; exemplar already shipped: CoalFace hooks/coalface-conductor.js).
+// This asserts the FULL line, not a substring match, so a stray hyphen-vs-em-dash or a
+// reworded canonical clause fails loud instead of passing on a loose .includes() check.
+test('UMB-174(b) UNREADABLE: malformed JSON at the winning candidate matches the flock string BYTE-EXACT (em dash included)', (t) => {
   const p = proj(t, { [CANON]: '{ this is not json' });
   const r = session(p);
   assert.equal(r.status, 0); assert.equal(r.stderr, '');
   const notice = lines(r.stdout, 'UNREADABLE');
   assert.equal(notice.length, 1, `expected one UNREADABLE line, got: ${JSON.stringify(notice)}`);
-  assert.ok(notice[0].includes(CANON) && notice[0].includes('malformed JSON') && notice[0].includes(`canonical = ${CANON}`), notice[0]);
+  assert.equal(notice[0], `[CoalTipple] UNREADABLE: ${CANON} exists but is not a readable config (malformed JSON); it was skipped — canonical = ${CANON}`);
 });
 
 test('UMB-174(b) UNREADABLE: the winning candidate path is a DIRECTORY (EISDIR), never crashes the hook', (t) => {
@@ -586,7 +591,12 @@ test('UMB-174(b) UNREADABLE takes precedence over LEGACY: a broken LEGACY-shape 
   assert.equal(lines(r.stdout, 'LEGACY').length, 0, 'a file that failed to parse was never actually "read" -- the LEGACY line must not also claim it was');
 });
 
-test('UMB-174(b) the GLOBAL config is reported too, independently of the project side, naming ITS OWN path as canonical (no other location exists for it)', (t) => {
+// BOUNCE 2 (B2-1) -- ruled: ship the VERBATIM flock wording for the global line too, using
+// the SAME project-relative canonical = ${CANON} as the project branch, matching CoalFace.
+// The semantic tension (a global config has no OTHER location to move to) is real and is
+// NOT resolved here -- it returns to main as an open flock question, named in the source
+// comment, never argued into a room-local variant of the string.
+test('UMB-174(b) the GLOBAL config is reported too, independently of the project side, matching the SAME flock string BYTE-EXACT (canonical = the project-relative path, per the flock ruling, not the global\'s own path)', (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-umb174-globalbad-'));
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-umb174-proj-'));
   t.after(() => { fs.rmSync(home, { recursive: true, force: true }); fs.rmSync(dir, { recursive: true, force: true }); });
@@ -598,10 +608,7 @@ test('UMB-174(b) the GLOBAL config is reported too, independently of the project
   assert.equal(r.status, 0); assert.equal(r.stderr, '');
   const notice = lines(r.stdout, 'UNREADABLE');
   assert.equal(notice.length, 1, `expected one UNREADABLE line for the global config, got: ${JSON.stringify(notice)}`);
-  assert.ok(notice[0].includes(globalPath) && notice[0].includes('not a JSON object'), notice[0]);
-  // canonical = the SAME path -- there is nowhere else a global config could move to.
-  const canonCount = (notice[0].match(new RegExp(globalPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length;
-  assert.equal(canonCount, 2, `expected globalPath to appear twice (the reported path AND its own canonical), got: ${notice[0]}`);
+  assert.equal(notice[0], `[CoalTipple] UNREADABLE: ${globalPath} exists but is not a readable config (not a JSON object); it was skipped — canonical = ${CANON}`);
 });
 
 test('UMB-174(b) global and project UNREADABLE co-exist: both files broken at once are BOTH named, neither masks the other', (t) => {

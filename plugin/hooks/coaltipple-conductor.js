@@ -330,18 +330,25 @@ function projectConfigNotices() {
     // Takes precedence over the LEGACY branch below: a file that failed to parse was not
     // actually "read" -- claiming it was would be a second false statement in one line.
     if (hitIdx !== -1 && projectReason) {
-      lines.push(`[CoalTipple] UNREADABLE: ${rel(candidates[hitIdx])} exists but is not a readable config (${projectReason}); it was skipped -- canonical = ${CANON_REL}`);
+      lines.push(`[CoalTipple] UNREADABLE: ${rel(candidates[hitIdx])} exists but is not a readable config (${projectReason}); it was skipped — canonical = ${CANON_REL}`);
     } else if (hitIdx >= AGENT_DIR_ORDER.length) { // the winner is one of the LEGACY shapes (they sit after the canonical dirs)
       lines.push(`[CoalTipple] LEGACY: ${rel(candidates[hitIdx])} is read as this project's config but is deprecated; canonical = ${CANON_REL} -- move it there.`);
     }
-    // UMB-174(b) -- the GLOBAL config gets the SAME report, independently (both files can
-    // be broken at once, so this is a separate `if`, never `else if` chained to the block
-    // above). UNLIKE a project candidate, a global config has no OTHER canonical location
-    // to move to -- it already lives at the one fixed path this hook reads -- so the
-    // `canonical =` clause here names ITS OWN path: the location is already correct, the
-    // file's CONTENT is the problem, and this line never suggests moving it anywhere.
+    // BOUNCE 2 (B2-1) -- ONE FLOCK ONE COLOR: the UNREADABLE string is VERBATIM across
+    // every room, byte for byte (source of truth: scratchpad/dispatch/umb174-room.md
+    // "The string -- ONE wording, every room verbatim"; exemplar already shipped:
+    // CoalFace hooks/coalface-conductor.js, both its global and project hits). The GLOBAL
+    // line below therefore uses the SAME literal canonical = ${CANON_REL} as the project
+    // line, matching CoalFace -- not a room-local `canonical = ${globalPath}` variant.
+    // A global config genuinely has no OTHER canonical location to move to (it already
+    // lives at the one fixed path this hook reads), so naming the project-relative path
+    // here is semantically imperfect for the global case -- that tension is real and is
+    // NOT resolved in this room: it goes to main as an open flock question (does the
+    // GLOBAL line need its own wording, or does the flock accept this one string
+    // covering both tiers). Ship the verbatim wording now; the question is main's to
+    // rule on, never a room's to resolve by shipping a local variant.
     if (globalReason) {
-      lines.push(`[CoalTipple] UNREADABLE: ${globalPath} exists but is not a readable config (${globalReason}); it was skipped -- canonical = ${globalPath}`);
+      lines.push(`[CoalTipple] UNREADABLE: ${globalPath} exists but is not a readable config (${globalReason}); it was skipped — canonical = ${CANON_REL}`);
     }
     const candSet = new Set(candidates.map(rel));
     const near = ['coaltipple.json', 'coal/coaltipple.json'];
