@@ -27,9 +27,14 @@ const globalPath = (home) => path.join(home, '.claude', '.coaltipple.json');
 // now writes to the own-dir NEW shape, not the LEGACY .claude/.coaltipple.json —
 // see the precedence tests in config-load.test.mjs for the full read order.
 const projectPath = (dir) => path.join(dir, '.claude', 'coal', 'coaltipple.json');
+// PR24 #3 -- CLAUDE_CONFIG_DIR redirects claudeBaseDir() regardless of USERPROFILE/HOME
+// (config-load.mjs's own claudeBaseDir()), so a spawned child inheriting an ambient
+// CLAUDE_CONFIG_DIR from the operator's own shell would resolve globalConfigPath() OUTSIDE
+// this sandbox -- the real machine config, not `home`. install.test.mjs's own spawn
+// helper already sets this key `undefined` for the identical reason.
 const run = ({ dir, home }, ...a) =>
   spawnSync(process.execPath, [CONFIGURE, ...a],
-    { cwd: dir, env: { ...process.env, USERPROFILE: home, HOME: home }, encoding: 'utf8', timeout: 60000 });
+    { cwd: dir, env: { ...process.env, USERPROFILE: home, HOME: home, CLAUDE_CONFIG_DIR: undefined }, encoding: 'utf8', timeout: 60000 });
 const cleanup = ({ dir, home }) => { fs.rmSync(dir, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); };
 
 test('default target is GLOBAL: a flag writes ~/.claude/.coaltipple.json (seeds from factory, comments preserved)', () => {

@@ -10,6 +10,14 @@ import os from 'node:os';
 import path from 'node:path';
 import { loadMergedConfig, globalConfigPath, globalStateDir, oldGlobalStateDir, projectConfigPath, projectConfigCandidates, projectLegacyPaths, projectWriteTarget, moveLegacyAside, projectStateDir, claudeBaseDir, findGitRoot } from './config-load.mjs';
 
+// PR24 #3 -- claudeBaseDir() honors an ambient CLAUDE_CONFIG_DIR and IGNORES the
+// `home` argument entirely when it is set (config-load.mjs's own claudeBaseDir()),
+// so every sandbox() below silently wrote to the REAL machine config on any box
+// that has CLAUDE_CONFIG_DIR set. The dedicated test at line ~240 below already
+// sets/restores it deliberately (its own property under test) and is left alone;
+// every OTHER test in this file must never see it.
+delete process.env.CLAUDE_CONFIG_DIR;
+
 // Build a sandbox with optional global/project file bodies; returns { home, cwd }.
 function sandbox({ global, project } = {}) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-home-'));
