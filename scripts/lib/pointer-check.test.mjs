@@ -482,7 +482,11 @@ test('classifyCheckIgnoreResult: a REAL git check-ignore --stdin exit 1 (nothing
 });
 
 test('classifyCheckIgnoreResult: a REAL git check-ignore --stdin exit other than 0/1 (an unknown-flag 129, this box/git version) is a FAIL naming the status and stderr', () => {
-  const ci = spawnSync('git', ['check-ignore', '--stdin', '--bogus-flag-xyz'], { encoding: 'utf8', input: 'x\n' });
+  // PR24 #17 -- git localizes its "unknown option" diagnostic via gettext; on a box
+  // whose locale is not English, this line's own assertion below would fail even
+  // though classification is correct. LC_ALL=C forces the untranslated message so
+  // the test's OWN premise (not the code under test) is stable across locales.
+  const ci = spawnSync('git', ['check-ignore', '--stdin', '--bogus-flag-xyz'], { encoding: 'utf8', input: 'x\n', env: { ...process.env, LC_ALL: 'C' } });
   assert.notEqual(ci.status, 0, `fixture assumption broken -- expected a non-0/1 exit, got ${ci.status}`);
   assert.notEqual(ci.status, 1, `fixture assumption broken -- expected a non-0/1 exit, got ${ci.status}`);
   const verdict = classifyCheckIgnoreResult(ci);
