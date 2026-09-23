@@ -174,7 +174,7 @@ Workers start context-fresh. A **memory anchor** file gives a fresh worker proje
 
 ## 🧪 Try it
 
-Three real prompts, put through the shipped grader so nothing below is invented—`node scripts/grade-task.mjs --prompt "<text>" [--size-units N]` prints only `grade()`'s own verdict (JSON), advisory-only, and never touches effort or a routing decision:
+Three real prompts, put through the shipped grader so nothing below is invented—`node scripts/grade-task.mjs --prompt "<text>" [--size-units N]` prints `grade()`'s own verdict as JSON, plus the `suggestedModel`/`modelSource` metadata read from the local ranking—advisory-only, and never touches effort or a routing decision:
 
 | Prompt | Command | Output |
 |---|---|---|
