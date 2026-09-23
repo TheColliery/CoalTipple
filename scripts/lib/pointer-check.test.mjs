@@ -497,7 +497,13 @@ test('classifyCheckIgnoreResult: a REAL git check-ignore --stdin exit other than
   // whose locale is not English, this line's own assertion below would fail even
   // though classification is correct. LC_ALL=C forces the untranslated message so
   // the test's OWN premise (not the code under test) is stable across locales.
-  const ci = spawnSync('git', ['check-ignore', '--stdin', '--bogus-flag-xyz'], { encoding: 'utf8', input: 'x\n', env: { ...PC_TEST_GIT_ENV, LC_ALL: 'C' } });
+  // R6b CI-RED 2 -- deliberately NO `input`: git rejects the unknown flag and exits 129 BEFORE
+  // it reads stdin, so when git wins the race node's write of `input` hits a closed pipe and
+  // spawnSync returns `error: EPIPE` (status null) instead of the 129 this test asserts. Seen
+  // once on ubuntu node 22 (the other 7 legs passed). Stdin is irrelevant to this branch, so
+  // it is not supplied and the exit is deterministic. The two tests above KEEP `input`: git
+  // reads it there.
+  const ci = spawnSync('git', ['check-ignore', '--stdin', '--bogus-flag-xyz'], { encoding: 'utf8', env: { ...PC_TEST_GIT_ENV, LC_ALL: 'C' } });
   assert.notEqual(ci.status, 0, `fixture assumption broken -- expected a non-0/1 exit, got ${ci.status}`);
   assert.notEqual(ci.status, 1, `fixture assumption broken -- expected a non-0/1 exit, got ${ci.status}`);
   const verdict = classifyCheckIgnoreResult(ci);
