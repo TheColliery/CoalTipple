@@ -6,6 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   checkConfigKeys, checkSchemaCompleteness, NOTICE_SITES, KEY_TABLES,
   PENDING_KEYS, NOT_CONFIG, BLIND_KEYS, RETIRED_KEYS,
@@ -367,7 +368,11 @@ test('checkSchemaCompleteness: heading absent entirely FAILS LOUDLY (Hard Rule 1
 
 // ---- integration: the REAL repo, no fixture ----
 
-const repo = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..', '..');
+// PR24 #14 -- new URL(...).pathname is percent-encoded (a checkout path with a space or a
+// non-ASCII char keeps its %20 escapes and every fs.readFileSync below throws ENOENT);
+// fileURLToPath decodes them and strips the Windows drive prefix, matching the same
+// cohort's own configure.test.mjs / verify.test.mjs.
+const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const CONFIG_SCHEMA_KEYS = () => {
   // dynamic import kept local to this block -- avoids paying config-schema.mjs's own
   // load cost for the fixture-driven tests above, which need none of it.
