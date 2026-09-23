@@ -100,6 +100,25 @@ test('R2 (hooks-safety.md §9): a PROJECT updateMode:"auto" with NO global confi
   } finally { fs.rmSync(home, { recursive: true, force: true }); fs.rmSync(proj, { recursive: true, force: true }); }
 });
 
+test('PR24 #20: R2\'s positive control -- a project-only updateMode:"off" (which the LEGACY read walk still reaches) actually suppresses the directive', () => {
+  // The test above proves "ask" fires from a project 'auto' clamp -- but 'ask' is ALSO
+  // the schema default that fires when the project file is ignored entirely, so that
+  // test alone would still pass under a regression that silently disabled project-config
+  // loading. This case picks a value 'off' clashes with the default in the OPPOSITE
+  // direction (no directive at all) -- a value only a genuinely-loaded project file can
+  // produce, proving the LEGACY .claude/.coaltipple.json read path is actually exercised.
+  const home = mkHome(); // no global .coaltipple.json AT ALL, same as R2's own case
+  const proj = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-upd-proj-'));
+  try {
+    fs.mkdirSync(path.join(proj, '.git'));
+    fs.mkdirSync(path.join(proj, '.claude'), { recursive: true });
+    fs.writeFileSync(path.join(proj, '.claude', '.coaltipple.json'), JSON.stringify({ updateMode: 'off' }), 'utf8');
+    const r = run(SESSION, home, proj);
+    assert.equal(r.status, 0);
+    assert.doesNotMatch(r.stdout, /CoalTipple self-update/, 'a project-only updateMode:"off" must suppress the directive entirely -- if this fires, the project file was never read');
+  } finally { fs.rmSync(home, { recursive: true, force: true }); fs.rmSync(proj, { recursive: true, force: true }); }
+});
+
 test('ask is throttled: a fresh stamp (today) suppresses the KIND-1 directive', () => {
   const home = mkHome({ updateMode: 'ask', updateCheckDays: 14 });
   try {
