@@ -496,6 +496,61 @@ test('writeConfigAtomic: a failure writing the temp sibling propagates loudly an
   }
 });
 
+// BOUNCE 1-2 -- the ORIGINAL writeConfigAtomic (a plain fs.writeFileSync at a predictable
+// per-pid temp name) followed a symlink/pre-existing file planted at that exact name,
+// truncating whatever it pointed at -- the same class as UMB-133's moveLegacyAside CodeQL
+// finding, one call site over. A pre-existing regular file at the predictable name proves
+// the property without needing symlink privilege: the fix must refuse to write through it.
+test('writeConfigAtomic: a pre-existing file already occupying the predictable temp name is NEVER truncated -- the write retries at the next numbered suffix', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-atomic-occupied-'));
+  const configPath = path.join(dir, '.coaltipple.json');
+  const oldContent = '{"mode":"auto"}\n';
+  fs.writeFileSync(configPath, oldContent, 'utf8');
+  const predictableTmp = `${configPath}.${process.pid}.tmp`;
+  const plantedContent = 'PLANTED -- not this function\'s to touch';
+  fs.writeFileSync(predictableTmp, plantedContent, 'utf8');
+  try {
+    writeConfigAtomic(configPath, '{"mode":"delegation"}\n');
+    assert.equal(fs.readFileSync(configPath, 'utf8'), '{"mode":"delegation"}\n', 'the real edit still lands');
+    assert.equal(fs.readFileSync(predictableTmp, 'utf8'), plantedContent,
+      'the pre-existing file at the predictable name must be byte-for-byte untouched -- never opened for write, never followed');
+    const leftover = fs.readdirSync(dir).filter((f) => f !== '.coaltipple.json' && f !== path.basename(predictableTmp));
+    assert.deepEqual(leftover, [], 'the retry used the NEXT suffix and cleaned up after itself, no litter beyond the planted file');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// The sharper form of the same property: an actual SYMLINK at the predictable name,
+// pointing at a THIRD file this function must never touch. Windows requires either
+// Developer Mode or admin privilege to create a symlink -- probed, not assumed; skips
+// VISIBLY (never a bare return) per this room's own symlink-testing convention
+// (AGENTS.md's path-traversal corollary) when the capability is absent.
+test('writeConfigAtomic: a symlink planted at the predictable temp name, pointing elsewhere, is refused (EEXIST) -- the pointed-at file is never touched', (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-atomic-symlink-'));
+  const configPath = path.join(dir, '.coaltipple.json');
+  const victim = path.join(dir, 'victim.txt');
+  const victimContent = 'VICTIM -- outside this function\'s destination entirely';
+  fs.writeFileSync(configPath, '{"mode":"auto"}\n', 'utf8');
+  fs.writeFileSync(victim, victimContent, 'utf8');
+  const predictableTmp = `${configPath}.${process.pid}.tmp`;
+  try {
+    fs.symlinkSync(victim, predictableTmp, 'file');
+  } catch (e) {
+    t.skip(`symlink privilege unavailable on this box/user (${e.code}) -- capability-gated, not asserting a false pass`);
+    fs.rmSync(dir, { recursive: true, force: true });
+    return;
+  }
+  try {
+    writeConfigAtomic(configPath, '{"mode":"delegation"}\n');
+    assert.equal(fs.readFileSync(configPath, 'utf8'), '{"mode":"delegation"}\n', 'the real edit still lands');
+    assert.equal(fs.readFileSync(victim, 'utf8'), victimContent,
+      'the symlink\'s TARGET must be byte-for-byte untouched -- O_CREAT|O_EXCL refuses a symlinked name outright, it never follows it');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // UMB-133 bounce 2 (CodeQL js/file-system-race). The helper's contract is NON-DESTRUCTION, and the old
 // `existsSync(to)` loop + `renameSync(file, to)` was check-then-act, so a `.superseded` that appeared between
 // the two was silently overwritten. A genuine thread race cannot be forced deterministically from a test, so

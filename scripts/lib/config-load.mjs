@@ -170,23 +170,61 @@ export function moveLegacyAside(file) {
 // half-written -- worse than the read failure it replaced, because there is no longer a
 // config to fall back to. Writing to a per-pid temp name first means a killed run leaves
 // only an orphaned .tmp file; the real config is untouched until the rename lands.
+//
+// BOUNCE 1-2 -- the FIRST version of this function opened the temp name with a plain
+// writeFileSync (the default 'w' flag), which FOLLOWS a symlink at the destination and
+// truncates whatever it points at. `--project` mode's configPath lives inside a CLONED
+// repo (<gitroot>/.claude/coal/coaltipple.json) -- the repo's own author controls that
+// tree, and the temp name (`${configPath}.${pid}.tmp`) is fully predictable (pids are
+// small and guessable, or simply sprayed). A symlink PLANTED at that name before the run
+// turned `configure --project` into an arbitrary-file overwrite carrying the user's own
+// config text -- the same class CodeQL's js/file-system-race already flagged twice on
+// UMB-133's moveLegacyAside. Fixed with the SAME idiom that function already uses:
+// acquire the name with an EXCLUSIVE create (`wx` = O_CREAT|O_EXCL) -- POSIX open(2) is
+// explicit that O_EXCL+O_CREAT on a path that names a symlink fails EEXIST regardless of
+// what the symlink points to, so a planted link is refused, never followed -- then write
+// through the returned FD (not the path again, closing the TOCTOU between open and
+// write), then rename. A same-name collision (another run, or the attacker's link) loops
+// to the next numbered suffix, mirroring moveLegacyAside's own collision handling.
+//
+// The ranking file (classify.mjs's writeRankingAtomic) was checked for the identical
+// exposure and does NOT carry it: its destination is globalStateDir() = a machine-global
+// path under the user's own ~/.claude, never inside a cloned/attacker-controlled repo --
+// planting a symlink there already requires local write access to the user's own home,
+// a materially different threat model. No fix applied there; left as designed.
+//
 // Lives here (not inlined in configure.mjs's main()) so it can be unit-tested directly
-// by monkey-patching fs.renameSync/fs.writeFileSync, without spawning configure.mjs as
-// a child process and without configure.mjs's own main() running against test argv.
+// by monkey-patching fs.renameSync/fs.writeFileSync/fs.openSync, without spawning
+// configure.mjs as a child process and without its own main() running against test argv.
 export function writeConfigAtomic(configPath, text) {
-  const tmpConfigPath = `${configPath}.${process.pid}.tmp`;
+  let tmpConfigPath;
+  let fd;
+  for (let n = 0; ; n++) {
+    tmpConfigPath = n === 0 ? `${configPath}.${process.pid}.tmp` : `${configPath}.${process.pid}.tmp.${n}`;
+    try { fd = fs.openSync(tmpConfigPath, 'wx'); break; }
+    catch (e) {
+      if (e.code === 'EEXIST') continue; // someone (or an attacker's planted link) holds this name -> next suffix
+      throw e;
+    }
+  }
   try {
-    fs.writeFileSync(tmpConfigPath, text, 'utf8');
+    fs.writeFileSync(fd, text, 'utf8'); // through the FD we hold -- never re-opens the path
+    fs.closeSync(fd);
+    fd = undefined;
     try {
       fs.renameSync(tmpConfigPath, configPath);
     } catch (e) {
       // Windows: configPath held open elsewhere (e.g. a live conductor read) -> renameSync
       // throws EPERM/EBUSY. Fall back to a direct overwrite so the edit is never lost --
       // same fallback classify.mjs's writeRankingAtomic already uses for this exact code.
+      // This path forfeits atomicity (a kill mid-overwrite can still leave a half-written
+      // configPath) -- accepted, matching writeRankingAtomic's own accepted trade-off for
+      // the identical platform quirk.
       if (e.code === 'EPERM' || e.code === 'EBUSY') fs.writeFileSync(configPath, text, 'utf8');
       else throw e;
     }
   } finally {
+    if (fd !== undefined) { try { fs.closeSync(fd); } catch {} }
     // Phoenix #1 (zero-garbage): a failed write/rename never leaves a stray temp file.
     // On the success path the rename already consumed tmpConfigPath, so this is a no-op.
     try { if (fs.existsSync(tmpConfigPath)) fs.unlinkSync(tmpConfigPath); } catch {}
