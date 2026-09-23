@@ -256,7 +256,7 @@ Full harnesses, per-task scoring, the quality-vs-tier matrix, routing-savings hi
 
 ## 🧭 Part of TheColliery
 
-CoalTipple is the series' model/effort router, and it shares its engineering doctrine with six siblings:
+CoalTipple is the series' model/effort router, and it shares its engineering doctrine with seven siblings:
 
 * [CoalMine](https://github.com/TheColliery/CoalMine)—quality canaries
 * [CoalBoard](https://github.com/TheColliery/CoalBoard)—consensus & debate board
@@ -264,6 +264,7 @@ CoalTipple is the series' model/effort router, and it shares its engineering doc
 * [CoalFace](https://github.com/TheColliery/CoalFace)—fan-out discipline
 * [CoalWash](https://github.com/TheColliery/CoalWash)—memory defrag
 * [CoalLedger](https://github.com/TheColliery/CoalLedger)—docs health
+* [CoalGob](https://github.com/TheColliery/CoalGob)—OS-trash delete guard (PUBLIC BETA v0.1.0-beta.1)
 
 Install one, it stands alone; install all, they compose without conflict.
 
