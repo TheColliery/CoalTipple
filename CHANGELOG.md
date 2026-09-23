@@ -2,6 +2,17 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.7.0] - 2026-09-23
+
+### Added
+- **UMB-174(b) — the flock's ONE wording for a present-but-unreadable config, on both the project and the global candidate.** The conductor's session-start report now names WHY a config it skipped was skipped, instead of folding the case into silence: `UNREADABLE: <path> exists but is not a readable config (<reason>); it was skipped — canonical = .claude/coal/coaltipple.json`, with `<reason>` one of `malformed JSON` · `a directory` · `unreadable` (`EACCES` or `EPERM`) · `not a JSON object` (parsed but an array/string/number/null). A leading BOM is stripped before the parse at all three sites that read this config body—confirmed already correct at two of the three, unchanged there. The `UNREADABLE` line takes precedence over the existing `LEGACY:` line on the same broken file (a file that failed to parse was never actually read, so `LEGACY`'s own claim would be a second false statement stacked on the first); the global config (`~/.claude/.coaltipple.json`) is reported independently, on its own path—it has no other canonical location to move to. The README's Configure section carries the one sentence naming this line.
+
+### Fixed
+- **CWK-022's owner-ruled fan-out pointer restored.** A CodeRabbit-triage fix briefly reworded the conductor's "Spawn/fan-out discipline is CoalFace's authority, not this contract's" line, reading the bare pointer as an oversight rather than the deliberate shape of an owner ruling (`5b3caa0`); reverted byte-for-byte. The one real fix from that same pass is kept: the fable-decline cap sentence no longer hardcodes `opus`—it reads the cap from the ranking, one rung below fable.
+- **The config-write atomic-rename path no longer follows a symlink planted at its predictable temp name.** `configure.mjs --project`'s write goes through a same-directory temp file before the rename; that temp file is now acquired with an exclusive create, so a symlink pre-planted at the guessable name is refused rather than followed and overwritten. The equivalent global-ranking writer (`classify.mjs`) does not carry this exposure—its destination is never inside a cloned, attacker-controlled repo.
+
+Fifteen CodeRabbit-triage findings and CWK-133's git-env sandboxing fix landed in the same belt (argv-parsing guards, a hard FAIL on an unreadable declared-doc surface, test-isolation and locale fixes, a non-object config-parse guard, and every fixture `git` spawn now stripping the ambient `GIT_*` family). All but the two `### Fixed` items above touch only `scripts/` and its tests, which are not `DIST_ITEMS` members and ship nothing—see `scratchpad/r6/coder-return.md` for the full disposition table.
+
 ## [1.6.0] - 2026-09-21
 
 ### Added

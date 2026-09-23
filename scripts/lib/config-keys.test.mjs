@@ -429,7 +429,7 @@ test('INTEGRATION: schema key count is 24, and BLIND_KEYS/NOT_CONFIG/RETIRED_KEY
   const schemaKeys = await CONFIG_SCHEMA_KEYS();
   assert.equal(schemaKeys.length, 24);
   assert.deepEqual(Object.keys(BLIND_KEYS).sort(), ['keywords', 'language', 'mode']);
-  assert.equal(Object.keys(NOT_CONFIG).length, 8);
+  assert.equal(Object.keys(NOT_CONFIG).length, 10);
   assert.equal(Object.keys(RETIRED_KEYS).length, 6);
 });
 

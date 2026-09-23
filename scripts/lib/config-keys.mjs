@@ -79,6 +79,8 @@ export const NOT_CONFIG = {
   sizeUnits: "grade.mjs's own internal parameter name, named in the Step 1 grade table (SKILL.md)",
   desiredTier: 'resolveWorker parameter name, named in prose (SKILL.md, references/lock.md)',
   floorTier: 'resolveWorker parameter name, named in prose (SKILL.md, references/lock.md)',
+  suggestedModel: "grade-task.mjs's own CLI output field (README Try-it) -- not a .coaltipple.json config key",
+  modelSource: "grade-task.mjs's own CLI output field (README Try-it) -- not a .coaltipple.json config key",
 };
 
 // A schema key this gate's detection rule CANNOT SEE (KEY_SHAPE requires an internal
