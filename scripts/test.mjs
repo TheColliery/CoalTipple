@@ -28,6 +28,7 @@ const TESTS = [
   'scripts/lib/config-keys.test.mjs',
   'scripts/lib/pointer-check.test.mjs',
   'scripts/lib/link-check.test.mjs',
+  'scripts/lib/git-env.test.mjs',
   'scripts/build-plugin.test.mjs',
   'scripts/build-dist.test.mjs',
   'scripts/build-skill.test.mjs',

@@ -10,8 +10,15 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { CONFIG_SCHEMA, validateValue } from './lib/config-schema.mjs';
 import { stripJsonc } from './lib/jsonc.mjs';
+import { gitEnv } from './lib/git-env.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+// CWK-133/C-4 -- every git spawn this gate makes carries gitEnv(), never the ambient
+// process.env: this gate is wired into a git pre-commit/pre-push hook, so an inherited
+// GIT_DIR/GIT_WORK_TREE (the shape a LINKED WORKTREE's own hook exports) would otherwise
+// silently redirect these spawns onto whatever repo GIT_DIR points at instead of `repo`.
+// Computed once and reused at every call site (never a fresh env object per spawn).
+const REPO_GIT_ENV = gitEnv(path.dirname(repo));
 // Leading-BOM strip for the plugin.json description check below, built from a char
 // code rather than a hand-typed escape sequence (board #64 exemplar, CoalMine
 // 13daf36: typing the literal BOM escape directly in a tool call silently became
@@ -356,7 +363,7 @@ try {
   // narrower than normal operation, never wider. Moved ahead of PC_OUR_ROOTS/PC_IGNORED_ROOTS
   // (CWK-077 round 2) -- both derivations below now need it.
   let pcHasGit = true;
-  try { execFileSync('git', ['rev-parse', '--is-inside-work-tree'], { cwd: repo, stdio: 'pipe' }); }
+  try { execFileSync('git', ['rev-parse', '--is-inside-work-tree'], { cwd: repo, stdio: 'pipe', env: REPO_GIT_ENV }); }
   catch { pcHasGit = false; }
 
   // SCOPE -- WHICH surfaces walk, and the narrowing reason for the kind this room's plan
@@ -382,7 +389,7 @@ try {
   function pcDeriveOurRoots() {
     if (!pcHasGit) return PC_OUR_ROOTS_FALLBACK;
     try {
-      const listing = execFileSync('git', ['ls-files'], { cwd: repo, stdio: 'pipe' }).toString('utf8');
+      const listing = execFileSync('git', ['ls-files'], { cwd: repo, stdio: 'pipe', env: REPO_GIT_ENV }).toString('utf8');
       const roots = new Set();
       for (const line of listing.split(/\r?\n/)) {
         if (!line) continue;
@@ -478,7 +485,7 @@ try {
       PROBE_SUFFIX: PC_PROBE_SUFFIX,
       ignoredRoots: PC_IGNORED_ROOTS,
       fail,
-      runCheckIgnore: (input) => spawnSync('git', ['check-ignore', '--stdin'], { cwd: repo, encoding: 'utf8', input }),
+      runCheckIgnore: (input) => spawnSync('git', ['check-ignore', '--stdin'], { cwd: repo, encoding: 'utf8', input, env: REPO_GIT_ENV }),
     });
   }
   const pcIgnoreProbeFailed = fails > pcFailsBeforeIgnoreProbe;
@@ -495,7 +502,7 @@ try {
   function pcResolve(rel) {
     if (!pcHasGit) return fs.existsSync(path.join(repo, rel)) ? 'tracked' : 'missing';
     try {
-      execFileSync('git', ['ls-files', '--error-unmatch', '--', rel], { cwd: repo, stdio: 'pipe' });
+      execFileSync('git', ['ls-files', '--error-unmatch', '--', rel], { cwd: repo, stdio: 'pipe', env: REPO_GIT_ENV });
       return 'tracked';
     } catch {
       return fs.existsSync(path.join(repo, rel)) ? 'untracked' : 'missing';

@@ -13,6 +13,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { gitEnv } from './lib/git-env.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const VERIFY_ITEMS = ['skills', 'hooks', 'commands', 'platform-configs', '.claude-plugin', 'plugin', 'scripts', 'CHANGELOG.md'];
@@ -92,7 +93,7 @@ function mkGitSandbox() {
     fs.copyFileSync(path.join(repo, f), path.join(tmp, f));
   }
   const git = (args) => {
-    const r = spawnSync('git', args, { cwd: tmp, encoding: 'utf8' });
+    const r = spawnSync('git', args, { cwd: tmp, encoding: 'utf8', env: gitEnv(path.dirname(tmp)) });
     if (r.status !== 0) throw new Error(`git ${args.join(' ')} failed: ${r.stderr || r.error?.message}`);
     return r.stdout;
   };
@@ -185,8 +186,9 @@ test('verify.mjs pointer check: FIX 2 -- the lone-CR .gitignore line false-match
     // commands/*.md, so this stays isolated from FIX 2's OWN citer-relative join.
     fs.appendFileSync(path.join(tmp, 'SECURITY.md'), '\nSee `totally-fake-root/notes.md` for details.\n');
 
+    const gitTmpEnv = gitEnv(path.dirname(tmp));
     const git = (args) => {
-      const r = spawnSync('git', args, { cwd: tmp, encoding: 'utf8' });
+      const r = spawnSync('git', args, { cwd: tmp, encoding: 'utf8', env: gitTmpEnv });
       if (r.status !== 0) throw new Error(`git ${args.join(' ')} failed: ${r.stderr || r.error?.message}`);
       return r.stdout;
     };
@@ -203,19 +205,19 @@ test('verify.mjs pointer check: FIX 2 -- the lone-CR .gitignore line false-match
       'the probed root must be genuinely absent -- that absence is what the false match depends on');
 
     // THE DISCRIMINATING PAIR, at the git level, on the SAME real fixture.
-    const bare = spawnSync('git', ['check-ignore', '--stdin'], { cwd: tmp, encoding: 'utf8', input: 'totally-fake-root/\n' });
+    const bare = spawnSync('git', ['check-ignore', '--stdin'], { cwd: tmp, encoding: 'utf8', input: 'totally-fake-root/\n', env: gitTmpEnv });
     assert.equal(bare.status, 0,
       'RED: the bare feed must reproduce the false match on THIS fixture -- an absent, un-patterned root reported ignored');
-    const probed = spawnSync('git', ['check-ignore', '--stdin'], { cwd: tmp, encoding: 'utf8', input: 'totally-fake-root/.pointer-check-probe\n' });
+    const probed = spawnSync('git', ['check-ignore', '--stdin'], { cwd: tmp, encoding: 'utf8', input: 'totally-fake-root/.pointer-check-probe\n', env: gitTmpEnv });
     assert.equal(probed.status, 1, 'the injection-site feed correctly reports the SAME root as NOT ignored');
-    const verbose = spawnSync('git', ['check-ignore', '-v', '--stdin'], { cwd: tmp, encoding: 'utf8', input: 'totally-fake-root/\n' });
+    const verbose = spawnSync('git', ['check-ignore', '-v', '--stdin'], { cwd: tmp, encoding: 'utf8', input: 'totally-fake-root/\n', env: gitTmpEnv });
     assert.match(verbose.stdout, /\.gitignore:2:/,
       'the matching pattern must be the lone-CR line (line 2), naming the source unambiguously');
 
     // CONTROL: a genuinely-ignored root still matches under BOTH feeds -- the probe loses
     // no true positive.
-    assert.equal(spawnSync('git', ['check-ignore', '--stdin'], { cwd: tmp, encoding: 'utf8', input: 'dogfood/\n' }).status, 0);
-    assert.equal(spawnSync('git', ['check-ignore', '--stdin'], { cwd: tmp, encoding: 'utf8', input: 'dogfood/.pointer-check-probe\n' }).status, 0);
+    assert.equal(spawnSync('git', ['check-ignore', '--stdin'], { cwd: tmp, encoding: 'utf8', input: 'dogfood/\n', env: gitTmpEnv }).status, 0);
+    assert.equal(spawnSync('git', ['check-ignore', '--stdin'], { cwd: tmp, encoding: 'utf8', input: 'dogfood/.pointer-check-probe\n', env: gitTmpEnv }).status, 0);
 
     // END-TO-END: the real gate, as fixed, must not be fooled by this fixture -- the
     // absent-root citation is silently out of scope (never even resolves), never the false
@@ -244,10 +246,10 @@ test('verify.mjs pointer check: a REAL check-ignore derivation FAILURE reddens t
   try {
     const verifyPath = path.join(tmp, 'scripts', 'verify.mjs');
     const src = fs.readFileSync(verifyPath, 'utf8');
-    const needle = "spawnSync('git', ['check-ignore', '--stdin'], { cwd: repo, encoding: 'utf8', input })";
+    const needle = "spawnSync('git', ['check-ignore', '--stdin'], { cwd: repo, encoding: 'utf8', input, env: REPO_GIT_ENV })";
     assert.ok(src.includes(needle), 'the check-ignore spawn line moved -- update this test\'s patch target');
     fs.writeFileSync(verifyPath, src.replace(needle,
-      "spawnSync('git', ['check-ignore', '--stdin', '--bogus-flag-xyz'], { cwd: repo, encoding: 'utf8', input })"), 'utf8');
+      "spawnSync('git', ['check-ignore', '--stdin', '--bogus-flag-xyz'], { cwd: repo, encoding: 'utf8', input, env: REPO_GIT_ENV })"), 'utf8');
 
     const r = runVerify(tmp);
     assert.equal(r.status, 1, `a real check-ignore derivation failure must FAIL the gate, got:\n${r.stdout}${r.stderr}`);
@@ -258,6 +260,59 @@ test('verify.mjs pointer check: a REAL check-ignore derivation FAILURE reddens t
     assert.match(r.stdout, /DERIVATION FAILED -- see the FAIL line above/,
       'MEDIUM-1: the pass line must name the failure instead of a measured-looking count');
   } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+// CWK-133/C-4 -- verify.mjs's OWN production git spawns must never inherit an ambient
+// poisoned GIT_DIR. The exact measured incident (CoalFace, r5): a linked worktree's own
+// pre-commit/pre-push hook exports an absolute GIT_DIR pointing at ITS OWN repo, and a
+// git spawn made from inside that hook's child process (verify.mjs, when wired as a gate)
+// silently redirects onto that repo instead of the one the spawn's `cwd` actually names.
+//
+// Measured directly (not assumed) which of verify.mjs's OWN checks this actually breaks:
+// none of its git spawns is `git init` (rev-parse/ls-files/check-ignore only), so the
+// CoalFace incident's own signature (core.bare flipped to true) does not reproduce here --
+// a `git ls-files` redirected onto an unrelated decoy repo just silently returns the
+// DECOY's tracked files instead of throwing. The observable break in THIS gate is the
+// pointer-check's own derived counts: PC_OUR_ROOTS comes from `git ls-files`, so a
+// poisoned spawn derives it from the decoy's tree (which shares none of this room's real
+// top-level dirs) -- every citation then falls outside PC_OUR_ROOTS and is silently
+// SKIPPED rather than checked, and the pass line still prints "ok" while doing nothing.
+// Reproduced directly: an unguarded run against this exact fixture+poison prints
+// "(0 checked, ... 0 ourRoots -- git-derived, ...)" and still exits 0 -- a SILENTLY INERT
+// gate, worse than a failing one (AGENTS.md, "a present-but-misaimed layer is worse than
+// an absent one, because it reads as covered"). Reproduced with a THROWAWAY decoy repo,
+// never the real umbrella or CoalTipple repo.
+test('verify.mjs: an ambient poisoned GIT_DIR never redirects this gate\'s own git spawns onto the wrong repo (never silently checks 0 citations)', (t) => {
+  const decoyRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-verify-decoy-'));
+  t.after(() => fs.rmSync(decoyRepo, { recursive: true, force: true }));
+  const decoyGit = (args) => spawnSync('git', args, { cwd: decoyRepo, encoding: 'utf8' });
+  decoyGit(['init', '-q', '-b', 'main']);
+  decoyGit(['config', 'user.email', 'test@test.invalid']);
+  decoyGit(['config', 'user.name', 'Test']);
+  decoyGit(['config', 'commit.gpgsign', 'false']);
+  fs.writeFileSync(path.join(decoyRepo, 'decoy-marker.md'), 'nothing to do with CoalTipple\n');
+  decoyGit(['add', '-A']);
+  decoyGit(['commit', '-q', '-m', 'decoy baseline']);
+
+  const { tmp } = mkGitSandbox();
+  const savedGitDir = process.env.GIT_DIR;
+  try {
+    // The poison rides the AMBIENT env, matching how a real hook actually delivers it --
+    // runVerify() spawns with no `env:` override, so this is what the child inherits.
+    process.env.GIT_DIR = path.join(decoyRepo, '.git');
+    const r = runVerify(tmp);
+    assert.equal(r.status, 0, `the sandboxed gate must still PASS -- gitEnv() must not have broken its own git use, got:\n${r.stdout}${r.stderr}`);
+    assert.doesNotMatch(r.stdout, /\(0 checked/,
+      'the poisoned GIT_DIR must not have starved pointer-check down to zero citations checked');
+    assert.doesNotMatch(r.stdout, /0 ourRoots -- git-derived/,
+      'the poisoned GIT_DIR must not have derived ourRoots from the DECOY repo\'s empty tree');
+    assert.match(r.stdout, /\d+ ourRoots -- git-derived/,
+      'ourRoots must still be git-derived from the SANDBOX (tmp), not silently degraded to the no-git fallback');
+  } finally {
+    if (savedGitDir === undefined) delete process.env.GIT_DIR;
+    else process.env.GIT_DIR = savedGitDir;
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 });

@@ -10,6 +10,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   checkPointers,
   pointerCandidates,
@@ -18,6 +20,15 @@ import {
   DEFAULT_SURFACE_PLAN,
   collectSurfaces,
 } from './pointer-check.mjs';
+import { gitEnv } from './git-env.mjs';
+
+// CWK-133/C-4 -- the three REAL-git-process tests below query THIS repo's own tracked
+// .gitignore via process.cwd() (no fixture dir; MEMORY.md/scripts/verify.mjs are the real
+// repo's own tracked paths). An ambient poisoned GIT_DIR would silently redirect the spawn
+// onto a DIFFERENT repo than the one the test's own assertions assume, so every one of them
+// still needs the strip -- the ceiling is this repo's own parent, matching verify.mjs's
+// production wiring for the identical call shape.
+const PC_TEST_GIT_ENV = gitEnv(path.dirname(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')));
 
 const OUR_ROOTS = new Set(['scripts', 'skills']);
 const IGNORED_ROOTS = new Set(['scratchpad', 'AGENTS.md']);
@@ -466,7 +477,7 @@ test('checkPointers: FIX 2 fallback also binds the gitignored-root branch (a rel
 // re-derive rather than trust a number carried in from elsewhere, per this room's own rail).
 
 test('classifyCheckIgnoreResult: a REAL git check-ignore --stdin exit 0 (something matched) is ok, stdout carries the match', () => {
-  const ci = spawnSync('git', ['check-ignore', '--stdin'], { encoding: 'utf8', input: 'MEMORY.md\n' });
+  const ci = spawnSync('git', ['check-ignore', '--stdin'], { encoding: 'utf8', input: 'MEMORY.md\n', env: PC_TEST_GIT_ENV });
   assert.equal(ci.status, 0, `fixture assumption broken -- MEMORY.md must be gitignored here, got status ${ci.status}`);
   const verdict = classifyCheckIgnoreResult(ci);
   assert.equal(verdict.ok, true);
@@ -474,7 +485,7 @@ test('classifyCheckIgnoreResult: a REAL git check-ignore --stdin exit 0 (somethi
 });
 
 test('classifyCheckIgnoreResult: a REAL git check-ignore --stdin exit 1 (nothing matched) is ALSO ok, per the exit-code semantics comment', () => {
-  const ci = spawnSync('git', ['check-ignore', '--stdin'], { encoding: 'utf8', input: 'scripts/verify.mjs\n' });
+  const ci = spawnSync('git', ['check-ignore', '--stdin'], { encoding: 'utf8', input: 'scripts/verify.mjs\n', env: PC_TEST_GIT_ENV });
   assert.equal(ci.status, 1, `fixture assumption broken -- scripts/verify.mjs must NOT be gitignored here, got status ${ci.status}`);
   const verdict = classifyCheckIgnoreResult(ci);
   assert.equal(verdict.ok, true);
@@ -486,7 +497,7 @@ test('classifyCheckIgnoreResult: a REAL git check-ignore --stdin exit other than
   // whose locale is not English, this line's own assertion below would fail even
   // though classification is correct. LC_ALL=C forces the untranslated message so
   // the test's OWN premise (not the code under test) is stable across locales.
-  const ci = spawnSync('git', ['check-ignore', '--stdin', '--bogus-flag-xyz'], { encoding: 'utf8', input: 'x\n', env: { ...process.env, LC_ALL: 'C' } });
+  const ci = spawnSync('git', ['check-ignore', '--stdin', '--bogus-flag-xyz'], { encoding: 'utf8', input: 'x\n', env: { ...PC_TEST_GIT_ENV, LC_ALL: 'C' } });
   assert.notEqual(ci.status, 0, `fixture assumption broken -- expected a non-0/1 exit, got ${ci.status}`);
   assert.notEqual(ci.status, 1, `fixture assumption broken -- expected a non-0/1 exit, got ${ci.status}`);
   const verdict = classifyCheckIgnoreResult(ci);
