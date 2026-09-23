@@ -287,7 +287,12 @@ test('verify.mjs pointer check: a REAL check-ignore derivation FAILURE reddens t
 test('verify.mjs: an ambient poisoned GIT_DIR never redirects this gate\'s own git spawns onto the wrong repo (never silently checks 0 citations)', (t) => {
   const decoyRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-verify-decoy-'));
   t.after(() => fs.rmSync(decoyRepo, { recursive: true, force: true }));
-  const decoyGit = (args) => spawnSync('git', args, { cwd: decoyRepo, encoding: 'utf8' });
+  // Findings-back (INSPECT HIGH-1): this fixture-bookkeeping spawn must never inherit
+  // ambient process.env either -- if this whole suite runs from a real linked worktree's
+  // pre-commit hook (which already exports its OWN ambient GIT_DIR before this test ever
+  // runs), an unguarded decoyGit() redirects onto the REAL enclosing repo instead of
+  // decoyRepo, committing "decoy baseline" + decoy-marker.md onto the user's own branch.
+  const decoyGit = (args) => spawnSync('git', args, { cwd: decoyRepo, encoding: 'utf8', env: gitEnv(path.dirname(decoyRepo)) });
   decoyGit(['init', '-q', '-b', 'main']);
   decoyGit(['config', 'user.email', 'test@test.invalid']);
   decoyGit(['config', 'user.name', 'Test']);

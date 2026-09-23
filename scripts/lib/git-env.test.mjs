@@ -67,18 +67,32 @@ test('gitEnv: a git init spawned with an ambient poisoned GIT_DIR corrupts the W
   const fixtureDir = path.join(root, 'fixture-target');
   fs.mkdirSync(poisonedRepo, { recursive: true });
   fs.mkdirSync(fixtureDir, { recursive: true });
-  const init = spawnSync('git', ['init', '-q', '.'], { cwd: poisonedRepo, encoding: 'utf8' });
+  // Findings-back (INSPECT HIGH-1): EVERY fixture spawn in this file -- including the setup
+  // and check spawns below, not only the deliberately-poisoned one -- routes through
+  // gitEnv(), never bare process.env. Without this, running this suite FROM a real linked
+  // worktree's own pre-commit hook (which already exports an ambient poisoned GIT_DIR before
+  // this test ever runs) redirects these "throwaway sandbox" spawns onto the REAL enclosing
+  // repository instead of poisonedRepo -- the exact incident this test exists to demonstrate,
+  // happening to the test's OWN fixture bookkeeping.
+  const init = spawnSync('git', ['init', '-q', '.'], { cwd: poisonedRepo, encoding: 'utf8', env: gitEnv(root) });
   assert.equal(init.status, 0, `setup: poisonedRepo must init cleanly -- ${init.stderr}`);
-  const bareBefore = spawnSync('git', ['config', '--get', 'core.bare'], { cwd: poisonedRepo, encoding: 'utf8' }).stdout.trim();
+  const bareBefore = spawnSync('git', ['config', '--get', 'core.bare'], { cwd: poisonedRepo, encoding: 'utf8', env: gitEnv(root) }).stdout.trim();
   assert.equal(bareBefore, 'false', 'setup: an ordinary git init starts non-bare');
 
   // RED (the ambient hazard, unguarded): GIT_DIR points at poisonedRepo's own .git, no
   // GIT_CEILING_DIRECTORIES imposed -- this is the shape a linked worktree's hook creates.
-  const poisonedEnv = { ...process.env, GIT_DIR: path.join(poisonedRepo, '.git') };
+  // Built from gitEnv() plus the planted GIT_DIR, never from a raw `{...process.env}` spread
+  // (findings-back, INSPECT HIGH-1): starting from process.env would let whatever else this
+  // OUTER process already has poisoned (a real wrapping hook's own GIT_INDEX_FILE etc.) leak
+  // into the fixture uncontrolled, compounding with the one poison this test deliberately
+  // plants. gitEnv() strips the whole GIT_* family first, so GIT_DIR below is the ONLY
+  // GIT_*-prefixed key in poisonedEnv -- GIT_CEILING_DIRECTORIES never suppresses an explicit
+  // GIT_DIR (git honors the explicit override regardless), so the incident still reproduces.
+  const poisonedEnv = { ...gitEnv(path.dirname(fixtureDir)), GIT_DIR: path.join(poisonedRepo, '.git') };
   const badInit = spawnSync('git', ['init', '-q', '.'], { cwd: fixtureDir, encoding: 'utf8', env: poisonedEnv });
   assert.equal(badInit.status, 0, `the poisoned init itself must succeed for this to be the real hazard -- ${badInit.stderr}`);
   assert.equal(fs.existsSync(path.join(fixtureDir, '.git')), false, 'the poisoned run never created the FIXTURE its caller asked for');
-  const bareAfterPoison = spawnSync('git', ['config', '--get', 'core.bare'], { cwd: poisonedRepo, encoding: 'utf8' }).stdout.trim();
+  const bareAfterPoison = spawnSync('git', ['config', '--get', 'core.bare'], { cwd: poisonedRepo, encoding: 'utf8', env: gitEnv(root) }).stdout.trim();
   assert.equal(bareAfterPoison, 'true', 'confirms the incident: the unrelated real repo was silently flipped to bare');
 
   // GREEN (gitEnv() applied): the SAME ambient poisoning attempt (this time on

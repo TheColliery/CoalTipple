@@ -565,6 +565,20 @@ try {
   else for (const p of bs.PLATFORMS) fail(`${p}: in PLATFORMS but buildPlatform was removed — restore it before adding a platform`);
 } catch (e) { fail(`cross-platform SKILL check: ${e.message}`); }
 
+// Findings-back (INSPECT HIGH-1) -- a cheap textual guard so the next unguarded git spawn
+// under scripts/ cannot land silently the way four sites already did before this check
+// existed (git-env.test.mjs / verify.test.mjs, fixed the same commit this check was added).
+// Detection logic lives in git-env-census.mjs (dynamically imported per node/runtime.md
+// section 1 -- this is a scripts/lib import inside the check that consumes it) and is unit-
+// tested there, red-first, with fixtures; this block only wires it into the gate.
+console.log('git spawn census (CWK-133/C-4 -- every git spawn under scripts/ must carry an explicit env:, never inherit ambient GIT_*):');
+try {
+  const { censusGitSpawns, collectScriptsMjs } = await import(pathToFileURL(path.join(repo, 'scripts', 'lib', 'git-env-census.mjs')).href);
+  const gitSpawnFindings = censusGitSpawns(collectScriptsMjs(repo));
+  if (gitSpawnFindings.length === 0) ok("every git spawn under scripts/ carries an explicit env:");
+  else gitSpawnFindings.forEach((m) => fail(m));
+} catch (e) { fail(`git spawn census: ${e.message}`); }
+
 console.log('plugin/ dist (the clean CC plugin vs source SSoT):');
 try {
   const { checkDist } = await import(pathToFileURL(path.join(repo, 'scripts', 'build-dist.mjs')).href);
