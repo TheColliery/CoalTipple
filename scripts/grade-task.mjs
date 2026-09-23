@@ -23,7 +23,14 @@ function parseArgs(argv) {
   const out = { prompt: '', files: [], sizeUnits: 0 };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === '--prompt') out.prompt = argv[++i] ?? '';
+    if (a === '--prompt') {
+      // PR24 #11 -- a flag-shaped next token (--prompt --size-units 5) used to be
+      // consumed AS the prompt text, silently swallowing --size-units and its own
+      // value; the same guard --file/--size-units already use below.
+      const next = argv[i + 1];
+      if (next === undefined || looksLikeFlag(next)) return { error: '--prompt needs a value' };
+      out.prompt = argv[++i];
+    }
     else if (a === '--file') {
       const next = argv[i + 1];
       if (next === undefined || looksLikeFlag(next)) return { error: '--file needs a value' };
