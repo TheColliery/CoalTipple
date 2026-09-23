@@ -34,7 +34,13 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
+      # PR24 #5 -- persist-credentials: false. This job never pushes (`contents: read`
+      # above, a pure read-and-scan gate) -- the checkout token has no legitimate use
+      # once the checkout completes, and leaving it in .git/config for the rest of the
+      # job widens the blast radius of anything else that runs in this job for no gain.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
@@ -78,20 +84,30 @@ jobs:
       # scanned-and-clean run) and stays regardless of which engine shape is on
       # the other side of it.
       #
-      # `|| true` ON THE ASSIGNMENT (r34 INSPECT LOW-2) -- without it the message above
-      # is UNREACHABLE under GitHub's own default shell (`bash -e {0}`): an empty scope
-      # means the LAST `grep -v` selects no line and exits 1 itself, `set -e` (the
-      # default, no `set -euo pipefail` in THIS step) aborts the run AT THE ASSIGNMENT,
-      # and the `if [ -z ]` guard below it never executes -- the run still fails closed
-      # (the property holds), but as a bare "Process completed with exit code 1" on the
-      # `files=` line with no `::error::` annotation naming the real cause, sending a
-      # reader hunting for a broken link that does not exist. `|| true` makes the
-      # PIPELINE's own exit status non-fatal so the GUARD is what fails and names it --
-      # verified both shapes directly, old unreachable / new reachable, before and after.
+      # PR24 #6 -- NUL-DELIMITED ARRAY, not a bare `$files` word-split. The prior
+      # `files=$(git ls-files ...)` + unquoted `$files` on the final invocation line
+      # relied on IFS word-splitting to turn the newline-separated list back into
+      # argv entries -- correct for an ordinary path, but a path containing a SPACE
+      # would silently split into two argv entries, and a path containing a glob
+      # metacharacter (`*`, `?`, `[`) would undergo pathname expansion against the
+      # CWD instead of being passed through literally. `git ls-files -z` + `grep -z`
+      # + `mapfile -d ''` carries every path through as one exact array element
+      # regardless of its bytes (verified locally: a planted "with space.md" lands as
+      # ONE array entry, not two).
+      #
+      # This also RETIRES the `|| true` the r34 INSPECT LOW-2 round added to the old
+      # `files=$(...)` assignment: that fix existed because a failing last-stage `grep
+      # -v` made the ASSIGNMENT itself the failing command under GitHub's default
+      # `bash -e {0}` shell, aborting the script before the `if [ -z "$files" ]` guard
+      # ever ran. `mapfile -d '' -t files < <(...)` reads from a PROCESS SUBSTITUTION,
+      # whose exit status `set -e` does not inspect -- verified directly (`set -e;
+      # mapfile -d '' -t x < <(printf 'a\0' | grep -z nomatch); echo reached` prints
+      # "reached", count 0) -- so the empty-array guard below is reachable natively,
+      # with no `|| true` needed to make it so.
       - run: |
-          files=$(git ls-files '*.md' | grep -v '^plugin/' | grep -v '^scripts/fixtures/' || true)
-          if [ -z "$files" ]; then
+          mapfile -d '' -t files < <(git ls-files -z '*.md' | grep -zv '^plugin/' | grep -zv '^scripts/fixtures/')
+          if [ ${#files[@]} -eq 0 ]; then
             echo "::error::link-check found NO markdown files to scan -- the scope filter is broken, not the tree"
             exit 1
           fi
-          node scripts/lib/link-check.mjs $files
+          node scripts/lib/link-check.mjs "${files[@]}"
