@@ -16,10 +16,20 @@ import { fileURLToPath } from 'node:url';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const VERIFY_ITEMS = ['skills', 'hooks', 'commands', 'platform-configs', '.claude-plugin', 'plugin', 'scripts', 'CHANGELOG.md'];
+// The four root docs config-keys.mjs declares as mandatory mdFiles/keyTables/
+// pointer-check surfaces (README/SECURITY/CONTRIBUTING/PRIVACY) -- board #64's own
+// VERIFY_ITEMS list omits them (that check never reads them), but PR24 #13 turned an
+// UNREADABLE declared surface into a hard FAIL, so a "pristine copy" that is missing
+// them is no longer pristine from config-keys.mjs's own point of view: it cannot tell
+// this test's deliberately-narrow fixture apart from a real repo that renamed/deleted
+// one of them. mkGitSandbox() below already copies the same four for the identical
+// reason (its own comment); this is that same fix applied to mkSandbox().
+const ROOT_DOCS = ['README.md', 'SECURITY.md', 'CONTRIBUTING.md', 'PRIVACY.md'];
 
 function mkSandbox() {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-verify-'));
   for (const item of VERIFY_ITEMS) fs.cpSync(path.join(repo, item), path.join(tmp, item), { recursive: true });
+  for (const f of ROOT_DOCS) fs.copyFileSync(path.join(repo, f), path.join(tmp, f));
   return tmp;
 }
 const runVerify = (tmp) => spawnSync(process.execPath, [path.join(tmp, 'scripts', 'verify.mjs')], { encoding: 'utf8', timeout: 60000 });
