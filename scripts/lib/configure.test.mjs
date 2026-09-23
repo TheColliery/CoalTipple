@@ -135,6 +135,25 @@ test('--help lists every schema key + documents the global/--project targets', (
   } finally { cleanup(p); }
 });
 
+test('PR24 #2: a trailing comment carrying a bare `}` never fools the append-new-key path into inserting INSIDE the comment', () => {
+  const p = freshProject();
+  try {
+    // The naive text.lastIndexOf('}') (the previous shape) selects the '}' inside this
+    // comment, not the real root closer three lines above it -- the append then lands
+    // inside the comment and writes malformed JSONC. `qualityBar` is a key this config
+    // does not have, forcing the append path (setKeyInText finds no existing line).
+    fs.mkdirSync(path.dirname(projectPath(p.dir)), { recursive: true });
+    fs.writeFileSync(projectPath(p.dir),
+      '{\n  "mode": "auto"\n}\n// a trailing note about a legacy shape { foo: 1 }\n', 'utf8');
+    const r = run(p, '--project', '--qualityBar', '77');
+    assert.equal(r.status, 0, r.stderr);
+    const raw = fs.readFileSync(projectPath(p.dir), 'utf8');
+    const parsed = stripJsonc(raw); // this helper both strips comments AND parses (see its own definition above)
+    assert.equal(parsed.qualityBar, 77, `the written file must still parse as valid JSONC with qualityBar set, got:\n${raw}`);
+    assert.equal(parsed.mode, 'auto', 'the pre-existing key must survive untouched');
+  } finally { cleanup(p); }
+});
+
 test('an existing config is edited in place; other keys + comments survive (project target)', () => {
   const p = freshProject();
   try {

@@ -175,6 +175,35 @@ function setKeyInText(text, key, jsonValue) {
   return result
 }
 
+// PR24 #2 -- locate the LAST '}' that is OUTSIDE any quoted string or JSONC comment: the
+// root object's own closing brace. A naive text.lastIndexOf('}') (the previous shape) can
+// select a brace inside a trailing line/block comment or inside a string value; the
+// append-new-key path below then inserts content into that comment/string and writes
+// malformed JSONC before parseConfig ever sees it again. Single left-to-right scan, the
+// same string/comment state machine setKeyInText's own suffix walker already uses,
+// generalized to the whole file. Because a JSONC config is one top-level object, the
+// LAST real '}' in the byte stream IS the root's own closer regardless of how many
+// nested objects it contains -- their own closers always come earlier in the stream.
+function findRootClose(text) {
+  let inStr = false, inLineComment = false, inBlockComment = false;
+  let lastClose = -1;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inLineComment) { if (ch === '\n') inLineComment = false; continue; }
+    if (inBlockComment) { if (ch === '*' && text[i + 1] === '/') { inBlockComment = false; i++; } continue; }
+    if (inStr) {
+      if (ch === '\\') { i++; continue; } // skip the escaped char
+      if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') { inStr = true; continue; }
+    if (ch === '/' && text[i + 1] === '/') { inLineComment = true; i++; continue; }
+    if (ch === '/' && text[i + 1] === '*') { inBlockComment = true; i++; continue; }
+    if (ch === '}') lastClose = i;
+  }
+  return lastClose;
+}
+
 function main() {
   const args = process.argv.slice(2);
   if (args.includes('--help') || args.includes('-h')) { printHelp(); return; }
@@ -270,12 +299,22 @@ function main() {
     const json = JSON.stringify(value);
     const replaced = setKeyInText(text, key, json);
     if (replaced !== null) { text = replaced; continue; }
-    const close = text.lastIndexOf('}');
+    const close = findRootClose(text);
     if (close === -1) { console.error('Error: config has no closing brace.'); process.exitCode = 1; return; }
     const before = text.slice(0, close).replace(/\s*$/, '');
     const lastChar = before.slice(-1);
     const needsComma = lastChar !== ',' && lastChar !== '{'; // a value precedes -> comma; empty object -> none
     text = `${before}${needsComma ? ',' : ''}\n  "${key}": ${json}\n${text.slice(close)}`;
+  }
+
+  // PR24 #2 -- validate the COMPLETE edited text before writing anything. setKeyInText
+  // already validates its own rewrite in isolation; the append path above had no
+  // equivalent check of its own output, so a bug in findRootClose (or a future one)
+  // could still write corrupt JSONC to disk undetected.
+  try {
+    parseConfig(text);
+  } catch (e) {
+    console.error(`Error: the edited config would not parse: ${e.message}`); process.exitCode = 1; return;
   }
 
   try {
