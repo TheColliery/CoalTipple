@@ -573,6 +573,43 @@ test('UMB-174(b) UNREADABLE: an existing file this process cannot read (EACCES/E
   }
 });
 
+// LOW-4 findings-back (INSPECT) -- the EACCES/EPERM test above proves only the POSIX
+// chmod-0o000 half (this box's own probe skips visibly on Windows, since chmod does not
+// gate reads the way POSIX mode bits do). The Windows ACL form -- `icacls <path> /deny
+// <user>:(R)`, which the reviewer proved by hand produces EPERM -- had no automated
+// coverage at all. Capability-probed with a visible skip, same convention as the test
+// above: an elevated/owner/TrustedInstaller context can bypass a deny ACE entirely, so this
+// never assumes the deny succeeded -- it PROVES readFileSync actually throws EPERM before
+// trusting the rest of the test.
+test('UMB-174(b) UNREADABLE: a file whose Windows ACL denies Read to this user (EPERM) is named, never silently treated as absent', (t) => {
+  if (process.platform !== 'win32') { t.skip('the Windows ACL (EPERM) form only applies on win32 -- covered by the chmod/EACCES test above on POSIX'); return; }
+  const p = proj(t, { [CANON]: { mode: 'auto' } });
+  const target = path.join(p.dir, ...CANON.split('/'));
+  const user = process.env.USERNAME || process.env.USER;
+  let capable = false;
+  if (user) {
+    const deny = spawnSync('icacls', [target, '/deny', `${user}:(R)`], { encoding: 'utf8' });
+    if (deny.status === 0) {
+      try { fs.readFileSync(target, 'utf8'); capable = false; }
+      catch (e) { capable = e.code === 'EPERM'; }
+    }
+  }
+  if (!capable) {
+    if (user) spawnSync('icacls', [target, '/reset'], { encoding: 'utf8' });
+    t.skip('cannot simulate an EPERM-denied file via icacls on this box/user (no icacls, or the deny ACE was bypassed -- an elevated/owner context can do this) -- capability-gated, not asserting a false pass');
+    return;
+  }
+  try {
+    const r = session(p);
+    assert.equal(r.status, 0); assert.equal(r.stderr, '');
+    const notice = lines(r.stdout, 'UNREADABLE');
+    assert.equal(notice.length, 1);
+    assert.ok(notice[0].includes('unreadable'), notice[0]);
+  } finally {
+    spawnSync('icacls', [target, '/reset'], { encoding: 'utf8' });
+  }
+});
+
 test('UMB-174(b) a BOM-prefixed VALID config is READ and applied, never reported as unreadable -- U+FEFF is stripped before classification', (t) => {
   const p = proj(t, { [CANON]: '﻿' + JSON.stringify({ language: 'th' }) });
   const r = session(p);
