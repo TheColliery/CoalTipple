@@ -248,8 +248,13 @@ test('verify.mjs pointer check: a REAL check-ignore derivation FAILURE reddens t
     const src = fs.readFileSync(verifyPath, 'utf8');
     const needle = "spawnSync('git', ['check-ignore', '--stdin'], { cwd: repo, encoding: 'utf8', input, env: REPO_GIT_ENV })";
     assert.ok(src.includes(needle), 'the check-ignore spawn line moved -- update this test\'s patch target');
+    // R7 CI-RED 3 -- the REPLACEMENT deliberately drops `input` (the `needle` above still pins
+    // the real production line, which keeps it): git rejects the unknown flag and exits 129
+    // before reading stdin, so a supplied `input` races git's exit and spawnSync can return
+    // `error: EPIPE` (status null) instead of the 129 asserted below -- same class as the
+    // pointer-check.test.mjs race removed in 82df6b4. Stdin is irrelevant to this branch.
     fs.writeFileSync(verifyPath, src.replace(needle,
-      "spawnSync('git', ['check-ignore', '--stdin', '--bogus-flag-xyz'], { cwd: repo, encoding: 'utf8', input, env: REPO_GIT_ENV })"), 'utf8');
+      "spawnSync('git', ['check-ignore', '--stdin', '--bogus-flag-xyz'], { cwd: repo, encoding: 'utf8', env: REPO_GIT_ENV })"), 'utf8');
 
     const r = runVerify(tmp);
     assert.equal(r.status, 1, `a real check-ignore derivation failure must FAIL the gate, got:\n${r.stdout}${r.stderr}`);
