@@ -29,6 +29,7 @@ import { fileURLToPath } from 'node:url';
 import { CONFIG_SCHEMA, validateValue } from './lib/config-schema.mjs';
 import { loadMergedConfig, globalConfigPath, projectConfigPath, projectWriteTarget, moveLegacyAside, writeConfigAtomic } from './lib/config-load.mjs';
 import { stripJsonc } from './lib/jsonc.mjs';
+import { escapeRegExp } from './lib/regex-escape.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const factoryCfg = path.join(repo, 'platform-configs', '.coaltipple.json');
@@ -139,7 +140,7 @@ function setKeyInText(text, key, jsonValue) {
   // We then dissect the suffix ourselves to separate value / comma / comment so that:
   //   - the trailing comma is PRESERVED AS-IS (never synthesised) — H1 fix
   //   - any trailing // comment is preserved verbatim — M6 fix
-  const re = new RegExp(`^(\\s*"${key}"\\s*:\\s*)([^\\n]*?)(\\s*)$`, 'm')
+  const re = new RegExp(`^(\\s*"${escapeRegExp(key)}"\\s*:\\s*)([^\\n]*?)(\\s*)$`, 'm')
   if (!re.test(text)) return null
   const result = text.replace(re, (_m, head, suffix, tail) => {
     // Walk the suffix char-by-char to find the first '//' outside a quoted string.

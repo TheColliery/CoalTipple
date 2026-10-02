@@ -14,6 +14,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gitEnv } from './lib/git-env.mjs';
+import { escapeRegExp } from './lib/regex-escape.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const VERIFY_ITEMS = ['skills', 'hooks', 'commands', 'platform-configs', '.claude-plugin', 'plugin', 'scripts', 'CHANGELOG.md'];
@@ -342,7 +343,7 @@ for (const [file, rel] of [['config-load.mjs', ['scripts', 'lib', 'config-load.m
         fs.writeFileSync(target, src.split(seg).join(seg.replace('.coaltipple.json', '.coaltipple.jsonX')), 'utf8');
         const r = runVerify(tmp);
         assert.equal(r.status, 1, 'a drifted legacy segment must FAIL the gate');
-        assert.match(r.stdout, new RegExp(`FAIL ${file.replace('.', '\\.')} lost .*${what}.*project-config path DRIFTED`), `the FAIL line names ${file} and ${what}:\n${r.stdout}`);
+        assert.match(r.stdout, new RegExp(`FAIL ${escapeRegExp(file)} lost .*${what}.*project-config path DRIFTED`), `the FAIL line names ${file} and ${what}:\n${r.stdout}`);
       } finally {
         fs.rmSync(tmp, { recursive: true, force: true });
       }
@@ -364,7 +365,7 @@ for (const file of ['configure.mjs', 'install.mjs']) {
       fs.writeFileSync(target, mutated, 'utf8');
       const r = runVerify(tmp);
       assert.equal(r.status, 1, 'a writer that stopped importing the shared helper must FAIL the gate');
-      assert.match(r.stdout, new RegExp(`FAIL ${file.replace('.', '\\.')} no longer imports projectWriteTarget`), `the FAIL line names ${file}:\n${r.stdout}`);
+      assert.match(r.stdout, new RegExp(`FAIL ${escapeRegExp(file)} no longer imports projectWriteTarget`), `the FAIL line names ${file}:\n${r.stdout}`);
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }

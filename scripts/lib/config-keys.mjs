@@ -135,6 +135,8 @@ export const BLIND_KEYS = {
 // widening to an enumerated walk is a real design change (CoalMine's own CWK-059 uses
 // one for its skills/ + hooks/ directories), out of this port's scope.
 
+import { escapeRegExp } from './regex-escape.mjs'; // R14: the one RegExp escape for a key interpolated into a pattern
+
 const NL = String.fromCharCode(10);
 const BS = String.fromCharCode(92); // a literal backslash, built not typed
 
@@ -495,8 +497,8 @@ export function checkConfigKeys({
 // not close this bound either -- prose can backtick a key name too.
 export function checkSchemaCompleteness({ schemaKeys, skillMdText, factoryText }) {
   const findings = [];
-  const seen = (text, k) => new RegExp(BS + 'b' + k + BS + 'b').test(text);
-  const factoryKeyShape = (text, k) => new RegExp('"' + k + '"' + BS + 's*:').test(text);
+  const seen = (text, k) => new RegExp(BS + 'b' + escapeRegExp(k) + BS + 'b').test(text);
+  const factoryKeyShape = (text, k) => new RegExp('"' + escapeRegExp(k) + '"' + BS + 's*:').test(text);
 
   const region = tableRegion(skillMdText, 'Config');
   if (region === null) {

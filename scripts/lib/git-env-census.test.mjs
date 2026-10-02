@@ -209,3 +209,14 @@ test('CWK-136 GREEN: the real gitEnv() is still recognised at a word boundary --
     assert.deepEqual(censusGitSpawns([{ rel: 'fixture.mjs', text }]), [], JSON.stringify(env));
   }
 });
+
+// R14 ALERT FIX (CodeQL js/incomplete-sanitization #40): the alias lookup builds a RegExp from the identifier
+// text; it now goes through the one shared escape. A `$`-named alias (legal JS) resolves, one hop, to its initializer.
+test('CWK-136: a $-named alias env resolves through the escaped declaration lookup (RED: `const $E = process.env; env: $E` is refused; a gitEnv() initializer is clean)', () => {
+  const bad = `const $E = process.env;\nspawnSync('${GIT}', ['init'], { env: $E });\n`;
+  const findings = censusGitSpawns([{ rel: 'fixture.mjs', text: bad }]);
+  assert.equal(findings.length, 1);
+  assert.match(findings[0], UNSAFE);
+  const good = `const $E = gitEnv(root);\nspawnSync('${GIT}', ['init'], { env: $E });\n`;
+  assert.deepEqual(censusGitSpawns([{ rel: 'fixture.mjs', text: good }]), []);
+});

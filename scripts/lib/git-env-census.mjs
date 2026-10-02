@@ -35,6 +35,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
+import { escapeRegExp } from './regex-escape.mjs';
 
 // BLOB-PINNED EXEMPTIONS (CWK-174, R14; the chief's order r14 section 6, rail 2; the way CoalMine,
 // CoalBoard and CoalLedger answered it). The house secret scan is a BYTE-EQUAL canon copy (the
@@ -121,7 +122,7 @@ function holdsUnstrippedProcessEnv(expr, fileText, hop = 0) {
   if (PROCESS_ENV_RE.test(rest)) return true;
   const name = rest.trim();
   if (hop === 0 && /^[A-Za-z_$][\w$]*$/.test(name)) {
-    const decl = new RegExp(`\\b(?:const|let|var)\\s+${name.replace(/\$/g, '\\$')}\\s*=\\s*`).exec(fileText);
+    const decl = new RegExp(`\\b(?:const|let|var)\\s+${escapeRegExp(name)}\\s*=\\s*`).exec(fileText);
     if (decl) return holdsUnstrippedProcessEnv(readExpr(fileText, decl.index + decl[0].length, true), fileText, 1);
   }
   return false;

@@ -39,6 +39,7 @@ const TESTS = [
   'scripts/release-notes.test.mjs',
   'scripts/verify-release-shape.test.mjs',
   'scripts/lib/release-shape.test.mjs',
+  'scripts/lib/regex-escape.test.mjs',
 ];
 
 const missing = TESTS.filter((t) => !fs.existsSync(path.join(repo, t)));
