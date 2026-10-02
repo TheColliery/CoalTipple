@@ -2,7 +2,7 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
-## [1.8.0] - 2026-10-02
+## [1.7.1] - 2026-10-02
 
 A junk config value can no longer re-arm a setting you turned off, and the config notice now names the file it actually read.
 
@@ -12,7 +12,7 @@ A junk config value can no longer re-arm a setting you turned off, and the confi
 - The routing contract and the skill text no longer give a versioned model example; the same-tier step is described by tier only. The skill's page title is now `CoalTipple`.
 
 ### Fixed
-- A project config value outside the allowed set for `mode` or `updateMode` (a typo, a number, `null`, an object, an empty string) no longer wins through the merge when the global config says `off`. An unknown project value is now read as absent (the global value applies), an unknown global value as its schema default, and only the canonical value is ever used. Before this, a project `updateMode: "junk"` under a global `updateMode: "off"` brought back the self-update question, and a project `mode: "junk"` under a global `mode: "off"` re-armed routing; `configure.mjs --list` and `grade-task.mjs` read the same wrong merged value.
+- A project config value outside the allowed set for `mode` or `updateMode` (a typo, a number, `null`, an object, an empty string) no longer wins through the merge when the global config says `off`. An unknown project value is now read as absent (the global value applies), an unknown global value as its schema default, and only the canonical value is ever used. Before this, a project `updateMode: "junk"` under a global `updateMode: "off"` brought back the self-update question, and a project `mode: "junk"` under a global `mode: "off"` re-armed routing; `configure.mjs --list` and `grade-task.mjs` read the same wrong merged value. The skill's own instructions for merging the config by hand carry the same rule in prose (a value outside the allowed set counts as absent in a project file and as the schema default in your global file), so a manual `/coaltipple` run follows it too.
 
 ## [1.7.0] - 2026-09-23
 
