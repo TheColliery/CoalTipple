@@ -14,11 +14,19 @@
 // keys process.env already put there. An identifier env (`env: E`) is resolved ONE hop to its
 // `const|let|var E =` initializer in the same file.
 //
-// THE NAMED CEILING (a textual census, not a JS parser; it errs only toward silence): an
-// identifier it cannot resolve in the same file (a parameter, an import) is not guessed at, a
-// second hop (`const A = B`) is not followed, and a `//` inside an earlier string on the
-// spawn's own line hides that call. What proves the env SAFE is gitEnv()'s own test; this
-// proves nothing NEW can land the two shapes the room has actually met.
+// THE NAMED CEILING (a textual census, not a JS parser; it errs only toward silence). These
+// shapes PASS the census silently, measured by INSPECT's probe (R14, LOW-2):
+//   1. an identifier it cannot resolve in the same file (a parameter, an import);
+//   2. a second hop (`const A = process.env; const B = A; env: B`);
+//   3. a non-stripping helper call whose body returns process.env (`env: mk()`): only the
+//      NAME gitEnv is trusted, never what a helper does, and a local helper that happens to be
+//      called gitEnv is trusted by name (secret-gate.mjs ships its own);
+//   4. bracket access to the env object (`env: process['env']`), which PROCESS_ENV_RE misses;
+//   5. destructuring (`const { env } = process; ... env: env`);
+//   6. a `//` inside an earlier string on the spawn's own line hides that call.
+// (A name that merely ENDS in gitEnv, e.g. rawgitEnv(process.env), is NOT in this list: the call
+// is matched at an identifier boundary and the census refuses it.) What proves the env SAFE is
+// gitEnv()'s own test; this proves nothing NEW can land the shapes the room has actually met.
 //
 // scanGitSpawns() is pure (a fixture map in, { findings, files, calls, safe } out) so it is
 // unit-tested directly, red-first, without a repo clone; censusGitSpawns() is its findings-only
@@ -53,6 +61,7 @@ export function gitBlobId(text) {
 
 const CALL_RE = /(spawnSync|execFileSync)\(\s*['"]git['"]/g;
 const ENV_KEY_RE = /\benv\s*:/;
+const GIT_ENV_CALL_RE = /(?<![\w$])gitEnv\(/; // not global: the loop re-runs it on the shortened string
 const PROCESS_ENV_RE = /\bprocess\s*\.\s*env\b/;
 
 // A match on the same line as an EARLIER `//` is inside a line comment -- skip it. This is
@@ -94,11 +103,13 @@ function readExpr(text, from, stopAtSemi = false) {
 // `expr` with every gitEnv(...) call removed (balanced), so process.env inside gitEnv()'s own
 // ARGUMENT is not mistaken for the env value, while a process.env spread beside it still shows.
 function withoutGitEnvCalls(expr) {
+  // The call starts at an identifier boundary (INSPECT LOW-2): rawgitEnv( / notgitEnv( / x$gitEnv( are
+  // other helpers, not this room's, and their process.env argument must stay visible.
   let s = expr;
-  for (let at = s.indexOf('gitEnv('); at !== -1; at = s.indexOf('gitEnv(')) {
-    const close = findMatchingClose(s, at + 'gitEnv'.length);
-    if (close === -1) return s.slice(0, at);
-    s = s.slice(0, at) + s.slice(close + 1);
+  for (let m = GIT_ENV_CALL_RE.exec(s); m; m = GIT_ENV_CALL_RE.exec(s)) {
+    const close = findMatchingClose(s, m.index + 'gitEnv'.length);
+    if (close === -1) return s.slice(0, m.index);
+    s = s.slice(0, m.index) + s.slice(close + 1);
   }
   return s;
 }

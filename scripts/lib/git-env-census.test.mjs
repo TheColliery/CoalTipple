@@ -190,3 +190,22 @@ test('CWK-174: every shipped CENSUS_EXEMPT row is LIVE (its file exists with the
     assert.match(row.why, /DELETE when the canon fix lands/);
   }
 });
+
+// R14 BOUNCE 1 (INSPECT LOW-2): withoutGitEnvCalls() matched the bare substring `gitEnv(`, so a helper
+// whose name merely ENDS in gitEnv (rawgitEnv, notgitEnv) was stripped as if it were the real one and its
+// process.env argument vanished with it. The call must start at a word boundary.
+test('CWK-136 RED: a helper whose name only ENDS in gitEnv (rawgitEnv(process.env)) is NOT the stripping helper', () => {
+  for (const name of ['rawgitEnv', 'notgitEnv', 'my_gitEnv', 'x$gitEnv']) {
+    const text = `spawnSync('${GIT}', ['status'], { cwd: d, env: ${name}(process.env) });`;
+    const findings = censusGitSpawns([{ rel: 'fixture.mjs', text }]);
+    assert.equal(findings.length, 1, name);
+    assert.match(findings[0], UNSAFE, name);
+  }
+});
+
+test('CWK-136 GREEN: the real gitEnv() is still recognised at a word boundary -- after a spread, a paren, a comma, a space and a newline', () => {
+  for (const env of ['{ ...gitEnv(r) }', '(gitEnv(r))', '{ a: 1, ...gitEnv(r) }', ' gitEnv(r)', '\n gitEnv(r)']) {
+    const text = `spawnSync('${GIT}', ['status'], { cwd: d, env:${env} });`;
+    assert.deepEqual(censusGitSpawns([{ rel: 'fixture.mjs', text }]), [], JSON.stringify(env));
+  }
+});
