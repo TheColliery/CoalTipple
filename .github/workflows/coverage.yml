@@ -46,12 +46,16 @@ jobs:
   coverage:
     name: coverage (report only)
     runs-on: ubuntu-latest
+    timeout-minutes: 10 # testing.md: every run has a finite clock. Basis (CWK-154, 2026-10-02, REST, last 8 successful runs): job max 0.4 min
     permissions:
       contents: read
       code-quality: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # This job pushes nothing, so the workflow token has no business staying in .git/config for the
+          # rest of the job, readable by every later step (SKILL-REPO-PATTERN.md, Layer 5).
+          persist-credentials: false
           # The PR HEAD commit, not the merge commit, so coverage line numbers map onto the diff.
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Set up Node (skips cleanly until scripts/test.mjs exists)

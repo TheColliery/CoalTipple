@@ -33,6 +33,7 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 10 # testing.md: every run has a finite clock. Basis (CWK-154, 2026-10-02, REST, last 6 successful runs): job max 0.2 min
     steps:
       # PR24 #5 -- persist-credentials: false. This job never pushes (`contents: read`
       # above, a pure read-and-scan gate) -- the checkout token has no legitimate use

@@ -35,6 +35,7 @@ jobs:
   analysis:
     name: Scorecard analysis
     runs-on: ubuntu-latest
+    timeout-minutes: 10 # testing.md: every run has a finite clock. Basis (CWK-154, 2026-10-02, REST, last 8 successful runs): job max 0.6 min
     permissions:
       security-events: write
       id-token: write
