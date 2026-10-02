@@ -27,7 +27,9 @@ Not the cheapest router by claimed savings—a cross-provider or empirical route
 
 [Benchmark](https://github.com/TheColliery/.github/tree/main/benchmarks/CoalTipple) · [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md) · [Security](SECURITY.md) · [Privacy](PRIVACY.md) · [Releases](https://github.com/TheColliery/CoalTipple/releases)
 
-**Part of [TheColliery](https://github.com/TheColliery)**—siblings: **[CoalMine](https://github.com/TheColliery/CoalMine)** (quality canaries) · **[CoalBoard](https://github.com/TheColliery/CoalBoard)** (consensus & debate board) · **[CoalHearth](https://github.com/TheColliery/CoalHearth)** (session warm-resume) · **[CoalFace](https://github.com/TheColliery/CoalFace)** (fan-out discipline) · **[CoalWash](https://github.com/TheColliery/CoalWash)** (memory defrag) · **[CoalLedger](https://github.com/TheColliery/CoalLedger)** (docs health).
+**Docs:** [thecolliery.gitbook.io/thecolliery-docs/tools/coaltipple](https://thecolliery.gitbook.io/thecolliery-docs/tools/coaltipple) *(publishing soon)*
+
+**Part of [TheColliery](https://github.com/TheColliery)**—siblings: **[CoalMine](https://github.com/TheColliery/CoalMine)** (quality canaries) · **[CoalBoard](https://github.com/TheColliery/CoalBoard)** (consensus & debate board) · **[CoalHearth](https://github.com/TheColliery/CoalHearth)** (session warm-resume) · **[CoalFace](https://github.com/TheColliery/CoalFace)** (fan-out discipline) · **[CoalWash](https://github.com/TheColliery/CoalWash)** (memory defrag) · **[CoalLedger](https://github.com/TheColliery/CoalLedger)** (docs health) · **[CoalGob](https://github.com/TheColliery/CoalGob)** (OS-trash delete guard, PUBLIC BETA v0.1.0-beta.1).
 
 </div>
 
@@ -82,7 +84,7 @@ claude plugin install coaltipple@coaltipple
 # Restart Claude Code to load the /coaltipple commands (stats | off | memory | update)
 ```
 
-Optional per-project config override, first-found wins: `<project>/.claude/coal/coaltipple.json` → `.agents/coal/coaltipple.json` → `.gemini/coal/coaltipple.json` → legacy `.claude/.coaltipple.json`.
+Optional per-project config override, first-found wins: `<project>/.claude/coal/coaltipple.json` → `.agents/coal/coaltipple.json` → `.gemini/coal/coaltipple.json` → two deprecated legacy paths (`.claude/.coaltipple.json`, then `.coaltipple.json` at the git root; see Configure below).
 
 ### Other platforms — no install (routing cannot actuate)
 
@@ -174,7 +176,7 @@ Workers start context-fresh. A **memory anchor** file gives a fresh worker proje
 
 ## 🧪 Try it
 
-Three real prompts, put through the shipped grader so nothing below is invented—`node scripts/grade-task.mjs --prompt "<text>" [--size-units N]` prints only `grade()`'s own verdict (JSON), advisory-only, and never touches effort or a routing decision:
+Three real prompts, put through the shipped grader so nothing below is invented—`node scripts/grade-task.mjs --prompt "<text>" [--size-units N]` prints `grade()`'s own verdict as JSON, plus the `suggestedModel`/`modelSource` metadata read from the local ranking—advisory-only, and never touches effort or a routing decision:
 
 | Prompt | Command | Output |
 |---|---|---|
@@ -190,7 +192,7 @@ The grader only decides the *starting* tier from the prompt text—everything pa
 
 ## ⚙️ Configure
 
-Everything is tunable in `.coaltipple.json`—a global `~/.claude/.coaltipple.json` overlaid per key by the first-found project config (`<gitroot>/.claude/coal/coaltipple.json` → `.agents/coal/coaltipple.json` → `.gemini/coal/coaltipple.json` → legacy `.claude/.coaltipple.json`; project wins), so you can **tune or shut off a globally-installed skill per project** (off-switch: `enableRouting: false`)—a skill you don't need in a given project stops loading (and burning tokens) there. Ships zero-config with optimal defaults. The high-impact keys:
+Everything is tunable in `.coaltipple.json`—a global `~/.claude/.coaltipple.json` overlaid per key by the first-found project config (`<gitroot>/.claude/coal/coaltipple.json` → `.agents/coal/coaltipple.json` → `.gemini/coal/coaltipple.json` → deprecated `.claude/.coaltipple.json` → deprecated `.coaltipple.json`; project wins), so you can **tune or shut off a globally-installed skill per project** (off-switch: `enableRouting: false`)—a skill you don't need in a given project stops loading (and burning tokens) there. Ships zero-config with optimal defaults. The high-impact keys:
 
 | Key | Default | What it does |
 |---|---|---|
@@ -203,12 +205,14 @@ Everything is tunable in `.coaltipple.json`—a global `~/.claude/.coaltipple.js
 
 Full key reference: every key + default lives in [`scripts/lib/config-schema.mjs`](scripts/lib/config-schema.mjs) and the commented template [`platform-configs/.coaltipple.json`](platform-configs/.coaltipple.json)—or run `node scripts/configure.mjs --help`.
 
+**Deprecated project-config paths.** `<gitroot>/.claude/.coaltipple.json` and `<gitroot>/.coaltipple.json` are still read (in that order, after the three canonical paths), so nothing that worked stops working, but both are deprecated. Move the file to `<gitroot>/.claude/coal/coaltipple.json`, or run `node scripts/configure.mjs --project <key> <value>`, which writes the canonical file (seeded from the legacy one when it does not exist yet). **A legacy file the tool did not read is never deleted:** it is renamed aside to `<path>.superseded` (numbered on a collision) with its contents kept, so a mistake costs a rename, not a file, and only the one legacy file it read as the seed is removed; each path removed or moved is printed, and a `.superseded` file is yours to delete. `node scripts/install.mjs --reset` likewise writes the canonical file, never a legacy path, and renames every legacy file aside. **Window:** deprecated as of 1.6.0 (a MINOR release), removable no sooner than the next MAJOR release, never on a calendar. **Owner of the migration:** this repo (CoalTipple). **Where you are told:** here and in the [CHANGELOG](CHANGELOG.md)'s `### Deprecated` entry, plus one runtime line: when a legacy file is the one that was read, the conductor's session-start message carries a single `LEGACY:` note, and a config sitting at a path CoalTipple never reads (ten fixed near-miss spots under the git root, no directory crawl) is named with an `IGNORED:` line instead of being silently skipped. **A candidate that exists but cannot be read as a config at all**—malformed JSON, a directory, a permissions error, or valid JSON that is not an object—gets a third line naming why: `UNREADABLE: <path> exists but is not a readable config (<reason>); it was skipped — canonical = .claude/coal/coaltipple.json`; the global config (`~/.claude/.coaltipple.json`, or the same file under `CLAUDE_CONFIG_DIR`) is checked and reported independently of the project one, and its line ends `canonical = <that file's own path>` instead of the project path, because the global tier has no project canonical location. **All three lines—`LEGACY`, `IGNORED`, `UNREADABLE`—appear at session start only, never per prompt, and not at all while routing is off.** **No louder warning is coming:** the hook may speak only through three sanctioned surfaces (Phoenix Commandment #13), and the session-start context is one of them; a stderr warning or console nag is not, so it does not exist.
+
 ---
 
 ## 🔧 Troubleshooting
 
 * **First check:** is routing running at all? `enableRouting: false` (global or project) turns it off entirely; `/coaltipple off` turns it off for just this session.
-* **State lives in files you can read** (same paths [Privacy](PRIVACY.md) documents): the config—`~/.claude/.coaltipple.json`, overlaid by the first-found of `<gitroot>/.claude/coal/coaltipple.json` → `.agents/coal/coaltipple.json` → `.gemini/coal/coaltipple.json` → legacy `<gitroot>/.claude/.coaltipple.json`—and the model ranking at `~/.claude/coal/coaltipple/ranking.json`. A missing or broken ranking is rebuilt on the spot from the alias floor; only if it genuinely cannot be built does routing go off (see [The Lock](#-the-lock--safe-routing-states)).
+* **State lives in files you can read** (same paths [Privacy](PRIVACY.md) documents): the config—`~/.claude/.coaltipple.json`, overlaid by the first-found of `<gitroot>/.claude/coal/coaltipple.json` → `.agents/coal/coaltipple.json` → `.gemini/coal/coaltipple.json` → the two deprecated legacy paths (see Configure)—and the model ranking at `~/.claude/coal/coaltipple/ranking.json`. A missing or broken ranking is rebuilt on the spot from the alias floor; only if it genuinely cannot be built does routing go off (see [The Lock](#-the-lock--safe-routing-states)).
 * **A worker spawn failing** falls to the next available tier on its own (see [Damage Control](#damage-control))—no action needed unless every tier is unavailable, in which case the route hands back.
 
 ## 🗑️ Uninstall
@@ -254,7 +258,7 @@ Full harnesses, per-task scoring, the quality-vs-tier matrix, routing-savings hi
 
 ## 🧭 Part of TheColliery
 
-CoalTipple is the series' model/effort router, and it shares its engineering doctrine with six siblings:
+CoalTipple is the series' model/effort router, and it shares its engineering doctrine with seven siblings:
 
 * [CoalMine](https://github.com/TheColliery/CoalMine)—quality canaries
 * [CoalBoard](https://github.com/TheColliery/CoalBoard)—consensus & debate board
@@ -262,6 +266,7 @@ CoalTipple is the series' model/effort router, and it shares its engineering doc
 * [CoalFace](https://github.com/TheColliery/CoalFace)—fan-out discipline
 * [CoalWash](https://github.com/TheColliery/CoalWash)—memory defrag
 * [CoalLedger](https://github.com/TheColliery/CoalLedger)—docs health
+* [CoalGob](https://github.com/TheColliery/CoalGob)—OS-trash delete guard (PUBLIC BETA v0.1.0-beta.1)
 
 Install one, it stands alone; install all, they compose without conflict.
 

@@ -62,6 +62,18 @@ test('board #44 F1 (same exposure, --size-units): a flag-shaped next token error
   } finally { fs.rmSync(home, { recursive: true, force: true }); }
 });
 
+test('PR24 #11: --prompt followed by a flag-shaped token errors loud instead of grading the flag text itself', () => {
+  const home = freshHome();
+  try {
+    // BEFORE the fix this produced prompt:"--size-units" and sizeUnits:0 (the real
+    // --size-units 5 value dropped entirely) -- the same board #44 F1 exposure that
+    // --file and --size-units were already guarded against, missed on --prompt.
+    const r = run(home, '--prompt', '--size-units', '5');
+    assert.notEqual(r.status, 0, 'a flag-shaped next token after --prompt must fail loud, not silently consume it');
+    assert.match(r.stderr, /--prompt needs a value/);
+  } finally { fs.rmSync(home, { recursive: true, force: true }); }
+});
+
 test('--size-units given a non-numeric value (not flag-shaped) still errors loud rather than silently coercing to 0', () => {
   const home = freshHome();
   try {

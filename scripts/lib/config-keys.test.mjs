@@ -6,6 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   checkConfigKeys, checkSchemaCompleteness, NOTICE_SITES, KEY_TABLES,
   PENDING_KEYS, NOT_CONFIG, BLIND_KEYS, RETIRED_KEYS,
@@ -92,6 +93,32 @@ test('BOUNDED TABLE: a row outside the named heading is NOT scanned', () => {
   });
   assert.deepEqual(findLevel(findings, 'FAIL'), []);
   assert.equal(coverage.keyTables[0].rows, 1, 'only the Configure-section row should be counted');
+});
+
+test('PR24 #13: an unreadable declared MARKDOWN surface is a hard FAIL, not just the aggregate declaration-pruning SKIP', () => {
+  const files = { 'a.md': 'the `enableRouting` switch.' }; // b.md deliberately absent -> fixtureRead throws
+  const { findings, coverage } = checkConfigKeys({
+    schemaKeys: SCHEMA, mdFiles: ['a.md', 'b.md'], noticeSites: [], keyTables: [],
+    read: fixtureRead(files), notConfig: {}, retired: {},
+  });
+  const f = findLevel(findings, 'FAIL').find((x) => x.msg.includes('b.md') && x.msg.includes('could not be read'));
+  assert.ok(f, 'an unreadable declared mdFiles entry must FAIL loud, not only feed the aggregate SKIP');
+  assert.equal(coverage.mdFiles.find((c) => c.file === 'b.md').readable, false, 'coverage still records readable:false (unchanged)');
+  const pruningSkip = findLevel(findings, 'SKIP').find((s) => s.msg.startsWith('declaration-pruning not checked'));
+  assert.ok(pruningSkip && pruningSkip.msg.includes('b.md'), 'the existing declaration-pruning SKIP is preserved alongside the new FAIL');
+});
+
+test('PR24 #13: an unreadable declared KEY-TABLE surface is a hard FAIL, not just the aggregate declaration-pruning SKIP', () => {
+  const { findings, coverage } = checkConfigKeys({
+    schemaKeys: SCHEMA, mdFiles: [], noticeSites: [], read: fixtureRead({}), // r.md absent -> throws
+    keyTables: [{ file: 'r.md', heading: 'Configure' }],
+    notConfig: {}, retired: {},
+  });
+  const f = findLevel(findings, 'FAIL').find((x) => x.msg.includes('r.md') && x.msg.includes('could not be read'));
+  assert.ok(f, 'an unreadable declared keyTables entry must FAIL loud, not only feed the aggregate SKIP');
+  assert.equal(coverage.keyTables[0].readable, false, 'coverage still records readable:false (unchanged)');
+  const pruningSkip = findLevel(findings, 'SKIP').find((s) => s.msg.startsWith('declaration-pruning not checked'));
+  assert.ok(pruningSkip && pruningSkip.msg.includes('r.md'));
 });
 
 test('KEY TABLE, heading absent: locator FAILS LOUDLY, never a silent zero-row pass (Hard Rule 1 -- INSPECT HIGH-1, CWK-060 findings-back)', () => {
@@ -236,12 +263,18 @@ test('SELF-CLEANING RULE 2 is EXEMPT for RETIRED_KEYS -- an unmentioned retireme
   assert.deepEqual(findLevel(findings, 'FAIL'), []);
 });
 
-test('SELF-CLEANING RULE 2 degrades to a SKIP, never a false FAIL, when the scan is PARTIAL (an unreadable surface)', () => {
+test('SELF-CLEANING RULE 2 degrades to a SKIP, never a false FAIL FOR THE PENDING KEY ITSELF, when the scan is PARTIAL (an unreadable surface)', () => {
+  // PR24 #13 changed what "never a false FAIL" scopes to: an unreadable DECLARED
+  // surface is now its own hard FAIL (see the two PR24 #13 tests above) -- what this
+  // test actually guards is narrower and still true after that fix: rule 2 (an unmentioned
+  // PENDING_KEYS entry is dead weight) must NOT also fire just because the scan that
+  // would have proven it dead was partial. `ghostKey` never appears in any FAIL.
   const { findings } = checkConfigKeys({
     schemaKeys: SCHEMA, mdFiles: ['missing.md'], noticeSites: [], keyTables: [],
     read: fixtureRead({}), pending: { ghostKey: 'ticket #0' },
   });
-  assert.deepEqual(findLevel(findings, 'FAIL'), []);
+  assert.deepEqual(findLevel(findings, 'FAIL').filter((f) => f.msg.includes('ghostKey')), []);
+  assert.ok(findLevel(findings, 'FAIL').some((f) => f.msg.includes('missing.md') && f.msg.includes('could not be read')));
   assert.ok(findLevel(findings, 'SKIP').some((f) => f.msg.includes('declaration-pruning not checked')));
 });
 
@@ -367,7 +400,11 @@ test('checkSchemaCompleteness: heading absent entirely FAILS LOUDLY (Hard Rule 1
 
 // ---- integration: the REAL repo, no fixture ----
 
-const repo = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..', '..');
+// PR24 #14 -- new URL(...).pathname is percent-encoded (a checkout path with a space or a
+// non-ASCII char keeps its %20 escapes and every fs.readFileSync below throws ENOENT);
+// fileURLToPath decodes them and strips the Windows drive prefix, matching the same
+// cohort's own configure.test.mjs / verify.test.mjs.
+const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const CONFIG_SCHEMA_KEYS = () => {
   // dynamic import kept local to this block -- avoids paying config-schema.mjs's own
   // load cost for the fixture-driven tests above, which need none of it.
@@ -392,7 +429,7 @@ test('INTEGRATION: schema key count is 24, and BLIND_KEYS/NOT_CONFIG/RETIRED_KEY
   const schemaKeys = await CONFIG_SCHEMA_KEYS();
   assert.equal(schemaKeys.length, 24);
   assert.deepEqual(Object.keys(BLIND_KEYS).sort(), ['keywords', 'language', 'mode']);
-  assert.equal(Object.keys(NOT_CONFIG).length, 8);
+  assert.equal(Object.keys(NOT_CONFIG).length, 10);
   assert.equal(Object.keys(RETIRED_KEYS).length, 6);
 });
 

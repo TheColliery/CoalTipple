@@ -8,7 +8,15 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { loadMergedConfig, globalConfigPath, globalStateDir, oldGlobalStateDir, projectConfigPath, projectConfigCandidates, projectStateDir, claudeBaseDir, findGitRoot } from './config-load.mjs';
+import { loadMergedConfig, globalConfigPath, globalStateDir, oldGlobalStateDir, projectConfigPath, projectConfigCandidates, projectLegacyPaths, projectWriteTarget, moveLegacyAside, writeConfigAtomic, projectStateDir, claudeBaseDir, findGitRoot } from './config-load.mjs';
+
+// PR24 #3 -- claudeBaseDir() honors an ambient CLAUDE_CONFIG_DIR and IGNORES the
+// `home` argument entirely when it is set (config-load.mjs's own claudeBaseDir()),
+// so every sandbox() below silently wrote to the REAL machine config on any box
+// that has CLAUDE_CONFIG_DIR set. The dedicated test at line ~240 below already
+// sets/restores it deliberately (its own property under test) and is left alone;
+// every OTHER test in this file must never see it.
+delete process.env.CLAUDE_CONFIG_DIR;
 
 // Build a sandbox with optional global/project file bodies; returns { home, cwd }.
 function sandbox({ global, project } = {}) {
@@ -237,6 +245,38 @@ test('safer-value-wins clamp is case-insensitive (a project "AUTO" must not evad
   try { assert.equal(loadMergedConfig(s).mode, 'off'); } finally { cleanup(s); }
 });
 
+// R14, the CB-R1 class check (CoalBoard 0a4163b is the exemplar; the shipped conductor carries the
+// same fix, pinned in conductor.test.mjs). An UNKNOWN project value in a clamped key -- not in the
+// enum, or not even a string -- reads as ABSENT: the effective global wins, and the merged value is
+// the canonical enum literal, never the attacker's string (`configure --list` prints this object).
+test('CB-R1 class: a JUNK project mode/updateMode under a global off reads as ABSENT -- the global off wins (the old `continue` let the junk through the shallow merge)', () => {
+  for (const key of ['mode', 'updateMode']) {
+    for (const junk of ['junk', 'definitely-not-a-mode', 5, null, ['off'], {}, '']) {
+      const s = sandbox({ global: JSON.stringify({ [key]: 'off' }), project: JSON.stringify({ [key]: junk }) });
+      try { assert.equal(loadMergedConfig(s)[key], 'off', `${key}: ${JSON.stringify(junk)} must not beat a global off`); } finally { cleanup(s); }
+    }
+  }
+});
+
+test('CB-R1 class: a JUNK project value with NO global falls to the SCHEMA DEFAULT literal, never the raw string', () => {
+  const s = sandbox({ project: JSON.stringify({ mode: 'junk<script>', updateMode: 'junk<script>' }) });
+  try {
+    const cfg = loadMergedConfig(s);
+    assert.equal(cfg.mode, 'auto');
+    assert.equal(cfg.updateMode, 'ask');
+  } finally { cleanup(s); }
+});
+
+test('CB-R1 class: a JUNK GLOBAL value reads as the schema default -- a project auto may not escalate past a typo\'d global', () => {
+  const s = sandbox({ global: JSON.stringify({ updateMode: 'of' }), project: JSON.stringify({ updateMode: 'auto' }) });
+  try { assert.equal(loadMergedConfig(s).updateMode, 'ask'); } finally { cleanup(s); }
+});
+
+test('CB-R1 class: the merged value is the CANONICAL literal (a case-folded project REMIND under a global ask merges as remind)', () => {
+  const s = sandbox({ global: JSON.stringify({ updateMode: 'ask' }), project: JSON.stringify({ updateMode: 'REMIND' }) });
+  try { assert.equal(loadMergedConfig(s).updateMode, 'remind'); } finally { cleanup(s); }
+});
+
 test('CLAUDE_CONFIG_DIR redirects the GLOBAL paths (#6); comma-list -> first entry; project paths unaffected', () => {
   const saved = process.env.CLAUDE_CONFIG_DIR;
   try {
@@ -268,16 +308,71 @@ test('CLAUDE_CONFIG_DIR redirects the GLOBAL paths (#6); comma-list -> first ent
 // see projectConfigPath's own header comment for the full rail wording.
 // ---------------------------------------------------------------------------
 
-test('projectConfigCandidates: the rail order is .claude -> .agents -> .gemini -> LEGACY, always relative to the resolved git root', () => {
+test('projectConfigCandidates: the rail order is .claude -> .agents -> .gemini -> LEGACY-1 -> LEGACY-2, always relative to the resolved git root', () => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-proj-'));
   try {
     assert.deepEqual(projectConfigCandidates(cwd), [
       path.join(cwd, '.claude', 'coal', 'coaltipple.json'),
       path.join(cwd, '.agents', 'coal', 'coaltipple.json'),
       path.join(cwd, '.gemini', 'coal', 'coaltipple.json'),
-      path.join(cwd, '.claude', '.coaltipple.json'),
+      path.join(cwd, '.claude', '.coaltipple.json'), // LEGACY-1
+      path.join(cwd, '.coaltipple.json'), // LEGACY-2 (UMB-133): the bare root dotfile, the row's incident file
     ]);
+    // the legacy list is exported on its own so a consumer never has to slice by position (configure.mjs did)
+    assert.deepEqual(projectLegacyPaths(cwd), [path.join(cwd, '.claude', '.coaltipple.json'), path.join(cwd, '.coaltipple.json')]);
   } finally { fs.rmSync(cwd, { recursive: true, force: true }); }
+});
+
+// UMB-133 hole (2): BOTH legacy shapes are found. Each alone is what projectConfigPath returns AND
+// what loadMergedConfig actually reads (a path that resolves but is never read would still be dead config).
+for (const [label, rel] of [['LEGACY-1 (.claude/.coaltipple.json)', ['.claude', '.coaltipple.json']], ['LEGACY-2 (<gitroot>/.coaltipple.json)', ['.coaltipple.json']]]) {
+  test(`UMB-133 walk: ${label} alone is FOUND and its values are READ`, () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-proj-'));
+    try {
+      const file = path.join(cwd, ...rel);
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, JSON.stringify({ qualityBar: 77 }), 'utf8');
+      assert.equal(projectConfigPath(cwd), file);
+      assert.equal(loadMergedConfig({ cwd, home: cwd }).qualityBar, 77, 'the value is read through the cascade, not just the path resolved');
+    } finally { fs.rmSync(cwd, { recursive: true, force: true }); }
+  });
+}
+
+test('UMB-133 walk: canonical wins over BOTH legacies; LEGACY-1 wins over LEGACY-2; first EXISTING file wins', () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-proj-'));
+  try {
+    const [canon, , , legacy1, legacy2] = projectConfigCandidates(cwd);
+    for (const f of [legacy2, legacy1]) { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, JSON.stringify({ qualityBar: f === legacy1 ? 11 : 22 }), 'utf8'); }
+    assert.equal(projectConfigPath(cwd), legacy1, 'legacy-1 beats legacy-2');
+    assert.equal(loadMergedConfig({ cwd, home: cwd }).qualityBar, 11);
+    fs.mkdirSync(path.dirname(canon), { recursive: true });
+    fs.writeFileSync(canon, JSON.stringify({ qualityBar: 99 }), 'utf8');
+    assert.equal(projectConfigPath(cwd), canon, 'canonical beats both legacies');
+    assert.equal(loadMergedConfig({ cwd, home: cwd }).qualityBar, 99);
+  } finally { fs.rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('UMB-133 walk: an existing-but-CORRUPT candidate STOPS the walk -- a valid LEGACY-2 below it is never read (semantics unchanged)', () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-proj-'));
+  try {
+    const [canon, , , , legacy2] = projectConfigCandidates(cwd);
+    fs.mkdirSync(path.dirname(canon), { recursive: true });
+    fs.writeFileSync(canon, '{ this is not json', 'utf8');
+    fs.writeFileSync(legacy2, JSON.stringify({ qualityBar: 55 }), 'utf8');
+    assert.equal(projectConfigPath(cwd), canon, 'the corrupt canonical still wins the walk');
+    assert.equal(loadMergedConfig({ cwd, home: cwd }).qualityBar, undefined, 'and contributes nothing -- it does NOT fall through to the legacy below it');
+  } finally { fs.rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('UMB-133 clamp-unchanged: a LEGACY-2 (root) file is clamped exactly like any other project config (safer-value-wins, hooks-safety §9)', () => {
+  const s = sandbox({ global: JSON.stringify({ mode: 'off', updateMode: 'off' }) });
+  try {
+    fs.writeFileSync(path.join(s.cwd, '.coaltipple.json'), JSON.stringify({ mode: 'auto', updateMode: 'auto', qualityBar: 88 }), 'utf8');
+    const cfg = loadMergedConfig(s);
+    assert.equal(cfg.qualityBar, 88, 'proves the root legacy WAS read (a non-clamped key from the same file lands)');
+    assert.equal(cfg.mode, 'off', 'a root-legacy mode escalation is clamped to the global off');
+    assert.equal(cfg.updateMode, 'off', 'a root-legacy updateMode escalation is clamped to the global off');
+  } finally { cleanup(s); }
 });
 
 test('projectConfigPath precedence 1/3: own-dir (.claude/coal) wins even when every other candidate, including LEGACY, also exists', () => {
@@ -338,4 +433,188 @@ test('clamp-unchanged regression: safer-value-wins applies identically no matter
 test('globalStateDir/oldGlobalStateDir return the two distinct expected paths', () => {
   assert.equal(globalStateDir('/h'), path.join('/h', '.claude', 'coal', 'coaltipple'));
   assert.equal(oldGlobalStateDir('/h'), path.join('/h', '.claude', '.coaltipple'));
+});
+
+// UMB-133 bounce 1: the shared WRITE-target helper (configure --project + install --reset).
+test('projectWriteTarget: the target is NEVER a legacy path, whatever exists on disk', () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-proj-'));
+  try {
+    const legacy = projectLegacyPaths(cwd);
+    const [canon, agents] = projectConfigCandidates(cwd);
+    // nothing exists -> own-dir canonical
+    assert.deepEqual(projectWriteTarget(cwd), { target: canon, legacyToRemove: null, legacyAlso: [] });
+    // only legacies exist -> STILL canonical (a read would return legacy[0]; a write must not)
+    for (const l of legacy) { fs.mkdirSync(path.dirname(l), { recursive: true }); fs.writeFileSync(l, '{}', 'utf8'); }
+    const t = projectWriteTarget(cwd);
+    assert.equal(t.target, canon);
+    assert.equal(projectConfigPath(cwd), legacy[0], 'control: the READ walk does resolve a legacy here');
+    assert.equal(t.legacyToRemove, legacy[0], 'the first existing legacy = what a read resolves = the migration seed');
+    assert.deepEqual(t.legacyAlso, [legacy[1]]);
+    // an existing sibling-agent-dir config is the write target (where the config already lives), still never a legacy
+    fs.mkdirSync(path.dirname(agents), { recursive: true }); fs.writeFileSync(agents, '{}', 'utf8');
+    assert.equal(projectWriteTarget(cwd).target, agents);
+  } finally { fs.rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('moveLegacyAside: renames to .superseded, numbers on collision, never overwrites, keeps the bytes', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-aside-'));
+  try {
+    const f = path.join(dir, '.coaltipple.json');
+    // The directory LISTING is asserted rather than existsSync(f): a check on `f` followed by a write to `f`
+    // is the check-then-use shape CodeQL's js/file-system-race keys on (it flagged this test in UMB-133).
+    fs.writeFileSync(f, 'ONE', 'utf8');
+    assert.equal(moveLegacyAside(f), f + '.superseded');
+    assert.deepEqual(fs.readdirSync(dir).sort(), ['.coaltipple.json.superseded'], 'the original name is gone, only the moved file remains');
+    fs.writeFileSync(f, 'TWO', 'utf8');
+    assert.equal(moveLegacyAside(f), f + '.superseded.1');
+    fs.writeFileSync(f, 'THREE', 'utf8');
+    assert.equal(moveLegacyAside(f), f + '.superseded.2');
+    assert.deepEqual([f + '.superseded', f + '.superseded.1', f + '.superseded.2'].map((p) => fs.readFileSync(p, 'utf8')), ['ONE', 'TWO', 'THREE']);
+    assert.throws(() => moveLegacyAside(f), /ENOENT/, 'a missing file is a real error the caller reports, not a silent no-op');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+// PR24 #10 (configure.mjs) -- writeConfigAtomic never writes the new bytes into the
+// destination file directly; it writes a disposable temp sibling and swaps it in with
+// renameSync. Proven by targeting the mock at the DESTINATION path specifically: the
+// OLD code (a bare fs.writeFileSync(configPath, text) called directly on the real file)
+// would have thrown here immediately -- and a REAL disk-full/permission failure at that
+// same call site would already have truncated the user's live config before the throw.
+// The new code's only writeFileSync target during the write phase is the disposable temp
+// path, so a destination-targeted failure never fires and the swap lands cleanly.
+test('writeConfigAtomic: a failure writing the real destination path directly never fires -- only the disposable temp sibling is written before the atomic swap', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-atomic-'));
+  const configPath = path.join(dir, '.coaltipple.json');
+  fs.writeFileSync(configPath, '{"mode":"auto"}\n', 'utf8');
+  const realWrite = fs.writeFileSync;
+  fs.writeFileSync = (p, ...rest) => {
+    if (p === configPath) {
+      const e = new Error('simulated crash writing the live config directly');
+      e.code = 'ENOSPC';
+      throw e;
+    }
+    return realWrite(p, ...rest);
+  };
+  try {
+    assert.doesNotThrow(() => writeConfigAtomic(configPath, '{"mode":"delegation"}\n'));
+    assert.equal(fs.readFileSync(configPath, 'utf8'), '{"mode":"delegation"}\n');
+    const leftover = fs.readdirSync(dir).filter((f) => f !== '.coaltipple.json');
+    assert.deepEqual(leftover, [], 'no orphaned .tmp file after a clean run');
+  } finally {
+    fs.writeFileSync = realWrite;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// The companion direction: a failure writing the TEMP sibling itself (disk full before
+// the swap ever gets a chance to run) must propagate loudly -- Phoenix's fail-silent
+// discipline binds hooks, never a fail-loud CLI script -- and must leave the pre-existing
+// config byte-for-byte untouched, with no orphaned temp file left behind.
+test('writeConfigAtomic: a failure writing the temp sibling propagates loudly and leaves the pre-existing config byte-for-byte unchanged', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-atomic-'));
+  const configPath = path.join(dir, '.coaltipple.json');
+  const oldContent = '{"mode":"auto"}\n';
+  fs.writeFileSync(configPath, oldContent, 'utf8');
+  const realWrite = fs.writeFileSync;
+  fs.writeFileSync = () => { const e = new Error('no space left'); e.code = 'ENOSPC'; throw e; };
+  try {
+    assert.throws(() => writeConfigAtomic(configPath, '{"mode":"delegation"}\n'), /no space left/);
+    assert.equal(fs.readFileSync(configPath, 'utf8'), oldContent, 'pre-existing config untouched on a failed write');
+    const leftover = fs.readdirSync(dir).filter((f) => f !== '.coaltipple.json');
+    assert.deepEqual(leftover, [], 'the doomed temp file is cleaned up, not left as litter');
+  } finally {
+    fs.writeFileSync = realWrite;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// BOUNCE 1-2 -- the ORIGINAL writeConfigAtomic (a plain fs.writeFileSync at a predictable
+// per-pid temp name) followed a symlink/pre-existing file planted at that exact name,
+// truncating whatever it pointed at -- the same class as UMB-133's moveLegacyAside CodeQL
+// finding, one call site over. A pre-existing regular file at the predictable name proves
+// the property without needing symlink privilege: the fix must refuse to write through it.
+test('writeConfigAtomic: a pre-existing file already occupying the predictable temp name is NEVER truncated -- the write retries at the next numbered suffix', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-atomic-occupied-'));
+  const configPath = path.join(dir, '.coaltipple.json');
+  const oldContent = '{"mode":"auto"}\n';
+  fs.writeFileSync(configPath, oldContent, 'utf8');
+  const predictableTmp = `${configPath}.${process.pid}.tmp`;
+  const plantedContent = 'PLANTED -- not this function\'s to touch';
+  fs.writeFileSync(predictableTmp, plantedContent, 'utf8');
+  try {
+    writeConfigAtomic(configPath, '{"mode":"delegation"}\n');
+    assert.equal(fs.readFileSync(configPath, 'utf8'), '{"mode":"delegation"}\n', 'the real edit still lands');
+    assert.equal(fs.readFileSync(predictableTmp, 'utf8'), plantedContent,
+      'the pre-existing file at the predictable name must be byte-for-byte untouched -- never opened for write, never followed');
+    const leftover = fs.readdirSync(dir).filter((f) => f !== '.coaltipple.json' && f !== path.basename(predictableTmp));
+    assert.deepEqual(leftover, [], 'the retry used the NEXT suffix and cleaned up after itself, no litter beyond the planted file');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// The sharper form of the same property: an actual SYMLINK at the predictable name,
+// pointing at a THIRD file this function must never touch. Windows requires either
+// Developer Mode or admin privilege to create a symlink -- probed, not assumed; skips
+// VISIBLY (never a bare return) per this room's own symlink-testing convention
+// (AGENTS.md's path-traversal corollary) when the capability is absent.
+test('writeConfigAtomic: a symlink planted at the predictable temp name, pointing elsewhere, is refused (EEXIST) -- the pointed-at file is never touched', (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-atomic-symlink-'));
+  const configPath = path.join(dir, '.coaltipple.json');
+  const victim = path.join(dir, 'victim.txt');
+  const victimContent = 'VICTIM -- outside this function\'s destination entirely';
+  fs.writeFileSync(configPath, '{"mode":"auto"}\n', 'utf8');
+  fs.writeFileSync(victim, victimContent, 'utf8');
+  const predictableTmp = `${configPath}.${process.pid}.tmp`;
+  try {
+    fs.symlinkSync(victim, predictableTmp, 'file');
+  } catch (e) {
+    t.skip(`symlink privilege unavailable on this box/user (${e.code}) -- capability-gated, not asserting a false pass`);
+    fs.rmSync(dir, { recursive: true, force: true });
+    return;
+  }
+  try {
+    writeConfigAtomic(configPath, '{"mode":"delegation"}\n');
+    assert.equal(fs.readFileSync(configPath, 'utf8'), '{"mode":"delegation"}\n', 'the real edit still lands');
+    assert.equal(fs.readFileSync(victim, 'utf8'), victimContent,
+      'the symlink\'s TARGET must be byte-for-byte untouched -- O_CREAT|O_EXCL refuses a symlinked name outright, it never follows it');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// UMB-133 bounce 2 (CodeQL js/file-system-race). The helper's contract is NON-DESTRUCTION, and the old
+// `existsSync(to)` loop + `renameSync(file, to)` was check-then-act, so a `.superseded` that appeared between
+// the two was silently overwritten. A genuine thread race cannot be forced deterministically from a test, so
+// this SIMULATES the losing interleaving: the moment the helper tries to acquire the name with an exclusive
+// create, a competing writer has just taken it. It asserts two things, and says which is which:
+//  (1) `fired` -- the helper acquired the name by exclusive create (openSync 'wx'). This is the CONSTRUCTION
+//      property, and it is what the old code lacks (it never calls openSync), so this is where it goes red;
+//  (2) the racer's bytes survive and the moved file lands at the next suffix -- the invariant itself.
+// The old code's actual data loss is demonstrated separately (scratchpad/umb133/race-old.mjs), not asserted here.
+test('moveLegacyAside: a .superseded that appears at the worst instant is NEVER overwritten (exclusive create, not check-then-rename)', (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-aside-race-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const f = path.join(dir, '.coaltipple.json');
+  fs.writeFileSync(f, 'MINE', 'utf8');
+  const realOpen = fs.openSync;
+  let fired = false;
+  fs.openSync = (p, flags, ...rest) => {
+    if (!fired && p === f + '.superseded' && flags === 'wx') { fired = true; fs.writeFileSync(p, 'RACER', 'utf8'); } // the competing writer wins the name
+    return realOpen(p, flags, ...rest);
+  };
+  t.after(() => { fs.openSync = realOpen; });
+  const to = moveLegacyAside(f);
+  fs.openSync = realOpen;
+  assert.ok(fired, 'the helper must acquire the name by an exclusive create -- the old check-then-rename never did');
+  assert.equal(fs.readFileSync(f + '.superseded', 'utf8'), 'RACER', "the racer's file was NOT overwritten");
+  assert.equal(to, f + '.superseded.1', 'the loop advanced on the exclusive-create collision');
+  assert.equal(fs.readFileSync(to, 'utf8'), 'MINE', 'and the moved file kept its bytes');
+});
+
+test('moveLegacyAside: a failed move (source gone) leaves NO placeholder litter behind', (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-aside-fail-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  assert.throws(() => moveLegacyAside(path.join(dir, '.coaltipple.json')), /ENOENT/);
+  assert.deepEqual(fs.readdirSync(dir), [], 'the exclusive-create placeholder is removed when the rename fails');
 });

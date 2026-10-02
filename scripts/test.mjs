@@ -28,10 +28,18 @@ const TESTS = [
   'scripts/lib/config-keys.test.mjs',
   'scripts/lib/pointer-check.test.mjs',
   'scripts/lib/link-check.test.mjs',
+  'scripts/lib/git-env.test.mjs',
+  'scripts/lib/git-env-census.test.mjs',
   'scripts/build-plugin.test.mjs',
   'scripts/build-dist.test.mjs',
   'scripts/build-skill.test.mjs',
   'scripts/verify.test.mjs',
+  'scripts/secret-scan.test.mjs',
+  'scripts/secret-gate.test.mjs',
+  'scripts/release-notes.test.mjs',
+  'scripts/verify-release-shape.test.mjs',
+  'scripts/lib/release-shape.test.mjs',
+  'scripts/lib/regex-escape.test.mjs',
 ];
 
 const missing = TESTS.filter((t) => !fs.existsSync(path.join(repo, t)));

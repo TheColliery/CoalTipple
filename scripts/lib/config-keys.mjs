@@ -79,6 +79,8 @@ export const NOT_CONFIG = {
   sizeUnits: "grade.mjs's own internal parameter name, named in the Step 1 grade table (SKILL.md)",
   desiredTier: 'resolveWorker parameter name, named in prose (SKILL.md, references/lock.md)',
   floorTier: 'resolveWorker parameter name, named in prose (SKILL.md, references/lock.md)',
+  suggestedModel: "grade-task.mjs's own CLI output field (README Try-it) -- not a .coaltipple.json config key",
+  modelSource: "grade-task.mjs's own CLI output field (README Try-it) -- not a .coaltipple.json config key",
 };
 
 // A schema key this gate's detection rule CANNOT SEE (KEY_SHAPE requires an internal
@@ -132,6 +134,8 @@ export const BLIND_KEYS = {
 // scanned until someone adds it here, and nothing notices the gap. Named, not fixed:
 // widening to an enumerated walk is a real design change (CoalMine's own CWK-059 uses
 // one for its skills/ + hooks/ directories), out of this port's scope.
+
+import { escapeRegExp } from './regex-escape.mjs'; // R14: the one RegExp escape for a key interpolated into a pattern
 
 const NL = String.fromCharCode(10);
 const BS = String.fromCharCode(92); // a literal backslash, built not typed
@@ -316,7 +320,18 @@ export function checkConfigKeys({
 
   for (const f of mdFiles) {
     let text;
-    try { text = read(f); } catch { unreadable.push(f); coverage.mdFiles.push({ file: f, readable: false }); continue; }
+    try { text = read(f); } catch {
+      unreadable.push(f);
+      coverage.mdFiles.push({ file: f, readable: false });
+      // PR24 #13 -- an unreadable DECLARED surface used to feed only the aggregate
+      // declaration-pruning SKIP below, never a hard FAIL: checkSchemaCompleteness
+      // checks SKILL.md + the factory template only, not mdFiles/keyTables, so if a
+      // declared row here is renamed/deleted, this gate could still print ok while the
+      // surface it claims to scan is not scanned at all. NOTICE_SITES already FAILs
+      // loud on the identical shape (Hard Rule 1) -- this closes the asymmetry.
+      findings.push({ level: 'FAIL', msg: 'declared doc surface ' + f + ' could not be read -- cannot verify this surface; fix the path or delete the row' });
+      continue;
+    }
     const found = candidatesInMarkdown(text);
     for (const tok of found) note(tok, f);
     coverage.mdFiles.push({ file: f, readable: true, candidates: found.size });
@@ -357,7 +372,14 @@ export function checkConfigKeys({
   // FAIL LOUD, never a silent zero-row pass (INSPECT HIGH-1, board CWK-060 findings-back).
   for (const { file, heading } of keyTables) {
     let text;
-    try { text = read(file); } catch { unreadable.push(file); coverage.keyTables.push({ file, heading, readable: false }); continue; }
+    try { text = read(file); } catch {
+      unreadable.push(file);
+      coverage.keyTables.push({ file, heading, readable: false });
+      // PR24 #13 -- same asymmetry as the mdFiles loop above: an unreadable declared
+      // key-table surface fed the aggregate SKIP only, never its own FAIL.
+      findings.push({ level: 'FAIL', msg: 'declared doc surface ' + file + ' could not be read -- cannot verify this surface; fix the path or delete the row' });
+      continue;
+    }
     const rowKeys = keysInTable(text, heading);
     if (rowKeys === null) {
       findings.push({
@@ -475,8 +497,8 @@ export function checkConfigKeys({
 // not close this bound either -- prose can backtick a key name too.
 export function checkSchemaCompleteness({ schemaKeys, skillMdText, factoryText }) {
   const findings = [];
-  const seen = (text, k) => new RegExp(BS + 'b' + k + BS + 'b').test(text);
-  const factoryKeyShape = (text, k) => new RegExp('"' + k + '"' + BS + 's*:').test(text);
+  const seen = (text, k) => new RegExp(BS + 'b' + escapeRegExp(k) + BS + 'b').test(text);
+  const factoryKeyShape = (text, k) => new RegExp('"' + escapeRegExp(k) + '"' + BS + 's*:').test(text);
 
   const region = tableRegion(skillMdText, 'Config');
   if (region === null) {

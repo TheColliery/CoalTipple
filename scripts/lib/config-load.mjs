@@ -79,9 +79,11 @@ export function findGitRoot(startDir = process.cwd()) {
 //      separate check.
 //   2. Other known agent dirs, fixed order: `.claude` -> `.agents` -> `.gemini`
 //      (first FOUND wins).
-//   3. LEGACY: <project>/.claude/.coaltipple.json — CT's own CURRENT shape as of
+//   3. LEGACY-1: <project>/.claude/.coaltipple.json — CT's own CURRENT shape as of
 //      this campaign (never a bare root dotfile, unlike CoalWash's legacy) —
 //      read normally, no breakage for an existing user.
+//   4. LEGACY-2 (UMB-133): <project>/.coaltipple.json — the bare root dotfile every
+//      sibling room's legacy list carries. First EXISTING file wins across all five.
 // WRITE target = where the config was found; absent everywhere, the running
 // agent's own dir. Hooks never perform this move on a READ (Phoenix #5, no side
 // effects) — CT DOES have a project-config writer (`configure.mjs`, including the
@@ -92,17 +94,143 @@ export function findGitRoot(startDir = process.cwd()) {
 // list rather than a hand-copied second one -- a hand-copied list is the exact drift class
 // this ticket exists to remove.
 export const AGENT_DIR_ORDER = ['.claude', '.agents', '.gemini'];
+// The LEGACY shapes, in read order, exported on their own (UMB-133) so a consumer never has to
+// infer "legacy = the tail of projectConfigCandidates" by position -- configure.mjs's
+// projectWriteTarget did exactly that, and growing the walk by one entry would have turned
+// LEGACY-1 into a write target. projectConfigCandidates below is built FROM this list.
+export function projectLegacyPaths(cwd = process.cwd()) {
+  const root = findGitRoot(cwd);
+  return [
+    path.join(root, '.claude', '.coaltipple.json'), // LEGACY-1: CT's own pre-campaign shape
+    path.join(root, '.coaltipple.json'), // LEGACY-2 (UMB-133): the bare root dotfile -- what a user reasonably writes; never a candidate until now
+  ];
+}
 export function projectConfigCandidates(cwd = process.cwd()) {
   const root = findGitRoot(cwd);
   const candidates = AGENT_DIR_ORDER.map((d) => path.join(root, d, 'coal', 'coaltipple.json'));
-  candidates.push(path.join(root, '.claude', '.coaltipple.json')); // LEGACY, always last
-  return candidates;
+  return candidates.concat(projectLegacyPaths(cwd)); // LEGACY, always last
 }
 export function projectConfigPath(cwd = process.cwd()) {
   const candidates = projectConfigCandidates(cwd);
   for (const c of candidates) if (fs.existsSync(c)) return c;
   return candidates[0]; // nothing found anywhere -- own-dir is both the read and write target
 }
+// WHERE A PROJECT CONFIG IS WRITTEN (UMB-133 bounce 1). A READ walks every candidate, so
+// projectConfigPath may legitimately return a LEGACY file; a WRITE must never go there -- it
+// lands on the first EXISTING new-shape candidate, else the own-dir canonical, and the legacy
+// files are reported separately so the caller can migrate them. One helper, two writers
+// (configure.mjs --project, install.mjs --reset): the target rule was fixed in configure and
+// missed in install once already, which is exactly what a shared function prevents.
+//   target        the canonical write path
+//   legacyToRemove  the legacy a READ would have resolved (first existing) -- the migration SEED
+//   legacyAlso      any further existing legacy
+export function projectWriteTarget(cwd = process.cwd()) {
+  const legacy = projectLegacyPaths(cwd);
+  const newCandidates = projectConfigCandidates(cwd).filter((c) => !legacy.includes(c));
+  const existingLegacy = legacy.filter((l) => fs.existsSync(l));
+  const target = newCandidates.find((c) => fs.existsSync(c)) || newCandidates[0];
+  return { target, legacyToRemove: existingLegacy[0] || null, legacyAlso: existingLegacy.slice(1) };
+}
+// Retire a legacy config the tool did NOT read this run: rename it to <path>.superseded
+// (numbered on collision, never overwriting an earlier one) instead of deleting it. The tool
+// cannot claim the contents of a file it never opened are superseded -- it knows only that the
+// PATH is no longer a candidate, and moving it aside satisfies that. Returns the new path.
+//
+// "Never overwrite an earlier .superseded" is made true BY CONSTRUCTION, not by checking first
+// (UMB-133 bounce 2, CodeQL js/file-system-race): the previous `existsSync(to)` loop followed by
+// `renameSync(file, to)` was check-then-act -- a path free at time T could be taken by T+1, and
+// the rename would silently overwrite whatever appeared, which is exactly the guarantee the
+// function exists to give. Now the NAME is acquired with an exclusive create (`wx` = O_CREAT|O_EXCL:
+// the kernel fails EEXIST if anything, a file or even a dangling symlink, already holds it), the
+// loop advances only on that EEXIST, and the rename then replaces OUR OWN empty placeholder. A
+// crash between the two steps leaves an empty `.superseded` litter file and the original untouched
+// -- never a lost byte. (An exclusive create rather than link+unlink: hard links are unsupported
+// on FAT/exFAT and some network shares, where this would throw on a config a user can legitimately have.)
+export function moveLegacyAside(file) {
+  for (let n = 0; ; n++) {
+    const to = n === 0 ? `${file}.superseded` : `${file}.superseded.${n}`;
+    let fd;
+    try { fd = fs.openSync(to, 'wx'); } catch (e) {
+      if (e.code === 'EEXIST') continue; // someone (or an earlier run) holds this name -> next suffix
+      throw e;
+    }
+    fs.closeSync(fd);
+    try { fs.renameSync(file, to); } catch (e) {
+      try { fs.rmSync(to, { force: true }); } catch { /* best effort: the placeholder is ours and empty */ }
+      throw e; // e.g. ENOENT when `file` is gone: a real error the caller reports, and no litter is left
+    }
+    return to;
+  }
+}
+
+// PR24 #10 (configure.mjs) -- atomic write (temp sibling + rename), same idiom as
+// CoalTipple's own classify.mjs writeRankingAtomic and the conductor's writeUpdateStamp:
+// a plain writeFileSync truncates the destination before writing the new bytes, so a
+// kill mid-write (a crash, Ctrl-C, disk-full) leaves the user's config file EMPTY or
+// half-written -- worse than the read failure it replaced, because there is no longer a
+// config to fall back to. Writing to a per-pid temp name first means a killed run leaves
+// only an orphaned .tmp file; the real config is untouched until the rename lands.
+//
+// BOUNCE 1-2 -- the FIRST version of this function opened the temp name with a plain
+// writeFileSync (the default 'w' flag), which FOLLOWS a symlink at the destination and
+// truncates whatever it points at. `--project` mode's configPath lives inside a CLONED
+// repo (<gitroot>/.claude/coal/coaltipple.json) -- the repo's own author controls that
+// tree, and the temp name (`${configPath}.${pid}.tmp`) is fully predictable (pids are
+// small and guessable, or simply sprayed). A symlink PLANTED at that name before the run
+// turned `configure --project` into an arbitrary-file overwrite carrying the user's own
+// config text -- the same class CodeQL's js/file-system-race already flagged twice on
+// UMB-133's moveLegacyAside. Fixed with the SAME idiom that function already uses:
+// acquire the name with an EXCLUSIVE create (`wx` = O_CREAT|O_EXCL) -- POSIX open(2) is
+// explicit that O_EXCL+O_CREAT on a path that names a symlink fails EEXIST regardless of
+// what the symlink points to, so a planted link is refused, never followed -- then write
+// through the returned FD (not the path again, closing the TOCTOU between open and
+// write), then rename. A same-name collision (another run, or the attacker's link) loops
+// to the next numbered suffix, mirroring moveLegacyAside's own collision handling.
+//
+// The ranking file (classify.mjs's writeRankingAtomic) was checked for the identical
+// exposure and does NOT carry it: its destination is globalStateDir() = a machine-global
+// path under the user's own ~/.claude, never inside a cloned/attacker-controlled repo --
+// planting a symlink there already requires local write access to the user's own home,
+// a materially different threat model. No fix applied there; left as designed.
+//
+// Lives here (not inlined in configure.mjs's main()) so it can be unit-tested directly
+// by monkey-patching fs.renameSync/fs.writeFileSync/fs.openSync, without spawning
+// configure.mjs as a child process and without its own main() running against test argv.
+export function writeConfigAtomic(configPath, text) {
+  let tmpConfigPath;
+  let fd;
+  for (let n = 0; ; n++) {
+    tmpConfigPath = n === 0 ? `${configPath}.${process.pid}.tmp` : `${configPath}.${process.pid}.tmp.${n}`;
+    try { fd = fs.openSync(tmpConfigPath, 'wx'); break; }
+    catch (e) {
+      if (e.code === 'EEXIST') continue; // someone (or an attacker's planted link) holds this name -> next suffix
+      throw e;
+    }
+  }
+  try {
+    fs.writeFileSync(fd, text, 'utf8'); // through the FD we hold -- never re-opens the path
+    fs.closeSync(fd);
+    fd = undefined;
+    try {
+      fs.renameSync(tmpConfigPath, configPath);
+    } catch (e) {
+      // Windows: configPath held open elsewhere (e.g. a live conductor read) -> renameSync
+      // throws EPERM/EBUSY. Fall back to a direct overwrite so the edit is never lost --
+      // same fallback classify.mjs's writeRankingAtomic already uses for this exact code.
+      // This path forfeits atomicity (a kill mid-overwrite can still leave a half-written
+      // configPath) -- accepted, matching writeRankingAtomic's own accepted trade-off for
+      // the identical platform quirk.
+      if (e.code === 'EPERM' || e.code === 'EBUSY') fs.writeFileSync(configPath, text, 'utf8');
+      else throw e;
+    }
+  } finally {
+    if (fd !== undefined) { try { fs.closeSync(fd); } catch {} }
+    // Phoenix #1 (zero-garbage): a failed write/rename never leaves a stray temp file.
+    // On the success path the rename already consumed tmpConfigPath, so this is a no-op.
+    try { if (fs.existsSync(tmpConfigPath)) fs.unlinkSync(tmpConfigPath); } catch {}
+  }
+}
+
 // State dirs — hold the ranking / work-state, NOT config. The GLOBAL state dir holds
 // the shared platform model-ranking; the PROJECT state dir holds per-project
 // work-state (proposed/, state.json) and the optional project conductor copy.
@@ -166,16 +294,26 @@ const SCHEMA_DEFAULT_ENUM = { mode: 'auto', updateMode: 'ask' };
 // `false` (a user's deliberate machine-wide stance) -- an absent global leaves a bare
 // project `true` alone, because that bare value IS how a legitimate per-project consent
 // persists, not just how an attacker's clone would look.
+// CB-R1 class (R14; CoalBoard 0a4163b is the exemplar, the shipped conductor carries the same
+// fix): an UNKNOWN value -- not in the key's enum, or not even a string -- reads as ABSENT inside
+// the clamp (a project's falls to the effective global, a global's to the schema default), and
+// the merged value is the CANONICAL enum literal, never the config string. The old `continue`
+// left the raw junk as the shallow-merge result and trusted "the schema clamps it downstream",
+// but the schema validates WRITES (configure.mjs); a READ of the merged object (configure --list,
+// any caller) got the junk, which beat a global off. Case-fold: the schema's enum validation is
+// case-insensitive, so a project 'AUTO'/'Off' must not evade the lookup via case.
+function enumLiteral(order, v) {
+  if (typeof v !== 'string') return null;
+  const i = order.indexOf(v.toLowerCase());
+  return i === -1 ? null : order[i];
+}
 function applySaferValueWins(merged, global, project) {
   for (const [key, order] of Object.entries(SAFER_ENUM)) {
     if (project[key] === undefined) continue;
-    const effectiveGlobal = global[key] !== undefined ? global[key] : SCHEMA_DEFAULT_ENUM[key];
-    // Case-fold: config-schema.mjs's enum validation is case-insensitive, so a project
-    // 'AUTO'/'Off' must not evade the lookup via case and fall through to plain project-wins.
-    const gi = order.indexOf(String(effectiveGlobal).toLowerCase());
-    const pi = order.indexOf(String(project[key]).toLowerCase());
-    if (gi === -1 || pi === -1) continue; // unknown value: leave the shallow-merge result (schema clamps it downstream)
-    merged[key] = pi <= gi ? project[key] : effectiveGlobal; // project may not move PAST the effective global toward the weaker end
+    const g = enumLiteral(order, global[key]);
+    const effectiveGlobal = g !== null ? g : SCHEMA_DEFAULT_ENUM[key];
+    const p = enumLiteral(order, project[key]);
+    merged[key] = p !== null && order.indexOf(p) <= order.indexOf(effectiveGlobal) ? p : effectiveGlobal; // project may not move PAST the effective global toward the weaker end
   }
   for (const key of SAFER_FALSE) {
     if (global[key] === false) merged[key] = false; // project cannot turn an EXPLICIT global false into true (absent global: see the comment above)

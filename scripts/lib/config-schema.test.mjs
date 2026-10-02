@@ -102,6 +102,24 @@ test('modelTiers pins are deep-validated (a non-string entry fails loud, not a s
   assert.match(validateValue(spec, { low: ['haiku', 7] }), /must be a model name/); // a non-string in the chain
 });
 
+test('PR24 #15: an unrecognized modelTiers tier NAME fails loud, not a silent dead pin', () => {
+  const spec = specOf('modelTiers');
+  // BEFORE the fix a typo'd tier name ('hevy'/'medium') validated clean, wrote to disk,
+  // and applyPins() -- which only loops the 4 real routable tiers plus the off-ladder
+  // 'local' -- never consulted it: a pin with zero routing effect and no warning ever
+  // shown to the user who wrote it.
+  assert.match(validateValue(spec, { hevy: 'opus' }), /unknown tier 'hevy'/);
+  assert.match(validateValue(spec, { medium: 'opus' }), /unknown tier 'medium'/);
+  // 'local' is a real TIERS entry (classify.mjs) but deliberately NOT a pinnable one
+  // (CHANGELOG.md: "modelTiers dropped the non-existent local tier") -- it is always
+  // empty and off-ladder, so pinning into it can never affect a routing decision.
+  assert.match(validateValue(spec, { local: 'opus' }), /unknown tier 'local'/);
+  // the 4 real pinnable tiers still validate clean.
+  for (const t of ['low', 'mid', 'heavy', 'reasoning']) {
+    assert.equal(validateValue(spec, { [t]: 'opus' }), null, `tier '${t}' must still validate`);
+  }
+});
+
 test('keywords groups are deep-validated (a bad group fails loud, not a silent bad grade)', () => {
   const spec = specOf('keywords');
   assert.ok(spec, 'keywords spec exists');

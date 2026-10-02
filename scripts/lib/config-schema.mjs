@@ -90,8 +90,17 @@ export function validateValue(spec, v) {
 // would pass the bare 'obj' type check, then applyPins String()-coerces it to
 // "[object Object]" — a non-existent model name that makes resolveWorker yield null
 // (route silently fails). Reject a non-string entry at the config boundary instead.
+// PR24 #15 -- a tier NAME typo ('hevy'/'medium') passed silently too: applyPins() only
+// loops the 5 real tiers (classify.mjs TIERS), so a mistyped key is validated, written,
+// and then never consulted by anything -- a routing pin with zero routing effect, the
+// exact "documented-but-unwired" drift class this room's own Empirical locks section
+// already names for a wrong tier NAME (as opposed to a wrong MODEL name, which errors
+// visibly at spawn). Reject an unrecognized tier at the config boundary, same as the
+// value-shape check above.
+const VALID_MODEL_TIERS = new Set(['low', 'mid', 'heavy', 'reasoning']);
 function validateModelTiers(pins) {
   for (const tier of Object.keys(pins)) {
+    if (!VALID_MODEL_TIERS.has(tier)) return `unknown tier '${tier}'; expected one of: ${[...VALID_MODEL_TIERS].join(', ')}`;
     const v = pins[tier];
     if (typeof v === 'string') continue;
     if (Array.isArray(v) && v.every((m) => typeof m === 'string')) continue;

@@ -2,6 +2,44 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.7.1] - 2026-10-02
+
+A junk config value can no longer re-arm a setting you turned off, and the config notice now names the file it actually read.
+
+### Changed
+- The session-start `UNREADABLE:` line for the global config now ends `canonical = <the global file's own path>` (`~/.claude/.coaltipple.json`, or the same file under `CLAUDE_CONFIG_DIR`) instead of the project path; the project line is unchanged.
+- The routing contract's fan-out pointer is conditional: if CoalFace is present this session it decides how to fan out costly work, and a plugin that is not present decides nothing. The line naming CoalFace's authority over spawn and fan-out discipline is unchanged.
+- The routing contract and the skill text no longer give a versioned model example; the same-tier step is described by tier only. The skill's page title is now `CoalTipple`.
+
+### Fixed
+- A project config value outside the allowed set for `mode` or `updateMode` (a typo, a number, `null`, an object, an empty string) no longer wins through the merge when the global config says `off`. An unknown project value is now read as absent (the global value applies), an unknown global value as its schema default, and only the canonical value is ever used. Before this, a project `updateMode: "junk"` under a global `updateMode: "off"` brought back the self-update question, and a project `mode: "junk"` under a global `mode: "off"` re-armed routing; `configure.mjs --list` and `grade-task.mjs` read the same wrong merged value. The skill's own instructions for merging the config by hand carry the same rule in prose (a value outside the allowed set counts as absent in a project file and as the schema default in your global file), so a manual `/coaltipple` run follows it too.
+
+## [1.7.0] - 2026-09-23
+
+### Added
+- **A present-but-unreadable project or global config now says why it was skipped.** Before this, a config file that exists but cannot be read as one—malformed JSON, a directory, a permissions error, or valid JSON that is not an object—was silently treated the same as no config at all; if the same file also matched a known legacy path, v1.6.0's `LEGACY:` line compounded the problem by claiming that broken file "is read as this project's config", a second false statement about a file that was never actually parsed. The conductor's session-start report now names the reason next to the path: `UNREADABLE: <path> exists but is not a readable config (<reason>); it was skipped — canonical = .claude/coal/coaltipple.json`, with `<reason>` one of `malformed JSON` · `a directory` · `unreadable` (a permissions error) · `not a JSON object`. A leading BOM is stripped before the parse. The `UNREADABLE` line now takes precedence over `LEGACY` on the same broken file; the global config (`~/.claude/.coaltipple.json`) is reported independently—its own `UNREADABLE:` line names its own path and the same `canonical = .claude/coal/coaltipple.json` wording as the project line. The README's Configure section carries the one sentence naming this line.
+
+### Fixed
+- The injected routing contract's fable-decline sentence no longer names `opus` as the fallback cap outright—it caps at the rung below fable, read from the ranking, so the guidance stays correct even if that rung is ever something other than opus.
+- `configure.mjs` (project or global) no longer risks corrupting a config that carries JSONC comments: the edit locates the real closing brace outside comment/string text and validates the full result before writing.
+- `configure.mjs` (project or global) write now goes through a temp file and a rename instead of overwriting the target directly, so a process killed mid-write cannot leave the config empty or truncated; the temp file is acquired exclusively, so a symlink pre-planted at its name is refused rather than followed.
+- `configure.mjs` (project or global) now refuses a parsed config that is valid JSON but not a plain object (an array, a bare string, a number) instead of silently adopting it.
+- `grade-task.mjs --prompt` now errors when the next argument looks like a flag (e.g. `--prompt --size-units 5`) instead of silently swallowing it as the prompt text.
+- A `modelTiers` pin naming an unknown tier (a typo, or the permanently-off `local` tier) is now refused instead of silently validating and sitting dead forever.
+
+## [1.6.0] - 2026-09-21
+
+### Added
+- **The project-config walk now also honours a bare `<gitroot>/.coaltipple.json`.** It is the last of five candidates, after `<gitroot>/.claude/.coaltipple.json`; the first existing file wins across `.claude/coal/coaltipple.json` → `.agents/coal/coaltipple.json` → `.gemini/coal/coaltipple.json` → `.claude/.coaltipple.json` → `.coaltipple.json`, and the safer-value-wins clamp on `mode` / `updateMode` / `fableConsent` applies to it exactly as to any project config. Before this, a config written there was silently never read, and nothing said so.
+- **The conductor's session-start message now names a project config it will not read.** A config sitting at one of ten fixed near-miss paths under the git root (never a directory crawl) gets one `IGNORED: <path> is not a config path; canonical = .claude/coal/coaltipple.json` line each, and one `LEGACY:` line says so when a deprecated path is the one that was read. Session start only, never per prompt, and silent while routing is off.
+
+### Changed
+- `configure.mjs --project` migrates from either legacy path, so a project does not keep a second, dead config behind the one it just wrote. **A legacy file the tool did not read is never deleted:** it is renamed aside to `<path>.superseded` (`.superseded.1`, `.2` on a collision) with its contents kept, and only the one legacy file it actually read as the seed for the new file is removed. Every path removed or moved is printed.
+- `install.mjs --reset` writes the canonical file, never a legacy path (before this it could overwrite a deprecated one), and renames every legacy file aside the same way, naming each. A plain install is unchanged: create-if-absent, and whatever the read walk found stays put.
+
+### Deprecated
+- **`<gitroot>/.claude/.coaltipple.json` and `<gitroot>/.coaltipple.json` as project-config locations.** Both are still read (in that order, after the three canonical paths), so nothing that worked stops working. **Replacement:** `<gitroot>/.claude/coal/coaltipple.json` (or the `.agents` / `.gemini` equivalent). **Window:** deprecated in 1.6.0, removable no sooner than the next MAJOR release. **Migration owner:** CoalTipple. Move the file by hand, or run `node scripts/configure.mjs --project <key> <value>`, which writes the canonical file (seeded from the legacy one when it does not exist yet) and retires the legacy file(s) as described under Changed. The README's Configure section carries the full notice.
+
 ## [1.5.6] - 2026-09-18
 
 ### Fixed

@@ -10,8 +10,15 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { CONFIG_SCHEMA, validateValue } from './lib/config-schema.mjs';
 import { stripJsonc } from './lib/jsonc.mjs';
+import { gitEnv } from './lib/git-env.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+// CWK-133/C-4 -- every git spawn this gate makes carries gitEnv(), never the ambient
+// process.env: this gate is wired into a git pre-commit/pre-push hook, so an inherited
+// GIT_DIR/GIT_WORK_TREE (the shape a LINKED WORKTREE's own hook exports) would otherwise
+// silently redirect these spawns onto whatever repo GIT_DIR points at instead of `repo`.
+// Computed once and reused at every call site (never a fresh env object per spawn).
+const REPO_GIT_ENV = gitEnv(path.dirname(repo));
 // Leading-BOM strip for the plugin.json description check below, built from a char
 // code rather than a hand-typed escape sequence (board #64 exemplar, CoalMine
 // 13daf36: typing the literal BOM escape directly in a tool call silently became
@@ -218,30 +225,45 @@ try {
 
 console.log('config-path sync (conductor inline vs config-load SSoT; configure imports it):');
 try {
-  // The LEGACY project-config path segment lives under .claude in config-load.mjs
-  // (the SSoT). The conductor inlines its OWN copy (the hook must be standalone,
-  // Phoenix #9 — it cannot import config-load), so a future edit to one could
-  // silently drift — assert both reference the same path segment (the path
-  // analogue of the hot-keyword sync above). configure.mjs is DIFFERENT since the
-  // namespace campaign (#69+#39): it is a plain script (no standalone constraint),
-  // so it IMPORTS projectConfigCandidates from config-load.mjs rather than
-  // duplicating the segment — assert the import instead of the literal string.
-  // projectConfigCandidates resolves the git root INTERNALLY (config-load.mjs), so
-  // configure.mjs needs no git-root helper of its own — requiring one here would
-  // pin an incidental implementation detail, not the real invariant.
-  const seg = "'.claude', '.coaltipple.json'";
+  // The LEGACY project-config path segments (two shapes since UMB-133: .claude/.coaltipple.json
+  // and the bare <gitroot>/.coaltipple.json) live in config-load.mjs (the SSoT). The conductor
+  // inlines its OWN copy (the hook must be standalone, Phoenix #9 — it cannot import
+  // config-load), so a future edit to one could silently drift — assert both reference the
+  // same path segments (the path analogue of the hot-keyword sync above). configure.mjs and
+  // install.mjs are DIFFERENT since the namespace campaign (#69+#39): plain scripts (no
+  // standalone constraint), so they IMPORT projectWriteTarget from config-load.mjs (which
+  // is built on the SSoT walk) rather than duplicating the segments — assert the import
+  // instead of the literal string. projectWriteTarget resolves the git root INTERNALLY
+  // (config-load.mjs), so the writers need no git-root helper of their own — requiring one
+  // here would pin an incidental implementation detail, not the real invariant.
+  // UMB-133: the walk carries TWO legacy shapes, so the gate pins BOTH, in BOTH files -- a gate
+  // that guards one segment while the walk grows a second reads green over exactly the drift it
+  // exists to catch. The order of the whole walk is pinned by the behavioural test
+  // (conductor.test.mjs "walk equivalence"), which spawns the hook; this gate is the cheap
+  // presence guard that fails at verify time without running one.
+  const segs = [
+    ["'.claude', '.coaltipple.json'", 'LEGACY-1 (.claude/.coaltipple.json)'],
+    ["root, '.coaltipple.json'", 'LEGACY-2 (<gitroot>/.coaltipple.json)'],
+  ];
   for (const [label, rel] of [
     ['config-load.mjs', ['scripts', 'lib', 'config-load.mjs']],
     ['coaltipple-conductor.js', ['hooks', 'coaltipple-conductor.js']],
   ]) {
     const s = fs.readFileSync(path.join(repo, ...rel), 'utf8');
-    if (s.includes(seg)) ok(`${label} references the .claude project-config path`);
-    else fail(`${label} lost ${seg} — project-config path DRIFTED from config-load (the SSoT)`);
+    for (const [seg, what] of segs) {
+      if (s.includes(seg)) ok(`${label} references the ${what} project-config path`);
+      else fail(`${label} lost ${seg} (${what}) — project-config path DRIFTED from config-load (the SSoT)`);
+    }
   }
-  const configureSrc = fs.readFileSync(path.join(repo, 'scripts', 'configure.mjs'), 'utf8');
-  const importsIt = /import\s*\{[^}]*\bprojectConfigCandidates\b[^}]*\}\s*from\s*['"]\.\/lib\/config-load\.mjs['"]/.test(configureSrc);
-  if (importsIt) ok('configure.mjs imports projectConfigCandidates from config-load.mjs');
-  else fail('configure.mjs no longer imports projectConfigCandidates from config-load.mjs — project-config path DRIFTED from config-load (the SSoT)');
+  // UMB-133 bounce 1: BOTH writers (configure --project, install --reset) take their target from the
+  // one shared helper. install.mjs computed its own from the READ walk once (MEDIUM-2: --reset wrote
+  // the factory template into a deprecated path), so its import is pinned as well.
+  for (const file of ['configure.mjs', 'install.mjs']) {
+    const src = fs.readFileSync(path.join(repo, 'scripts', file), 'utf8');
+    const importsIt = /import\s*\{[^}]*\bprojectWriteTarget\b[^}]*\}\s*from\s*['"]\.\/lib\/config-load\.mjs['"]/.test(src);
+    if (importsIt) ok(`${file} imports projectWriteTarget from config-load.mjs`);
+    else fail(`${file} no longer imports projectWriteTarget from config-load.mjs — project-config write target DRIFTED from config-load (the SSoT)`);
+  }
 } catch (e) { fail(`config-path sync: ${e.message}`); }
 
 // config-key drift (CWK-060, ported from CoalMine 0019e09): every config key NAMED on
@@ -341,7 +363,7 @@ try {
   // narrower than normal operation, never wider. Moved ahead of PC_OUR_ROOTS/PC_IGNORED_ROOTS
   // (CWK-077 round 2) -- both derivations below now need it.
   let pcHasGit = true;
-  try { execFileSync('git', ['rev-parse', '--is-inside-work-tree'], { cwd: repo, stdio: 'pipe' }); }
+  try { execFileSync('git', ['rev-parse', '--is-inside-work-tree'], { cwd: repo, stdio: 'pipe', env: REPO_GIT_ENV }); }
   catch { pcHasGit = false; }
 
   // SCOPE -- WHICH surfaces walk, and the narrowing reason for the kind this room's plan
@@ -367,7 +389,7 @@ try {
   function pcDeriveOurRoots() {
     if (!pcHasGit) return PC_OUR_ROOTS_FALLBACK;
     try {
-      const listing = execFileSync('git', ['ls-files'], { cwd: repo, stdio: 'pipe' }).toString('utf8');
+      const listing = execFileSync('git', ['ls-files'], { cwd: repo, stdio: 'pipe', env: REPO_GIT_ENV }).toString('utf8');
       const roots = new Set();
       for (const line of listing.split(/\r?\n/)) {
         if (!line) continue;
@@ -463,7 +485,7 @@ try {
       PROBE_SUFFIX: PC_PROBE_SUFFIX,
       ignoredRoots: PC_IGNORED_ROOTS,
       fail,
-      runCheckIgnore: (input) => spawnSync('git', ['check-ignore', '--stdin'], { cwd: repo, encoding: 'utf8', input }),
+      runCheckIgnore: (input) => spawnSync('git', ['check-ignore', '--stdin'], { cwd: repo, encoding: 'utf8', input, env: REPO_GIT_ENV }),
     });
   }
   const pcIgnoreProbeFailed = fails > pcFailsBeforeIgnoreProbe;
@@ -480,7 +502,7 @@ try {
   function pcResolve(rel) {
     if (!pcHasGit) return fs.existsSync(path.join(repo, rel)) ? 'tracked' : 'missing';
     try {
-      execFileSync('git', ['ls-files', '--error-unmatch', '--', rel], { cwd: repo, stdio: 'pipe' });
+      execFileSync('git', ['ls-files', '--error-unmatch', '--', rel], { cwd: repo, stdio: 'pipe', env: REPO_GIT_ENV });
       return 'tracked';
     } catch {
       return fs.existsSync(path.join(repo, rel)) ? 'untracked' : 'missing';
@@ -542,6 +564,22 @@ try {
   if (bs.PLATFORMS.length === 0) ok('PLATFORMS=[]: no active platform to check (expected while parked)');
   else for (const p of bs.PLATFORMS) fail(`${p}: in PLATFORMS but buildPlatform was removed — restore it before adding a platform`);
 } catch (e) { fail(`cross-platform SKILL check: ${e.message}`); }
+
+// Findings-back (INSPECT HIGH-1) -- a cheap textual guard so the next unguarded git spawn
+// under scripts/ cannot land silently the way four sites already did before this check
+// existed (git-env.test.mjs / verify.test.mjs, fixed the same commit this check was added).
+// Detection logic lives in git-env-census.mjs (dynamically imported per node/runtime.md
+// section 1 -- this is a scripts/lib import inside the check that consumes it) and is unit-
+// tested there, red-first, with fixtures; this block only wires it into the gate.
+// CWK-136 (R14): the second rung refuses an env: that holds process.env without gitEnv() -- presence
+// of an env: key was never safety. The ok line prints what the census COVERED.
+console.log('git spawn census (CWK-133/C-4 + CWK-136 -- every git spawn under scripts/ must carry an explicit env: that strips ambient GIT_*, never `env: process.env`):');
+try {
+  const { scanGitSpawns, collectScriptsMjs } = await import(pathToFileURL(path.join(repo, 'scripts', 'lib', 'git-env-census.mjs')).href);
+  const cov = scanGitSpawns(collectScriptsMjs(repo));
+  if (cov.findings.length === 0) ok(`every git spawn under scripts/ carries an env: that does not hold an unstripped process.env (covered ${cov.files} file(s), ${cov.calls} git spawn call(s), ${cov.safe} safe, ${cov.exempted} file(s) blob-pinned exempt: see CENSUS_EXEMPT)`);
+  else cov.findings.forEach((m) => fail(m));
+} catch (e) { fail(`git spawn census: ${e.message}`); }
 
 console.log('plugin/ dist (the clean CC plugin vs source SSoT):');
 try {

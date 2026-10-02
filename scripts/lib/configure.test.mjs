@@ -27,10 +27,26 @@ const globalPath = (home) => path.join(home, '.claude', '.coaltipple.json');
 // now writes to the own-dir NEW shape, not the LEGACY .claude/.coaltipple.json —
 // see the precedence tests in config-load.test.mjs for the full read order.
 const projectPath = (dir) => path.join(dir, '.claude', 'coal', 'coaltipple.json');
+// PR24 #3 -- CLAUDE_CONFIG_DIR redirects claudeBaseDir() regardless of USERPROFILE/HOME
+// (config-load.mjs's own claudeBaseDir()), so a spawned child inheriting an ambient
+// CLAUDE_CONFIG_DIR from the operator's own shell would resolve globalConfigPath() OUTSIDE
+// this sandbox -- the real machine config, not `home`. install.test.mjs's own spawn
+// helper already sets this key `undefined` for the identical reason.
 const run = ({ dir, home }, ...a) =>
   spawnSync(process.execPath, [CONFIGURE, ...a],
-    { cwd: dir, env: { ...process.env, USERPROFILE: home, HOME: home }, encoding: 'utf8', timeout: 60000 });
+    { cwd: dir, env: { ...process.env, USERPROFILE: home, HOME: home, CLAUDE_CONFIG_DIR: undefined }, encoding: 'utf8', timeout: 60000 });
 const cleanup = ({ dir, home }) => { fs.rmSync(dir, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); };
+
+test('CWK-120 ride-along (a): an existing config file that is valid JSON but NOT an object fails loud rather than being adopted as-is', () => {
+  const p = freshProject();
+  try {
+    fs.mkdirSync(path.dirname(globalPath(p.home)), { recursive: true });
+    fs.writeFileSync(globalPath(p.home), '[1, 2, 3]', 'utf8'); // a valid-JSON array, not an object
+    const r = run(p, '--qualityBar', '85');
+    assert.notEqual(r.status, 0, 'a non-object config must fail loud, not be silently treated as {}');
+    assert.match(r.stderr, /not a JSON object/);
+  } finally { cleanup(p); }
+});
 
 test('default target is GLOBAL: a flag writes ~/.claude/.coaltipple.json (seeds from factory, comments preserved)', () => {
   const p = freshProject();
@@ -116,6 +132,25 @@ test('--help lists every schema key + documents the global/--project targets', (
     }
     assert.ok(r.stdout.includes('--project'), 'help must document --project');
     assert.match(r.stdout, /GLOBAL/, 'help must explain the default global target');
+  } finally { cleanup(p); }
+});
+
+test('PR24 #2: a trailing comment carrying a bare `}` never fools the append-new-key path into inserting INSIDE the comment', () => {
+  const p = freshProject();
+  try {
+    // The naive text.lastIndexOf('}') (the previous shape) selects the '}' inside this
+    // comment, not the real root closer three lines above it -- the append then lands
+    // inside the comment and writes malformed JSONC. `qualityBar` is a key this config
+    // does not have, forcing the append path (setKeyInText finds no existing line).
+    fs.mkdirSync(path.dirname(projectPath(p.dir)), { recursive: true });
+    fs.writeFileSync(projectPath(p.dir),
+      '{\n  "mode": "auto"\n}\n// a trailing note about a legacy shape { foo: 1 }\n', 'utf8');
+    const r = run(p, '--project', '--qualityBar', '77');
+    assert.equal(r.status, 0, r.stderr);
+    const raw = fs.readFileSync(projectPath(p.dir), 'utf8');
+    const parsed = stripJsonc(raw); // this helper both strips comments AND parses (see its own definition above)
+    assert.equal(parsed.qualityBar, 77, `the written file must still parse as valid JSONC with qualityBar set, got:\n${raw}`);
+    assert.equal(parsed.mode, 'auto', 'the pre-existing key must survive untouched');
   } finally { cleanup(p); }
 });
 
@@ -228,9 +263,12 @@ test('M7b: -p resolves to --project (not updateCheckDays); -P sets updateCheckDa
 // cheap regression tripwire for the mechanism's continued EXISTENCE.
 // ---------------------------------------------------------------------------
 
-test('structural: configure.mjs DOES call fs.rmSync on a legacy path inside its write logic (move-on-write exists)', () => {
+test('structural: configure.mjs retires legacy paths inside its write logic -- rmSync ONLY for the seeded one, moveLegacyAside for the rest (move-on-write exists)', () => {
   const src = fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'configure.mjs'), 'utf8');
-  assert.match(src, /fs\.rmSync\(\s*writeTarget\.legacyToRemove/, 'expected the move-on-write drop-old call to still be present');
+  // UMB-133 bounce 1: the drop-old call used to be `fs.rmSync(writeTarget.legacyToRemove` for EVERY legacy.
+  // It is now gated on `legacy === seededFrom`, with `moveLegacyAside` for everything the run never read.
+  assert.match(src, /if \(legacy === seededFrom\)\s*\{\s*fs\.rmSync\(legacy/, 'expected the seeded-only drop-old call to still be present');
+  assert.match(src, /moveLegacyAside\(legacy\)/, 'expected the move-aside for unread legacies to still be present');
 });
 
 // INSPECT Finding 1 (2026-08-08, CRITICAL, empirically reproduced): the ORIGINAL
@@ -277,5 +315,111 @@ test('shadowed legacy: a legacy file coexisting with an already-migrated new-sha
     assert.equal(kept.qualityBar, 81, 'the edit landed at the already-migrated new-shape file (the correct target all along)');
     assert.ok(!('mode' in kept), 'the shadowed legacy content must NOT leak into the new-shape file -- the new file was the read source, not the legacy');
     assert.ok(!fs.existsSync(legacy), 'the shadowed legacy file must be dropped, not left behind forever');
+  } finally { cleanup(p); }
+});
+
+// UMB-133: the SECOND legacy shape (<gitroot>/.coaltipple.json). Two things must hold that a
+// positional "legacy = the last candidate" would have broken: (1) a root-only legacy is the
+// migration SEED and is dropped; (2) with BOTH legacies present LEGACY-1 is the seed (it is what a
+// READ resolves) and the shadowed LEGACY-2 is dropped with it -- neither is ever a write target.
+test('UMB-133 move-on-write: a root-only LEGACY-2 (<gitroot>/.coaltipple.json) is the migration seed and is dropped -- its real values land at canonical', () => {
+  const p = freshProject();
+  try {
+    const rootLegacy = path.join(p.dir, '.coaltipple.json');
+    fs.writeFileSync(rootLegacy, JSON.stringify({ fableConsent: true, mode: 'off', qualityBar: 91 }), 'utf8');
+    const r = run(p, '--project', '--updateCheckDays', '30');
+    assert.equal(r.status, 0, r.stderr);
+    const migrated = stripJsonc(fs.readFileSync(projectPath(p.dir), 'utf8'));
+    assert.equal(migrated.fableConsent, true, 'the always-this-project consent record survived the root-legacy migration');
+    assert.equal(migrated.mode, 'off', 'a non-factory value survived -- not reset to the factory auto');
+    assert.equal(migrated.qualityBar, 91);
+    assert.equal(migrated.updateCheckDays, 30, 'the edit landed at canonical');
+    assert.ok(!fs.existsSync(rootLegacy), 'the root legacy is gone -- moved, not duplicated');
+    assert.doesNotMatch(r.stdout, /seeding from factory/);
+  } finally { cleanup(p); }
+});
+
+test('UMB-133 move-on-write: BOTH legacies present -> LEGACY-1 is the seed (what a read resolves), and BOTH are dropped; neither is written in place', () => {
+  const p = freshProject();
+  try {
+    const legacy1 = path.join(p.dir, '.claude', '.coaltipple.json');
+    const legacy2 = path.join(p.dir, '.coaltipple.json');
+    fs.mkdirSync(path.dirname(legacy1), { recursive: true });
+    fs.writeFileSync(legacy1, JSON.stringify({ qualityBar: 71 }), 'utf8');
+    fs.writeFileSync(legacy2, JSON.stringify({ qualityBar: 72, language: 'th' }), 'utf8');
+    const r = run(p, '--project', '--updateCheckDays', '30');
+    assert.equal(r.status, 0, r.stderr);
+    const migrated = stripJsonc(fs.readFileSync(projectPath(p.dir), 'utf8'));
+    assert.equal(migrated.qualityBar, 71, 'seeded from LEGACY-1, the one a read resolves');
+    assert.ok(!('language' in migrated), 'the shadowed LEGACY-2 content did not leak in');
+    assert.ok(!fs.existsSync(legacy1) && !fs.existsSync(legacy2), 'both legacy files dropped -- no leftover');
+  } finally { cleanup(p); }
+});
+
+// ---------------------------------------------------------------------------
+// UMB-133 BOUNCE 1, MEDIUM-1 (INSPECT): the tool DELETED a legacy config it never opened, in
+// silence. Ruling: a legacy is deleted ONLY when this run actually read it as the migration seed
+// (its contents now live in the target -- genuinely superseded); every OTHER existing legacy is
+// moved aside to <path>.superseded, never deleted; and every path removed or moved is NAMED on
+// stdout. Distinct keys per file so a lost key is visible.
+// ---------------------------------------------------------------------------
+const L1 = (dir) => path.join(dir, '.claude', '.coaltipple.json');
+const L2 = (dir) => path.join(dir, '.coaltipple.json');
+const put = (f, obj) => { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, JSON.stringify(obj), 'utf8'); };
+
+test('UMB-133 B1 M1 case C (both legacies, no canonical): the UNREAD LEGACY-2 survives BYTE-FOR-BYTE as .superseded, and stdout names both paths', () => {
+  const p = freshProject();
+  try {
+    put(L1(p.dir), { qualityBar: 10, onlyInLegacy1: 'ALPHA' });
+    const l2Bytes = JSON.stringify({ qualityBar: 20, onlyInLegacy2: 'BETA' });
+    put(L2(p.dir), JSON.parse(l2Bytes));
+    const r = run(p, '--project', '--qualityBar', '85');
+    assert.equal(r.status, 0, r.stderr);
+    assert.ok(!fs.existsSync(L2(p.dir)), 'LEGACY-2 is no longer a config path');
+    assert.equal(fs.readFileSync(L2(p.dir) + '.superseded', 'utf8'), l2Bytes, 'its contents survive byte-for-byte -- the tool never read it, so it may not destroy it');
+    assert.ok(!fs.existsSync(L1(p.dir)), 'LEGACY-1 was the migration seed: its contents live in the target, so it is removed');
+    assert.match(r.stdout, /\.coaltipple\.json\.superseded/, 'stdout names where the moved-aside file went');
+    assert.ok(r.stdout.includes(L1(p.dir)), 'stdout names the removed seed legacy too (it was silent before)');
+    assert.equal(stripJsonc(fs.readFileSync(projectPath(p.dir), 'utf8')).onlyInLegacy1, 'ALPHA', 'the seed content still migrated');
+  } finally { cleanup(p); }
+});
+
+test('UMB-133 B1 M1 case D (canonical + both legacies): NOTHING is deleted, both survive as .superseded, and BOTH are named on stdout (before: 3 files -> 1, zero output)', () => {
+  const p = freshProject();
+  try {
+    put(projectPath(p.dir), { qualityBar: 60 });
+    put(L1(p.dir), { onlyInLegacy1: 'ALPHA' });
+    put(L2(p.dir), { onlyInLegacy2: 'BETA' });
+    const r = run(p, '--project', '--qualityBar', '85');
+    assert.equal(r.status, 0, r.stderr);
+    assert.ok(!fs.existsSync(L1(p.dir)) && !fs.existsSync(L2(p.dir)), 'neither is a candidate any more');
+    assert.equal(JSON.parse(fs.readFileSync(L1(p.dir) + '.superseded', 'utf8')).onlyInLegacy1, 'ALPHA', 'LEGACY-1 was never read this run (canonical existed) -> kept, not deleted');
+    assert.equal(JSON.parse(fs.readFileSync(L2(p.dir) + '.superseded', 'utf8')).onlyInLegacy2, 'BETA');
+    assert.ok(r.stdout.includes(L1(p.dir)) && r.stdout.includes(L2(p.dir)), `stdout must name both paths:\n${r.stdout}`);
+  } finally { cleanup(p); }
+});
+
+test('UMB-133 B1 M1 case B (root-only legacy = the seed): removed, and the removal is now REPORTED', () => {
+  const p = freshProject();
+  try {
+    put(L2(p.dir), { fableConsent: true, qualityBar: 91 });
+    const r = run(p, '--project', '--updateCheckDays', '30');
+    assert.equal(r.status, 0, r.stderr);
+    assert.ok(!fs.existsSync(L2(p.dir)) && !fs.existsSync(L2(p.dir) + '.superseded'), 'seeded -> its contents are in the target -> plain removal, no .superseded litter');
+    assert.ok(r.stdout.includes(L2(p.dir)), 'the removal names the path (it was only implied by the Migrating line for LEGACY-1, and silent for the drop)');
+    assert.match(r.stdout, /Removed/);
+  } finally { cleanup(p); }
+});
+
+test('UMB-133 B1 M1: a second run never overwrites an earlier .superseded (numbered suffix)', () => {
+  const p = freshProject();
+  try {
+    put(projectPath(p.dir), { qualityBar: 60 });
+    put(L2(p.dir), { gen: 1 });
+    assert.equal(run(p, '--project', '--qualityBar', '70').status, 0);
+    put(L2(p.dir), { gen: 2 });
+    assert.equal(run(p, '--project', '--qualityBar', '71').status, 0);
+    assert.equal(JSON.parse(fs.readFileSync(L2(p.dir) + '.superseded', 'utf8')).gen, 1, 'the first moved-aside file is untouched');
+    assert.equal(JSON.parse(fs.readFileSync(L2(p.dir) + '.superseded.1', 'utf8')).gen, 2, 'the second lands beside it');
   } finally { cleanup(p); }
 });

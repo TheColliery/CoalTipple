@@ -37,28 +37,51 @@ function findGitRoot(startDir) {
 }
 // Namespace campaign (#69+#39): first-found-wins over the SAME order as
 // config-load.mjs's projectConfigCandidates -- own agent dir (always .claude for
-// this room) -> .agents -> .gemini -> LEGACY <gitroot>/.claude/.coaltipple.json.
+// this room) -> .agents -> .gemini -> LEGACY-1 <gitroot>/.claude/.coaltipple.json
+// -> LEGACY-2 <gitroot>/.coaltipple.json (UMB-133).
 const AGENT_DIR_ORDER = ['.claude', '.agents', '.gemini'];
 function projectConfigCandidates(cwd) {
   const root = findGitRoot(cwd);
   const candidates = AGENT_DIR_ORDER.map((d) => path.join(root, d, 'coal', 'coaltipple.json'));
-  candidates.push(path.join(root, '.claude', '.coaltipple.json')); // LEGACY, always last
+  candidates.push(path.join(root, '.claude', '.coaltipple.json')); // LEGACY-1
+  candidates.push(path.join(root, '.coaltipple.json')); // LEGACY-2, always last
   return candidates;
 }
+// UMB-174(b) -- returns { cfg, reason }, never a bare object-or-null. An ABSENT file
+// (ENOENT) is the normal, silent case: reason stays null, nothing to report. Any other
+// failure mode is a file that EXISTS but could not be turned into a config, and each
+// gets its own named reason so the SessionStart report (projectConfigNotices, below)
+// can tell a user WHY their file was skipped instead of silently treating it as if it
+// were never there -- the exact gap UMB-174 exists to close.
+// BOM strip happens BEFORE any parse/classification attempt, matching config-load.mjs's
+// readJsonc and configure.mjs's parseConfig (verified consistent, not re-derived here) --
+// a BOM-prefixed VALID object must be READ, never reported as "malformed JSON" by an
+// implementation that tried to parse before stripping.
 function readCfgFile(file) {
+  let content;
   try {
-    let content = fs.readFileSync(file, 'utf8');
-    if (content.charCodeAt(0) === 0xFEFF) content = content.slice(1); // BOM-safe, no literal BOM
-    // String-aware JSONC stripper (CM #12 fix): the string alternative consumes
-    // an escaped char (\\.) or any non-quote/non-backslash char, so a value
-    // ending in a literal backslash terminates the string correctly instead of
-    // leaking escape state into the next token and mis-stripping a later comment.
-    const cleanJson = content.replace(/"(?:\\.|[^"\\])*"|\/\/.*|\/\*[\s\S]*?\*\//g, (m) => (m[0] === '"' ? m : ''));
+    content = fs.readFileSync(file, 'utf8');
+  } catch (e) {
+    if (e.code === 'ENOENT') return { cfg: null, reason: null }; // absent -- nothing to report
+    if (e.code === 'EISDIR') return { cfg: null, reason: 'a directory' };
+    return { cfg: null, reason: 'unreadable' }; // EACCES / EPERM / any other read failure
+  }
+  if (content.charCodeAt(0) === 0xFEFF) content = content.slice(1); // BOM-safe, no literal BOM
+  // String-aware JSONC stripper (CM #12 fix): the string alternative consumes
+  // an escaped char (\\.) or any non-quote/non-backslash char, so a value
+  // ending in a literal backslash terminates the string correctly instead of
+  // leaking escape state into the next token and mis-stripping a later comment.
+  const cleanJson = content.replace(/"(?:\\.|[^"\\])*"|\/\/.*|\/\*[\s\S]*?\*\//g, (m) => (m[0] === '"' ? m : ''));
+  let parsed;
+  try {
     // Prototype-pollution guard (OWASP Node.js; flock-canonical -- CoalMine/CoalBoard's own
     // conductors carry the same reviver inline for the identical Phoenix #9 standalone reason).
-    const parsed = JSON.parse(cleanJson, (k, v) => (k === '__proto__' || k === 'constructor' || k === 'prototype' ? undefined : v));
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
-  } catch { return null; }
+    parsed = JSON.parse(cleanJson, (k, v) => (k === '__proto__' || k === 'constructor' || k === 'prototype' ? undefined : v));
+  } catch {
+    return { cfg: null, reason: 'malformed JSON' };
+  }
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return { cfg: parsed, reason: null };
+  return { cfg: null, reason: 'not a JSON object' };
 }
 // SAFER-VALUE-WINS (hooks-safety.md §9): a project .coaltipple.json arrives WITH A
 // CLONED REPO -- untrusted. Only the keys THIS hook actually reads+branches on need the
@@ -73,30 +96,48 @@ const SAFER_ENUM = { mode: ['off', 'delegation', 'escalation', 'auto'], updateMo
 // install). fableConsent has no entry here at all (see the header comment above), so it
 // never needed this and isn't part of the discussion the config-load.mjs comment records.
 const SCHEMA_DEFAULT_ENUM = { mode: 'auto', updateMode: 'ask' };
+// CB-R1 class (R14; CoalBoard 0a4163b is the exemplar): an UNKNOWN value -- not in the key's enum,
+// or not even a string -- is neither clamped nor validated by "skip it": the shallow-merge result
+// was then the raw junk, so a cloned repo's junk beat a global off. Inside the clamp an unknown
+// value reads as ABSENT (a project's falls to the effective global, a global's to the schema
+// default), and the merged value is always the CANONICAL enum literal from `order`, never the
+// config string -- so nothing downstream (routingOff, the update directive) can see attacker text.
+function enumLiteral(order, v) {
+  if (typeof v !== 'string') return null;
+  const i = order.indexOf(v.toLowerCase());
+  return i === -1 ? null : order[i];
+}
 let _cfg;
+// What the walk resolved, kept for the SessionStart report (UMB-133 + UMB-174): the git
+// root, the candidate list, the index of the winning EXISTING candidate (-1 = none
+// exists), and each side's UNREADABLE reason (null = readable or absent).
+let _walk = null;
 function loadCfg() {
   if (_cfg !== undefined) return _cfg;
   // CLAUDE_CONFIG_DIR (#6) redirects ~/.claude (portable / multi-account / CI); first entry if a comma-list.
   const cfgDir = claudeBaseDir();
-  const global = readCfgFile(path.join(cfgDir, '.coaltipple.json'));
+  const globalPath = path.join(cfgDir, '.coaltipple.json');
+  const { cfg: global, reason: globalReason } = readCfgFile(globalPath);
   // First EXISTING candidate wins (matches config-load.mjs's projectConfigPath
   // exactly) -- an existing-but-corrupt file still stops the walk there and
-  // contributes nothing (readCfgFile returns null), it does NOT fall through to
+  // contributes nothing (readCfgFile's cfg is null), it does NOT fall through to
   // a lower-priority candidate's real content.
-  const candidates = projectConfigCandidates(process.cwd());
-  const projectPath = candidates.find((c) => fs.existsSync(c)) || candidates[0];
-  const project = readCfgFile(projectPath);
+  const root = findGitRoot(process.cwd()); // idempotent: projectConfigCandidates(root) resolves the same root
+  const candidates = projectConfigCandidates(root);
+  const hitIdx = candidates.findIndex((c) => fs.existsSync(c));
+  const projectPath = hitIdx === -1 ? candidates[0] : candidates[hitIdx];
+  const { cfg: project, reason: projectReason } = readCfgFile(projectPath);
+  _walk = { root, candidates, hitIdx, globalPath, globalReason, projectReason };
   // Merge only when something loaded; keep null (= "no config") if neither did, so
   // the existing `if (cfg && ...)` guards in main() behave exactly as before.
   const merged = global || project ? { ...(global || {}), ...(project || {}) } : null;
   if (merged && project) {
     for (const [key, order] of Object.entries(SAFER_ENUM)) {
       if (project[key] === undefined) continue;
-      const effectiveGlobal = (global && global[key] !== undefined) ? global[key] : SCHEMA_DEFAULT_ENUM[key];
-      const gi = order.indexOf(String(effectiveGlobal).toLowerCase());
-      const pi = order.indexOf(String(project[key]).toLowerCase());
-      if (gi === -1 || pi === -1) continue; // unknown value: leave the shallow-merge result
-      merged[key] = pi <= gi ? project[key] : effectiveGlobal; // project may not move PAST the effective global toward the weaker end
+      const g = enumLiteral(order, global && global[key]); // unknown/absent global = its schema default, not "anything goes"
+      const effectiveGlobal = g !== null ? g : SCHEMA_DEFAULT_ENUM[key];
+      const p = enumLiteral(order, project[key]); // unknown project value = ABSENT
+      merged[key] = p !== null && order.indexOf(p) <= order.indexOf(effectiveGlobal) ? p : effectiveGlobal; // project may not move PAST the effective global toward the weaker end
     }
   }
   _cfg = merged;
@@ -250,16 +291,16 @@ function langLine(cfg) {
 }
 function contract(cfg) {
   return [
-    '[CoalTipple] Model/effort routing active. Before delegating, ensure a valid model-tier ranking exists (it is the alias floor haiku<sonnet<opus<fable + your modelTiers pins; fable = the top rung, a real-money spawn you ASK before using [once/always-this-project/no], else opus; rebuild it via the coaltipple skill if missing/corrupt). Then:',
+    '[CoalTipple] Model/effort routing active. Before delegating, ensure a valid model-tier ranking exists (it is the alias floor haiku<sonnet<opus<fable + your modelTiers pins; fable = the top rung, a real-money spawn you ASK before using [once/always-this-project/no], else cap at the rung BELOW fable as READ from the ranking, never a hardcoded model; rebuild it via the coaltipple skill if missing/corrupt). Then:',
     '- Routing degrades safe on any Claude Code version: an unfamiliar model classifies as a strong tier, a failed spawn falls to the next available, and the platform resolves each alias to its current best model at spawn-time (verified across the 2.1.x line).',
     '- DELEGATE-DOWN a task you can do but is large + cheap, to a lower tier — ONLY with a compact task-contract (goal+constraints+interface+done) AND verify the returned output on merge. Skip it for small tasks (spawn overhead beats the saving).',
     '- ESCALATE-UP a task beyond the current tier for quality. A worker that fails RETURNS its result and the MAIN re-routes. Spawn/fan-out discipline is CoalFace\'s authority, not this contract\'s.',
-    '- Grade by the deterministic rubric, not a model self-assessment. Opus is scarce: cheapest lever first - raise effort, then a stronger same-tier version (e.g. Opus 4.6 -> 4.8), before escalating the tier.',
+    '- Grade by the deterministic rubric, not a model self-assessment. Opus is scarce: cheapest lever first - raise effort, then a stronger same-tier version, before escalating the tier.',
     '- Sensitivity is graded by MEANING in ANY language: the keyword/complexity hints are an English-only fast-path, so a non-English prompt (Spanish/French/Thai/CJK - any script) fires NO keyword flag. Never read "no flag" as "not sensitive" - judge crypto/auth/payment/security by intent and keep never-down (delegate-down stays forbidden for sensitive work).',
     '- mode (.coaltipple.json, default auto): auto = route both directions per grade; delegation = delegate-down only (escalate-up suppressed, a budget-saving mode); escalation = escalate-up only (delegate-down suppressed, a quality mode); off = routing off, do it yourself. The sensitive HARD GATE overrides mode (sensitive is still never-down and may always escalate up).',
     '- Honor qualityBar (.coaltipple.json, 0-100, default 60): a result must clear it or climb the model ladder — start at the grade floor, verify vs the contract done-criteria by domain-appropriate means (code: tests/build; text: completeness; research: sourced claims), climb one rung if short, jump to the top tier if far below or out of attempts. 0 = anything passes (cheapest); 100 = climb until best.',
     langLine(cfg),
-    '- Consent + token spend: honor .coaltipple.json for routing spend. Whether/how to fan out costly work is CoalFace\'s call, not this contract\'s.',
+    '- Consent + token spend: honor .coaltipple.json for routing spend. Whether/how to fan out costly work is not this contract\'s: if CoalFace is present this session (its hook fired or its skill is listed) it is CoalFace\'s call; a plugin that is not present decides nothing.',
   ].join('\n');
 }
 
@@ -274,6 +315,56 @@ function routingOff(cfg) {
   if (cfg.enableRouting === false || cfg.routing === false) return true; // legacy key honored
   if (typeof cfg.mode === 'string' && cfg.mode.toLowerCase() === 'off') return true; // mode:"off" short-circuit
   return false;
+}
+
+// UMB-133 -- a project config the walk will NOT read must be NAMED, never silently walked
+// past (a fableConsent written to <gitroot>/.coaltipple.json sat dead for 14 days, and silence
+// read as "honoured"), and a config read from a LEGACY shape is told where to move.
+// SessionStart ONLY: this is session state, not turn state, so the per-prompt forcer never
+// carries it (Phoenix #13: the sanctioned surfaces, no stderr). The probe is a FIXED list of
+// near-miss shapes under the SAME roots the walk reads -- never a crawl (Phoenix #3 budgets the
+// work this hook ADDS): 2 + 3 agent dirs x (2, +1 for the two non-.claude dirs) = 10 existsSync.
+// <gitroot>/.coaltipple.json is NOT on it: it is LEGACY-2, a candidate.
+// routingOff / disableRouting:'all' return in main() BEFORE this runs and that is deliberate:
+// a user who silenced the conductor is not re-armed by this report.
+const CANON_REL = '.claude/coal/coaltipple.json';
+function projectConfigNotices() {
+  const lines = [];
+  try {
+    if (!_walk) return lines;
+    const { root, candidates, hitIdx, globalPath, globalReason, projectReason } = _walk;
+    const rel = (p) => path.relative(root, p).split(path.sep).join('/');
+    // UMB-174(b) -- the winning candidate EXISTS but could not be turned into a config
+    // (malformed JSON / a directory / unreadable / not a JSON object): name it and the
+    // reason, never silently treat it as "no config" the way an absent file correctly is.
+    // Takes precedence over the LEGACY branch below: a file that failed to parse was not
+    // actually "read" -- claiming it was would be a second false statement in one line.
+    if (hitIdx !== -1 && projectReason) {
+      lines.push(`[CoalTipple] UNREADABLE: ${rel(candidates[hitIdx])} exists but is not a readable config (${projectReason}); it was skipped — canonical = ${CANON_REL}`);
+    } else if (hitIdx >= AGENT_DIR_ORDER.length) { // the winner is one of the LEGACY shapes (they sit after the canonical dirs)
+      lines.push(`[CoalTipple] LEGACY: ${rel(candidates[hitIdx])} is read as this project's config but is deprecated; canonical = ${CANON_REL} -- move it there.`);
+    }
+    // CWK-135 (a), main's ruling 2026-09-24 (the open flock question B2-1 raised): the
+    // UNREADABLE line names the path of the TIER that failed. The PROJECT line above keeps the
+    // verbatim flock string (canonical = .claude/coal/coaltipple.json); the GLOBAL line names
+    // the global file's OWN path -- globalPath, the CLAUDE_CONFIG_DIR-aware path this hook
+    // actually read -- because a global config has no project location to move to, and a
+    // user-facing failure states what to do next (fix THAT file).
+    if (globalReason) {
+      lines.push(`[CoalTipple] UNREADABLE: ${globalPath} exists but is not a readable config (${globalReason}); it was skipped — canonical = ${globalPath}`);
+    }
+    const candSet = new Set(candidates.map(rel));
+    const near = ['coaltipple.json', 'coal/coaltipple.json'];
+    for (const d of AGENT_DIR_ORDER) {
+      near.push(`${d}/coaltipple.json`, `${d}/coal/.coaltipple.json`);
+      if (d !== '.claude') near.push(`${d}/.coaltipple.json`); // .claude/.coaltipple.json is LEGACY-1, a candidate
+    }
+    for (const n of near) {
+      if (candSet.has(n)) continue;
+      if (fs.existsSync(path.join(root, ...n.split('/')))) lines.push(`[CoalTipple] IGNORED: ${n} is not a config path; canonical = ${CANON_REL}`);
+    }
+  } catch {}
+  return lines;
 }
 
 function main() {
@@ -330,6 +421,7 @@ function main() {
   // disabled (routingOff / disableRouting:all both returned above). Its own off-switch
   // is updateMode:"off". The per-prompt forcer (UserPromptSubmit, above) is untouched.
   let out = contract(cfg);
+  for (const n of projectConfigNotices()) out += '\n' + n; // UMB-133: LEGACY hit / IGNORED non-candidates, SessionStart only
   let updateMode = 'ask';
   let updateCheckDays = 14;
   if (cfg && typeof cfg.updateMode === 'string') {

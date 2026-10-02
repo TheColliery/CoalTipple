@@ -288,3 +288,76 @@ test('H10: a failed reinstall (unreadable source) leaves the existing install in
     assert.ok(!fs.existsSync(path.join(dest, 'coaltipple.new')), 'no staging litter left behind');
   } finally { fs.rmSync(sb, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); }
 });
+
+// ---------------------------------------------------------------------------
+// UMB-133 BOUNCE 1, MEDIUM-2 (INSPECT): <gitroot>/.coaltipple.json became a CANDIDATE, so
+// projectConfigPath can return it and `--reset` wrote the factory template INTO the path the
+// release deprecates, while printing "OVERWRITES .claude/.coaltipple.json" (false in 3 of 4
+// layouts). Ruling: --reset NEVER targets a legacy path -- it resolves to the canonical path
+// (the same target configure --project migrates to), moves any existing legacy aside (never
+// deletes it), and prints the RESOLVED path.
+// ---------------------------------------------------------------------------
+function mkResetProject(layout) {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-reset-'));
+  fs.mkdirSync(path.join(tmp, '.git')); // findGitRoot anchor
+  for (const [rel, body] of Object.entries(layout)) {
+    const f = path.join(tmp, ...rel.split('/'));
+    fs.mkdirSync(path.dirname(f), { recursive: true });
+    fs.writeFileSync(f, body, 'utf8');
+  }
+  return tmp;
+}
+const CANON_REL = ['.claude', 'coal', 'coaltipple.json'];
+for (const [label, rel, canonAlso] of [
+  ['LEGACY-2 (<gitroot>/.coaltipple.json)', ['.coaltipple.json'], false],
+  ['LEGACY-1 (.claude/.coaltipple.json)', ['.claude', '.coaltipple.json'], false],
+  ['LEGACY-1 + canonical both present', ['.claude', '.coaltipple.json'], true],
+]) {
+  test(`UMB-133 B1 M2: --reset with ${label} -> factory lands at CANONICAL, the legacy is moved aside intact, and the printed line names the canonical path`, () => {
+    const layout = { [rel.join('/')]: '{ "qualityBar": 42, "userOnly": "KEEP-ME" }' };
+    if (canonAlso) layout[CANON_REL.join('/')] = '{ "qualityBar": 43 }';
+    const tmp = mkResetProject(layout);
+    const home = mkHome();
+    try {
+      const legacy = path.join(tmp, ...rel);
+      const canon = path.join(tmp, ...CANON_REL);
+      const r = run(tmp, home, '--reset');
+      assert.equal(r.status, 0, `reset must pass:\n${r.stdout}${r.stderr}`);
+      assert.match(fs.readFileSync(canon, 'utf8'), /"concurrency":/, 'the factory template is at the CANONICAL path');
+      assert.ok(!fs.existsSync(legacy), '--reset must NEVER leave the factory template at (or keep) a deprecated path');
+      assert.equal(fs.readFileSync(legacy + '.superseded', 'utf8'), '{ "qualityBar": 42, "userOnly": "KEEP-ME" }', 'the legacy is moved aside byte-for-byte, never deleted');
+      assert.ok(r.stdout.includes(canon), `stdout names the canonical path actually written:\n${r.stdout}`);
+      assert.doesNotMatch(r.stdout, /OVERWRITES \.claude\/\.coaltipple\.json/, 'the hard-coded legacy path is gone from the printed line');
+      assert.ok(r.stdout.includes(legacy), 'the moved-aside legacy is named too');
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); }
+  });
+}
+
+test('UMB-133 B1 M2: --reset on a fresh project and on a canonical-only project prints the canonical path and creates no .superseded litter', () => {
+  for (const layout of [{}, { '.claude/coal/coaltipple.json': '{ "qualityBar": 43 }' }]) {
+    const tmp = mkResetProject(layout);
+    const home = mkHome();
+    try {
+      const canon = path.join(tmp, ...CANON_REL);
+      const r = run(tmp, home, '--reset');
+      assert.equal(r.status, 0, r.stderr);
+      assert.match(fs.readFileSync(canon, 'utf8'), /"concurrency":/);
+      assert.ok(r.stdout.includes(canon));
+      assert.doesNotMatch(r.stdout, /OVERWRITES \.claude\/\.coaltipple\.json/);
+      const litter = fs.readdirSync(tmp, { recursive: true }).filter((n) => String(n).includes('.superseded'));
+      assert.deepEqual(litter, [], 'nothing to move aside -> nothing moved');
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); }
+  }
+});
+
+test('UMB-133 B1 M2 (over-reach guard): a plain (non-reset) install with only LEGACY-2 PRESERVES it untouched -- no migration, no move-aside, no factory seed beside it', () => {
+  const tmp = mkResetProject({ '.coaltipple.json': '{ "qualityBar": 42 }' });
+  const home = mkHome();
+  try {
+    const r = run(tmp, home, path.join(tmp, 'skills'));
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(fs.readFileSync(path.join(tmp, '.coaltipple.json'), 'utf8'), '{ "qualityBar": 42 }', 'create-if-absent: a config found anywhere on the walk is kept as-is');
+    assert.ok(!fs.existsSync(path.join(tmp, '.claude', 'coal', 'coaltipple.json')), 'a plain install never seeds a second config beside the one it found');
+    assert.ok(!fs.existsSync(path.join(tmp, '.coaltipple.json.superseded')));
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); }
+});

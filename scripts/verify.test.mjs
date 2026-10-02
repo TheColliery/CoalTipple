@@ -13,13 +13,25 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { gitEnv } from './lib/git-env.mjs';
+import { escapeRegExp } from './lib/regex-escape.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const VERIFY_ITEMS = ['skills', 'hooks', 'commands', 'platform-configs', '.claude-plugin', 'plugin', 'scripts', 'CHANGELOG.md'];
+// The four root docs config-keys.mjs declares as mandatory mdFiles/keyTables/
+// pointer-check surfaces (README/SECURITY/CONTRIBUTING/PRIVACY) -- board #64's own
+// VERIFY_ITEMS list omits them (that check never reads them), but PR24 #13 turned an
+// UNREADABLE declared surface into a hard FAIL, so a "pristine copy" that is missing
+// them is no longer pristine from config-keys.mjs's own point of view: it cannot tell
+// this test's deliberately-narrow fixture apart from a real repo that renamed/deleted
+// one of them. mkGitSandbox() below already copies the same four for the identical
+// reason (its own comment); this is that same fix applied to mkSandbox().
+const ROOT_DOCS = ['README.md', 'SECURITY.md', 'CONTRIBUTING.md', 'PRIVACY.md'];
 
 function mkSandbox() {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-verify-'));
   for (const item of VERIFY_ITEMS) fs.cpSync(path.join(repo, item), path.join(tmp, item), { recursive: true });
+  for (const f of ROOT_DOCS) fs.copyFileSync(path.join(repo, f), path.join(tmp, f));
   return tmp;
 }
 const runVerify = (tmp) => spawnSync(process.execPath, [path.join(tmp, 'scripts', 'verify.mjs')], { encoding: 'utf8', timeout: 60000 });
@@ -82,7 +94,7 @@ function mkGitSandbox() {
     fs.copyFileSync(path.join(repo, f), path.join(tmp, f));
   }
   const git = (args) => {
-    const r = spawnSync('git', args, { cwd: tmp, encoding: 'utf8' });
+    const r = spawnSync('git', args, { cwd: tmp, encoding: 'utf8', env: gitEnv(path.dirname(tmp)) });
     if (r.status !== 0) throw new Error(`git ${args.join(' ')} failed: ${r.stderr || r.error?.message}`);
     return r.stdout;
   };
@@ -175,8 +187,9 @@ test('verify.mjs pointer check: FIX 2 -- the lone-CR .gitignore line false-match
     // commands/*.md, so this stays isolated from FIX 2's OWN citer-relative join.
     fs.appendFileSync(path.join(tmp, 'SECURITY.md'), '\nSee `totally-fake-root/notes.md` for details.\n');
 
+    const gitTmpEnv = gitEnv(path.dirname(tmp));
     const git = (args) => {
-      const r = spawnSync('git', args, { cwd: tmp, encoding: 'utf8' });
+      const r = spawnSync('git', args, { cwd: tmp, encoding: 'utf8', env: gitTmpEnv });
       if (r.status !== 0) throw new Error(`git ${args.join(' ')} failed: ${r.stderr || r.error?.message}`);
       return r.stdout;
     };
@@ -193,19 +206,19 @@ test('verify.mjs pointer check: FIX 2 -- the lone-CR .gitignore line false-match
       'the probed root must be genuinely absent -- that absence is what the false match depends on');
 
     // THE DISCRIMINATING PAIR, at the git level, on the SAME real fixture.
-    const bare = spawnSync('git', ['check-ignore', '--stdin'], { cwd: tmp, encoding: 'utf8', input: 'totally-fake-root/\n' });
+    const bare = spawnSync('git', ['check-ignore', '--stdin'], { cwd: tmp, encoding: 'utf8', input: 'totally-fake-root/\n', env: gitTmpEnv });
     assert.equal(bare.status, 0,
       'RED: the bare feed must reproduce the false match on THIS fixture -- an absent, un-patterned root reported ignored');
-    const probed = spawnSync('git', ['check-ignore', '--stdin'], { cwd: tmp, encoding: 'utf8', input: 'totally-fake-root/.pointer-check-probe\n' });
+    const probed = spawnSync('git', ['check-ignore', '--stdin'], { cwd: tmp, encoding: 'utf8', input: 'totally-fake-root/.pointer-check-probe\n', env: gitTmpEnv });
     assert.equal(probed.status, 1, 'the injection-site feed correctly reports the SAME root as NOT ignored');
-    const verbose = spawnSync('git', ['check-ignore', '-v', '--stdin'], { cwd: tmp, encoding: 'utf8', input: 'totally-fake-root/\n' });
+    const verbose = spawnSync('git', ['check-ignore', '-v', '--stdin'], { cwd: tmp, encoding: 'utf8', input: 'totally-fake-root/\n', env: gitTmpEnv });
     assert.match(verbose.stdout, /\.gitignore:2:/,
       'the matching pattern must be the lone-CR line (line 2), naming the source unambiguously');
 
     // CONTROL: a genuinely-ignored root still matches under BOTH feeds -- the probe loses
     // no true positive.
-    assert.equal(spawnSync('git', ['check-ignore', '--stdin'], { cwd: tmp, encoding: 'utf8', input: 'dogfood/\n' }).status, 0);
-    assert.equal(spawnSync('git', ['check-ignore', '--stdin'], { cwd: tmp, encoding: 'utf8', input: 'dogfood/.pointer-check-probe\n' }).status, 0);
+    assert.equal(spawnSync('git', ['check-ignore', '--stdin'], { cwd: tmp, encoding: 'utf8', input: 'dogfood/\n', env: gitTmpEnv }).status, 0);
+    assert.equal(spawnSync('git', ['check-ignore', '--stdin'], { cwd: tmp, encoding: 'utf8', input: 'dogfood/.pointer-check-probe\n', env: gitTmpEnv }).status, 0);
 
     // END-TO-END: the real gate, as fixed, must not be fooled by this fixture -- the
     // absent-root citation is silently out of scope (never even resolves), never the false
@@ -234,10 +247,15 @@ test('verify.mjs pointer check: a REAL check-ignore derivation FAILURE reddens t
   try {
     const verifyPath = path.join(tmp, 'scripts', 'verify.mjs');
     const src = fs.readFileSync(verifyPath, 'utf8');
-    const needle = "spawnSync('git', ['check-ignore', '--stdin'], { cwd: repo, encoding: 'utf8', input })";
+    const needle = "spawnSync('git', ['check-ignore', '--stdin'], { cwd: repo, encoding: 'utf8', input, env: REPO_GIT_ENV })";
     assert.ok(src.includes(needle), 'the check-ignore spawn line moved -- update this test\'s patch target');
+    // R7 CI-RED 3 -- the REPLACEMENT deliberately drops `input` (the `needle` above still pins
+    // the real production line, which keeps it): git rejects the unknown flag and exits 129
+    // before reading stdin, so a supplied `input` races git's exit and spawnSync can return
+    // `error: EPIPE` (status null) instead of the 129 asserted below -- same class as the
+    // pointer-check.test.mjs race removed in 82df6b4. Stdin is irrelevant to this branch.
     fs.writeFileSync(verifyPath, src.replace(needle,
-      "spawnSync('git', ['check-ignore', '--stdin', '--bogus-flag-xyz'], { cwd: repo, encoding: 'utf8', input })"), 'utf8');
+      "spawnSync('git', ['check-ignore', '--stdin', '--bogus-flag-xyz'], { cwd: repo, encoding: 'utf8', env: REPO_GIT_ENV })"), 'utf8');
 
     const r = runVerify(tmp);
     assert.equal(r.status, 1, `a real check-ignore derivation failure must FAIL the gate, got:\n${r.stdout}${r.stderr}`);
@@ -251,3 +269,105 @@ test('verify.mjs pointer check: a REAL check-ignore derivation FAILURE reddens t
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+// CWK-133/C-4 -- verify.mjs's OWN production git spawns must never inherit an ambient
+// poisoned GIT_DIR. The exact measured incident (CoalFace, r5): a linked worktree's own
+// pre-commit/pre-push hook exports an absolute GIT_DIR pointing at ITS OWN repo, and a
+// git spawn made from inside that hook's child process (verify.mjs, when wired as a gate)
+// silently redirects onto that repo instead of the one the spawn's `cwd` actually names.
+//
+// Measured directly (not assumed) which of verify.mjs's OWN checks this actually breaks:
+// none of its git spawns is `git init` (rev-parse/ls-files/check-ignore only), so the
+// CoalFace incident's own signature (core.bare flipped to true) does not reproduce here --
+// a `git ls-files` redirected onto an unrelated decoy repo just silently returns the
+// DECOY's tracked files instead of throwing. The observable break in THIS gate is the
+// pointer-check's own derived counts: PC_OUR_ROOTS comes from `git ls-files`, so a
+// poisoned spawn derives it from the decoy's tree (which shares none of this room's real
+// top-level dirs) -- every citation then falls outside PC_OUR_ROOTS and is silently
+// SKIPPED rather than checked, and the pass line still prints "ok" while doing nothing.
+// Reproduced directly: an unguarded run against this exact fixture+poison prints
+// "(0 checked, ... 0 ourRoots -- git-derived, ...)" and still exits 0 -- a SILENTLY INERT
+// gate, worse than a failing one (AGENTS.md, "a present-but-misaimed layer is worse than
+// an absent one, because it reads as covered"). Reproduced with a THROWAWAY decoy repo,
+// never the real umbrella or CoalTipple repo.
+test('verify.mjs: an ambient poisoned GIT_DIR never redirects this gate\'s own git spawns onto the wrong repo (never silently checks 0 citations)', (t) => {
+  const decoyRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-verify-decoy-'));
+  t.after(() => fs.rmSync(decoyRepo, { recursive: true, force: true }));
+  // Findings-back (INSPECT HIGH-1): this fixture-bookkeeping spawn must never inherit
+  // ambient process.env either -- if this whole suite runs from a real linked worktree's
+  // pre-commit hook (which already exports its OWN ambient GIT_DIR before this test ever
+  // runs), an unguarded decoyGit() redirects onto the REAL enclosing repo instead of
+  // decoyRepo, committing "decoy baseline" + decoy-marker.md onto the user's own branch.
+  const decoyGit = (args) => spawnSync('git', args, { cwd: decoyRepo, encoding: 'utf8', env: gitEnv(path.dirname(decoyRepo)) });
+  decoyGit(['init', '-q', '-b', 'main']);
+  decoyGit(['config', 'user.email', 'test@test.invalid']);
+  decoyGit(['config', 'user.name', 'Test']);
+  decoyGit(['config', 'commit.gpgsign', 'false']);
+  fs.writeFileSync(path.join(decoyRepo, 'decoy-marker.md'), 'nothing to do with CoalTipple\n');
+  decoyGit(['add', '-A']);
+  decoyGit(['commit', '-q', '-m', 'decoy baseline']);
+
+  const { tmp } = mkGitSandbox();
+  const savedGitDir = process.env.GIT_DIR;
+  try {
+    // The poison rides the AMBIENT env, matching how a real hook actually delivers it --
+    // runVerify() spawns with no `env:` override, so this is what the child inherits.
+    process.env.GIT_DIR = path.join(decoyRepo, '.git');
+    const r = runVerify(tmp);
+    assert.equal(r.status, 0, `the sandboxed gate must still PASS -- gitEnv() must not have broken its own git use, got:\n${r.stdout}${r.stderr}`);
+    assert.doesNotMatch(r.stdout, /\(0 checked/,
+      'the poisoned GIT_DIR must not have starved pointer-check down to zero citations checked');
+    assert.doesNotMatch(r.stdout, /0 ourRoots -- git-derived/,
+      'the poisoned GIT_DIR must not have derived ourRoots from the DECOY repo\'s empty tree');
+    assert.match(r.stdout, /\d+ ourRoots -- git-derived/,
+      'ourRoots must still be git-derived from the SANDBOX (tmp), not silently degraded to the no-git fallback');
+  } finally {
+    if (savedGitDir === undefined) delete process.env.GIT_DIR;
+    else process.env.GIT_DIR = savedGitDir;
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+// UMB-133: the config-path sync gate pins BOTH legacy segments in BOTH walk copies. A gate that
+// guards one segment while the walk carries a second reads green over exactly the drift it exists
+// to catch, so each (file, segment) cell is broken in turn and must FAIL by name. Asserts only the
+// specific FAIL line -- never that the rest of the run is clean (the dist-sync leg is a separate concern).
+for (const [file, rel] of [['config-load.mjs', ['scripts', 'lib', 'config-load.mjs']], ['coaltipple-conductor.js', ['hooks', 'coaltipple-conductor.js']]]) {
+  for (const [seg, what] of [["'.claude', '.coaltipple.json'", 'LEGACY-1'], ["root, '.coaltipple.json'", 'LEGACY-2']]) {
+    test(`verify.mjs config-path sync (UMB-133): ${file} losing the ${what} segment FAILs the gate by name`, () => {
+      const tmp = mkSandbox();
+      try {
+        const target = path.join(tmp, ...rel);
+        const src = fs.readFileSync(target, 'utf8');
+        assert.ok(src.includes(seg), `the ${what} segment is no longer in ${file} -- update this test's patch target`);
+        fs.writeFileSync(target, src.split(seg).join(seg.replace('.coaltipple.json', '.coaltipple.jsonX')), 'utf8');
+        const r = runVerify(tmp);
+        assert.equal(r.status, 1, 'a drifted legacy segment must FAIL the gate');
+        assert.match(r.stdout, new RegExp(`FAIL ${escapeRegExp(file)} lost .*${what}.*project-config path DRIFTED`), `the FAIL line names ${file} and ${what}:\n${r.stdout}`);
+      } finally {
+        fs.rmSync(tmp, { recursive: true, force: true });
+      }
+    });
+  }
+}
+
+// UMB-133 bounce 1: both WRITERS take their target from the shared projectWriteTarget. install.mjs once
+// derived its own from the READ walk (--reset wrote the factory template into a deprecated path), so a
+// writer that stops importing the helper must FAIL the gate by name, each in turn.
+for (const file of ['configure.mjs', 'install.mjs']) {
+  test(`verify.mjs config-path sync (UMB-133 bounce 1): ${file} no longer importing projectWriteTarget FAILs the gate by name`, () => {
+    const tmp = mkSandbox();
+    try {
+      const target = path.join(tmp, 'scripts', file);
+      const src = fs.readFileSync(target, 'utf8');
+      const mutated = src.replace(/(import\s*\{[^}]*)\bprojectWriteTarget\b/, '$1projectWriteTargetX');
+      assert.notEqual(mutated, src, `the projectWriteTarget import is no longer in ${file} -- update this test's patch target`);
+      fs.writeFileSync(target, mutated, 'utf8');
+      const r = runVerify(tmp);
+      assert.equal(r.status, 1, 'a writer that stopped importing the shared helper must FAIL the gate');
+      assert.match(r.stdout, new RegExp(`FAIL ${escapeRegExp(file)} no longer imports projectWriteTarget`), `the FAIL line names ${file}:\n${r.stdout}`);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+}

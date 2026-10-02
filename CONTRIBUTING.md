@@ -24,7 +24,10 @@ node scripts/build-plugin.mjs   # re-sync the conductor from keywords.mjs (the S
 node scripts/build-dist.mjs     # compile plugin/ from source
 node scripts/verify.mjs         # validates config schemas, plugins, and SSoT sync
 node scripts/test.mjs           # runs the zero-dependency test runner (node --test)
+node scripts/secret-gate.mjs    # the house secret scan of the tracked tree (the git hooks run it first)
 ```
+
+The pre-commit and pre-push hooks run the secret scan, then `verify.mjs`, then `test.mjs`. The secret-scan, secret-gate, release-notes and release-shape scripts (and their tests) are kept byte-identical to the canon in `TheColliery/.github`, so change them there, not here. Commit with `git add <paths>` then `git commit -F <file>`, never `git commit -a` or a pathspec commit.
 
 ### Development Rules
 * **`keywords.mjs` is the Single Source of Truth:** Edit keywords there, run `node scripts/build-plugin.mjs` to re-sync the conductor, then `node scripts/build-dist.mjs` to compile the distribution. Do not hand-edit hooks directly.
@@ -62,7 +65,7 @@ CoalTipple is **Claude Code only**. Routing actuates only where an agent can pic
 
 ## 🚀 Releasing (Maintainers)
 
-Bump version in `.claude-plugin/plugin.json` ➡️ Add a changelog entry in `CHANGELOG.md` ➡️ Ensure `verify.mjs` and `test.mjs` pass ➡️ Commit ➡️ Create a signed git tag (`vX.Y.Z`) ➡️ Push `--follow-tags` ➡️ Create a GitHub Release (stable tags only).
+Bump version in `.claude-plugin/plugin.json` ➡️ Add a changelog entry in `CHANGELOG.md` (`## [X.Y.Z] - date`, then ONE summary sentence, then the `### ` sections; the release workflow refuses an entry with no summary sentence) ➡️ Ensure `verify.mjs` and `test.mjs` pass ➡️ Commit ➡️ Create a signed git tag (`vX.Y.Z`) ➡️ Push `--follow-tags`. The `create-release` workflow then posts the GitHub Release (stable tags only) from that tag's own changelog entry and re-reads it byte for byte; nobody posts a Release by hand.
 
 ---
 
