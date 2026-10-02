@@ -324,3 +324,40 @@ test('fable consent: a reasoning route lands on fable -> ASK; on `no`, the cap i
   // a route that lands on opus is NOT a fable route -> no ask.
   assert.equal(isFableModel('opus'), false);
 });
+
+// MARK 5 (Event 5 run 2, CWK-143 = CWK-181 (b)) -- product hygiene, NO re-grade. The ranking is the UNIVERSAL
+// config (the alias floor haiku<sonnet<opus<fable plus the user's own pins, degrade-safe on unknown ids). This
+// pins that the CURRENT generation's exact ids (model landscape 2026-10-02, models-overview.md: Fable 5.1, Opus 5.5,
+// Sonnet 5.5, Haiku 4.5) classify safely when a user pins them behind the aliases: a family token is found by
+// substring, so a dated or versioned id lands on the same rung its alias holds, a known-weaker id never satisfies a
+// sensitive floor, fable stays the consent-ask trigger, and an id of a family not yet known stays trusted.
+const GEN = { fable: 'claude-fable-5-1', opus: 'claude-opus-5-5', sonnet: 'claude-sonnet-5-5', haiku: 'claude-haiku-4-5-20251001' };
+
+test('MARK 5: the current generation\'s exact ids classify behind the aliases -- fable is the consent trigger, none of the others is', () => {
+  assert.equal(isFableModel(GEN.fable), true);
+  for (const m of [GEN.opus, GEN.sonnet, GEN.haiku, 'claude-haiku-4-5']) assert.equal(isFableModel(m), false, m);
+});
+
+test('MARK 5: pinned current ids behind each alias -- a sensitive route accepts opus-5-5 at a heavy floor and fable-5-1 at the top, and SKIPS a known-weaker id slotted above its rung', () => {
+  const pinned = buildFloorRanking([], { low: [GEN.haiku], mid: [GEN.sonnet], heavy: [GEN.opus], reasoning: [GEN.fable] });
+  assert.deepEqual(resolveWorker(pinned, 'reasoning', { sensitive: true }), { tier: 'reasoning', model: GEN.fable }, 'fable-5-1 satisfies the top floor');
+  assert.deepEqual(resolveWorker(pinned, 'heavy', { sensitive: true, floorTier: 'heavy' }), { tier: 'heavy', model: GEN.opus }, 'opus-5-5 satisfies a heavy floor');
+  // opus-5-5 pinned as the ONLY reasoning model is a known-weaker family for the reasoning floor -> never-down: hand back, never downgrade
+  const opusAtTop = { tiers: { low: [GEN.haiku], mid: [GEN.sonnet], heavy: [GEN.opus], reasoning: [GEN.opus] } };
+  assert.equal(resolveWorker(opusAtTop, 'reasoning', { sensitive: true, floorTier: 'reasoning' }), null, 'opus-5-5 does not satisfy the reasoning floor');
+  // sonnet-5-5 / haiku-4-5 slotted into heavy do not satisfy a heavy floor
+  for (const weak of [GEN.sonnet, GEN.haiku]) {
+    const poisoned = { tiers: { low: [GEN.haiku], mid: [GEN.sonnet], heavy: [weak], reasoning: [GEN.fable] } };
+    assert.equal(resolveWorker(poisoned, 'heavy', { sensitive: true, floorTier: 'heavy' }), null, `${weak} in heavy`);
+  }
+});
+
+test('MARK 5: a successor id of an already-known family (fable-5-2) and an id of a family not yet known stay TRUSTED on a sensitive route (unknown->strong), and a blocked fable falls to the rung below', () => {
+  const next = buildFloorRanking([], { reasoning: ['claude-fable-5-2'] });
+  assert.deepEqual(resolveWorker(next, 'reasoning', { sensitive: true }), { tier: 'reasoning', model: 'claude-fable-5-2' });
+  assert.equal(isFableModel('claude-fable-5-2'), true);
+  const unseen = buildFloorRanking([], { reasoning: ['claude-newfamily-1'] });
+  assert.deepEqual(resolveWorker(unseen, 'reasoning', { sensitive: true }), { tier: 'reasoning', model: 'claude-newfamily-1' });
+  const exact = { tiers: { low: [GEN.haiku], mid: [GEN.sonnet], heavy: [GEN.opus], reasoning: [GEN.fable] } };
+  assert.deepEqual(resolveWorker(exact, 'reasoning', { blocked: [GEN.fable] }), { tier: 'heavy', model: GEN.opus }, 'declined/blocked fable-5-1 caps at the rung below');
+});
