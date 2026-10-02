@@ -26,6 +26,30 @@
 // never touch disk.
 import fs from 'node:fs';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
+
+// BLOB-PINNED EXEMPTIONS (CWK-174, R14; the chief's order r14 section 6, rail 2; the way CoalMine,
+// CoalBoard and CoalLedger answered it). The house secret scan is a BYTE-EQUAL canon copy (the
+// umbrella's scripts/scanner-parity.mjs measures it), so its test file cannot be patched room-side
+// without breaking parity. Its git spawns -- scripts/secret-scan.test.mjs (the gitAt helper, no env:)
+// -- inherit an ABSOLUTE GIT_INDEX_FILE whenever the pre-commit hook runs under a PATHSPEC commit
+// (git commit -F msg -- <file>) or git commit -a, so the fixtures stage into the REAL commit's
+// index: the CWK-133 class living in the canon TEMPLATE, routed to the .github deputy. Until that
+// fix lands the census exempts the file BY BYTES: a row matches only while the file's git blob id
+// (line endings normalised to LF) equals `blob`, so any edit, or the canon fix itself, re-arms the
+// census on that file. DELETE the row when the canon fix lands and this room re-copies the file.
+// Measured when the row was written: scripts/secret-gate.test.mjs and scripts/secret-gate.mjs
+// route every git spawn through their own GIT_*-stripping gitEnv(), so they carry NO row.
+export const CENSUS_EXEMPT = [
+  { rel: 'scripts/secret-scan.test.mjs', blob: 'a9cb7145e31139ec3c490dd7714df8fa7dc6cf86', why: 'canon template test file, byte-equal by parity; gitAt() spawns carry no env: (absolute GIT_INDEX_FILE under a pathspec/-a commit); DELETE when the canon fix lands' },
+];
+
+// The git blob id of `text` (what `git hash-object` prints for that content), CRLF -> LF first so
+// a Windows autocrlf checkout of the same file pins the same row.
+export function gitBlobId(text) {
+  const body = Buffer.from(String(text).replace(/\r\n/g, '\n'), 'utf8');
+  return createHash('sha1').update(`blob ${body.length}\0`).update(body).digest('hex');
+}
 
 const CALL_RE = /(spawnSync|execFileSync)\(\s*['"]git['"]/g;
 const ENV_KEY_RE = /\benv\s*:/;
@@ -92,11 +116,13 @@ function holdsUnstrippedProcessEnv(expr, fileText, hop = 0) {
   return false;
 }
 
-export function scanGitSpawns(files) {
+export function scanGitSpawns(files, exempt = CENSUS_EXEMPT) {
   const findings = [];
   let calls = 0;
   let safe = 0;
+  let exempted = 0;
   for (const { rel, text } of files) {
+    if (exempt.some((e) => e.rel === rel && e.blob === gitBlobId(text))) { exempted++; continue; }
     CALL_RE.lastIndex = 0;
     let m;
     while ((m = CALL_RE.exec(text))) {
@@ -123,11 +149,11 @@ export function scanGitSpawns(files) {
       safe++;
     }
   }
-  return { findings, files: files.length, calls, safe };
+  return { findings, files: files.length, calls, safe, exempted };
 }
 
-export function censusGitSpawns(files) {
-  return scanGitSpawns(files).findings;
+export function censusGitSpawns(files, exempt = CENSUS_EXEMPT) {
+  return scanGitSpawns(files, exempt).findings;
 }
 
 // Real filesystem walk of scripts/**/*.mjs, `rel` relative to `repo` so a finding names the

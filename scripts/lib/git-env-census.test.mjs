@@ -13,7 +13,12 @@
 // FILE'S OWN static source text (what the real census scans) differs.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { censusGitSpawns, scanGitSpawns } from './git-env-census.mjs';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { execFileSync } from 'node:child_process';
+import { censusGitSpawns, scanGitSpawns, gitBlobId, CENSUS_EXEMPT } from './git-env-census.mjs';
+import { gitEnv } from './git-env.mjs';
 
 const GIT = 'git';
 
@@ -148,4 +153,40 @@ test('CWK-136: scanGitSpawns reports what the census COVERED (files, live git sp
   assert.equal(cov.safe, 2);
   assert.equal(cov.findings.length, 2);
   assert.deepEqual(censusGitSpawns(files), cov.findings, 'censusGitSpawns stays the findings-only view of the same scan');
+});
+
+// ---------------------------------------------------------------------------
+// CWK-174 (R14) -- BLOB-PINNED EXEMPTIONS for the byte-equal canon secret-scan test file. A row
+// matches only while the file's git blob id equals the pin; any edit re-arms the census on it.
+// ---------------------------------------------------------------------------
+const ROOM = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+
+test('CWK-174: gitBlobId equals what `git hash-object` prints, and a CRLF checkout of the same text pins the same blob', () => {
+  const text = 'alpha\nbeta\n';
+  const viaGit = execFileSync('git', ['hash-object', '--stdin', '--no-filters'], { input: text, encoding: 'utf8', timeout: 30000, env: gitEnv(ROOM) }).trim();
+  assert.equal(gitBlobId(text), viaGit);
+  assert.equal(gitBlobId('alpha\r\nbeta\r\n'), viaGit, 'autocrlf must not defeat a pin');
+});
+
+test('CWK-174: an exempt file (rel + blob both match) is skipped and COUNTED; one changed byte, or the same bytes under another name, re-arms the census', () => {
+  const text = `const r = execFileSync('${GIT}', ['init'], { cwd: dir });\n`;
+  const rows = [{ rel: 'scripts/canon.test.mjs', blob: gitBlobId(text), why: 'fixture row' }];
+  const exempt = scanGitSpawns([{ rel: 'scripts/canon.test.mjs', text }], rows);
+  assert.deepEqual(exempt.findings, []);
+  assert.equal(exempt.exempted, 1);
+  assert.equal(exempt.calls, 0, 'an exempt file is not scanned');
+  assert.equal(scanGitSpawns([{ rel: 'scripts/canon.test.mjs', text: text + '// edited\n' }], rows).findings.length, 1, 'one added line lifts the exemption');
+  assert.equal(scanGitSpawns([{ rel: 'scripts/other.test.mjs', text }], rows).findings.length, 1, 'the pin names the FILE as well as the bytes');
+  assert.equal(scanGitSpawns([{ rel: 'scripts/canon.test.mjs', text: text.replace(/\n/g, '\r\n') }], rows).exempted, 1, 'CRLF checkout of the same file stays exempt');
+  assert.equal(censusGitSpawns([{ rel: 'scripts/canon.test.mjs', text }], []).length, 1, 'with no rows the same file is refused (the default list is only the real rows)');
+});
+
+test('CWK-174: every shipped CENSUS_EXEMPT row is LIVE (its file exists with the pinned blob) and names how it ends -- a stale row fails here, never silently', () => {
+  assert.ok(CENSUS_EXEMPT.length >= 1);
+  for (const row of CENSUS_EXEMPT) {
+    const abs = path.join(ROOM, ...row.rel.split('/'));
+    assert.ok(fs.existsSync(abs), `${row.rel}: pinned file is gone -- delete the row`);
+    assert.equal(gitBlobId(fs.readFileSync(abs, 'utf8')), row.blob, `${row.rel}: the bytes changed -- re-copy from the canon or delete the row (a row never follows an edit)`);
+    assert.match(row.why, /DELETE when the canon fix lands/);
+  }
 });

@@ -577,7 +577,7 @@ console.log('git spawn census (CWK-133/C-4 + CWK-136 -- every git spawn under sc
 try {
   const { scanGitSpawns, collectScriptsMjs } = await import(pathToFileURL(path.join(repo, 'scripts', 'lib', 'git-env-census.mjs')).href);
   const cov = scanGitSpawns(collectScriptsMjs(repo));
-  if (cov.findings.length === 0) ok(`every git spawn under scripts/ carries an env: that does not hold an unstripped process.env (covered ${cov.files} file(s), ${cov.calls} git spawn call(s), ${cov.safe} safe)`);
+  if (cov.findings.length === 0) ok(`every git spawn under scripts/ carries an env: that does not hold an unstripped process.env (covered ${cov.files} file(s), ${cov.calls} git spawn call(s), ${cov.safe} safe, ${cov.exempted} file(s) blob-pinned exempt: see CENSUS_EXEMPT)`);
   else cov.findings.forEach((m) => fail(m));
 } catch (e) { fail(`git spawn census: ${e.message}`); }
 
