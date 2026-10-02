@@ -294,16 +294,26 @@ const SCHEMA_DEFAULT_ENUM = { mode: 'auto', updateMode: 'ask' };
 // `false` (a user's deliberate machine-wide stance) -- an absent global leaves a bare
 // project `true` alone, because that bare value IS how a legitimate per-project consent
 // persists, not just how an attacker's clone would look.
+// CB-R1 class (R14; CoalBoard 0a4163b is the exemplar, the shipped conductor carries the same
+// fix): an UNKNOWN value -- not in the key's enum, or not even a string -- reads as ABSENT inside
+// the clamp (a project's falls to the effective global, a global's to the schema default), and
+// the merged value is the CANONICAL enum literal, never the config string. The old `continue`
+// left the raw junk as the shallow-merge result and trusted "the schema clamps it downstream",
+// but the schema validates WRITES (configure.mjs); a READ of the merged object (configure --list,
+// any caller) got the junk, which beat a global off. Case-fold: the schema's enum validation is
+// case-insensitive, so a project 'AUTO'/'Off' must not evade the lookup via case.
+function enumLiteral(order, v) {
+  if (typeof v !== 'string') return null;
+  const i = order.indexOf(v.toLowerCase());
+  return i === -1 ? null : order[i];
+}
 function applySaferValueWins(merged, global, project) {
   for (const [key, order] of Object.entries(SAFER_ENUM)) {
     if (project[key] === undefined) continue;
-    const effectiveGlobal = global[key] !== undefined ? global[key] : SCHEMA_DEFAULT_ENUM[key];
-    // Case-fold: config-schema.mjs's enum validation is case-insensitive, so a project
-    // 'AUTO'/'Off' must not evade the lookup via case and fall through to plain project-wins.
-    const gi = order.indexOf(String(effectiveGlobal).toLowerCase());
-    const pi = order.indexOf(String(project[key]).toLowerCase());
-    if (gi === -1 || pi === -1) continue; // unknown value: leave the shallow-merge result (schema clamps it downstream)
-    merged[key] = pi <= gi ? project[key] : effectiveGlobal; // project may not move PAST the effective global toward the weaker end
+    const g = enumLiteral(order, global[key]);
+    const effectiveGlobal = g !== null ? g : SCHEMA_DEFAULT_ENUM[key];
+    const p = enumLiteral(order, project[key]);
+    merged[key] = p !== null && order.indexOf(p) <= order.indexOf(effectiveGlobal) ? p : effectiveGlobal; // project may not move PAST the effective global toward the weaker end
   }
   for (const key of SAFER_FALSE) {
     if (global[key] === false) merged[key] = false; // project cannot turn an EXPLICIT global false into true (absent global: see the comment above)

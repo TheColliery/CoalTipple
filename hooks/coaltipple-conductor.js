@@ -96,6 +96,17 @@ const SAFER_ENUM = { mode: ['off', 'delegation', 'escalation', 'auto'], updateMo
 // install). fableConsent has no entry here at all (see the header comment above), so it
 // never needed this and isn't part of the discussion the config-load.mjs comment records.
 const SCHEMA_DEFAULT_ENUM = { mode: 'auto', updateMode: 'ask' };
+// CB-R1 class (R14; CoalBoard 0a4163b is the exemplar): an UNKNOWN value -- not in the key's enum,
+// or not even a string -- is neither clamped nor validated by "skip it": the shallow-merge result
+// was then the raw junk, so a cloned repo's junk beat a global off. Inside the clamp an unknown
+// value reads as ABSENT (a project's falls to the effective global, a global's to the schema
+// default), and the merged value is always the CANONICAL enum literal from `order`, never the
+// config string -- so nothing downstream (routingOff, the update directive) can see attacker text.
+function enumLiteral(order, v) {
+  if (typeof v !== 'string') return null;
+  const i = order.indexOf(v.toLowerCase());
+  return i === -1 ? null : order[i];
+}
 let _cfg;
 // What the walk resolved, kept for the SessionStart report (UMB-133 + UMB-174): the git
 // root, the candidate list, the index of the winning EXISTING candidate (-1 = none
@@ -123,11 +134,10 @@ function loadCfg() {
   if (merged && project) {
     for (const [key, order] of Object.entries(SAFER_ENUM)) {
       if (project[key] === undefined) continue;
-      const effectiveGlobal = (global && global[key] !== undefined) ? global[key] : SCHEMA_DEFAULT_ENUM[key];
-      const gi = order.indexOf(String(effectiveGlobal).toLowerCase());
-      const pi = order.indexOf(String(project[key]).toLowerCase());
-      if (gi === -1 || pi === -1) continue; // unknown value: leave the shallow-merge result
-      merged[key] = pi <= gi ? project[key] : effectiveGlobal; // project may not move PAST the effective global toward the weaker end
+      const g = enumLiteral(order, global && global[key]); // unknown/absent global = its schema default, not "anything goes"
+      const effectiveGlobal = g !== null ? g : SCHEMA_DEFAULT_ENUM[key];
+      const p = enumLiteral(order, project[key]); // unknown project value = ABSENT
+      merged[key] = p !== null && order.indexOf(p) <= order.indexOf(effectiveGlobal) ? p : effectiveGlobal; // project may not move PAST the effective global toward the weaker end
     }
   }
   _cfg = merged;
@@ -285,12 +295,12 @@ function contract(cfg) {
     '- Routing degrades safe on any Claude Code version: an unfamiliar model classifies as a strong tier, a failed spawn falls to the next available, and the platform resolves each alias to its current best model at spawn-time (verified across the 2.1.x line).',
     '- DELEGATE-DOWN a task you can do but is large + cheap, to a lower tier — ONLY with a compact task-contract (goal+constraints+interface+done) AND verify the returned output on merge. Skip it for small tasks (spawn overhead beats the saving).',
     '- ESCALATE-UP a task beyond the current tier for quality. A worker that fails RETURNS its result and the MAIN re-routes. Spawn/fan-out discipline is CoalFace\'s authority, not this contract\'s.',
-    '- Grade by the deterministic rubric, not a model self-assessment. Opus is scarce: cheapest lever first - raise effort, then a stronger same-tier version (e.g. Opus 4.6 -> 4.8), before escalating the tier.',
+    '- Grade by the deterministic rubric, not a model self-assessment. Opus is scarce: cheapest lever first - raise effort, then a stronger same-tier version, before escalating the tier.',
     '- Sensitivity is graded by MEANING in ANY language: the keyword/complexity hints are an English-only fast-path, so a non-English prompt (Spanish/French/Thai/CJK - any script) fires NO keyword flag. Never read "no flag" as "not sensitive" - judge crypto/auth/payment/security by intent and keep never-down (delegate-down stays forbidden for sensitive work).',
     '- mode (.coaltipple.json, default auto): auto = route both directions per grade; delegation = delegate-down only (escalate-up suppressed, a budget-saving mode); escalation = escalate-up only (delegate-down suppressed, a quality mode); off = routing off, do it yourself. The sensitive HARD GATE overrides mode (sensitive is still never-down and may always escalate up).',
     '- Honor qualityBar (.coaltipple.json, 0-100, default 60): a result must clear it or climb the model ladder — start at the grade floor, verify vs the contract done-criteria by domain-appropriate means (code: tests/build; text: completeness; research: sourced claims), climb one rung if short, jump to the top tier if far below or out of attempts. 0 = anything passes (cheapest); 100 = climb until best.',
     langLine(cfg),
-    '- Consent + token spend: honor .coaltipple.json for routing spend. Whether/how to fan out costly work is CoalFace\'s call, not this contract\'s.',
+    '- Consent + token spend: honor .coaltipple.json for routing spend. Whether/how to fan out costly work is not this contract\'s: if CoalFace is present this session (its hook fired or its skill is listed) it is CoalFace\'s call; a plugin that is not present decides nothing.',
   ].join('\n');
 }
 
@@ -334,21 +344,14 @@ function projectConfigNotices() {
     } else if (hitIdx >= AGENT_DIR_ORDER.length) { // the winner is one of the LEGACY shapes (they sit after the canonical dirs)
       lines.push(`[CoalTipple] LEGACY: ${rel(candidates[hitIdx])} is read as this project's config but is deprecated; canonical = ${CANON_REL} -- move it there.`);
     }
-    // BOUNCE 2 (B2-1) -- ONE FLOCK ONE COLOR: the UNREADABLE string is VERBATIM across
-    // every room, byte for byte (source of truth: scratchpad/dispatch/umb174-room.md
-    // "The string -- ONE wording, every room verbatim"; exemplar already shipped:
-    // CoalFace hooks/coalface-conductor.js, both its global and project hits). The GLOBAL
-    // line below therefore uses the SAME literal canonical = ${CANON_REL} as the project
-    // line, matching CoalFace -- not a room-local `canonical = ${globalPath}` variant.
-    // A global config genuinely has no OTHER canonical location to move to (it already
-    // lives at the one fixed path this hook reads), so naming the project-relative path
-    // here is semantically imperfect for the global case -- that tension is real and is
-    // NOT resolved in this room: it goes to main as an open flock question (does the
-    // GLOBAL line need its own wording, or does the flock accept this one string
-    // covering both tiers). Ship the verbatim wording now; the question is main's to
-    // rule on, never a room's to resolve by shipping a local variant.
+    // CWK-135 (a), main's ruling 2026-09-24 (the open flock question B2-1 raised): the
+    // UNREADABLE line names the path of the TIER that failed. The PROJECT line above keeps the
+    // verbatim flock string (canonical = .claude/coal/coaltipple.json); the GLOBAL line names
+    // the global file's OWN path -- globalPath, the CLAUDE_CONFIG_DIR-aware path this hook
+    // actually read -- because a global config has no project location to move to, and a
+    // user-facing failure states what to do next (fix THAT file).
     if (globalReason) {
-      lines.push(`[CoalTipple] UNREADABLE: ${globalPath} exists but is not a readable config (${globalReason}); it was skipped — canonical = ${CANON_REL}`);
+      lines.push(`[CoalTipple] UNREADABLE: ${globalPath} exists but is not a readable config (${globalReason}); it was skipped — canonical = ${globalPath}`);
     }
     const candSet = new Set(candidates.map(rel));
     const near = ['coaltipple.json', 'coal/coaltipple.json'];

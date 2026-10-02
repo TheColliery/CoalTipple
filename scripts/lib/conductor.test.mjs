@@ -628,12 +628,13 @@ test('UMB-174(b) UNREADABLE takes precedence over LEGACY: a broken LEGACY-shape 
   assert.equal(lines(r.stdout, 'LEGACY').length, 0, 'a file that failed to parse was never actually "read" -- the LEGACY line must not also claim it was');
 });
 
-// BOUNCE 2 (B2-1) -- ruled: ship the VERBATIM flock wording for the global line too, using
-// the SAME project-relative canonical = ${CANON} as the project branch, matching CoalFace.
-// The semantic tension (a global config has no OTHER location to move to) is real and is
-// NOT resolved here -- it returns to main as an open flock question, named in the source
-// comment, never argued into a room-local variant of the string.
-test('UMB-174(b) the GLOBAL config is reported too, independently of the project side, matching the SAME flock string BYTE-EXACT (canonical = the project-relative path, per the flock ruling, not the global\'s own path)', (t) => {
+// BOUNCE 2 (B2-1) shipped the project-relative canonical = ${CANON} for the global line too and
+// returned the tension (a global config has no project location to move to) to main as an open
+// flock question. CWK-135 (a), R14: main ruled it -- the line names the path of the TIER that
+// failed. The PROJECT tier keeps the verbatim flock string; the GLOBAL tier names the global
+// file's OWN path (CLAUDE_CONFIG_DIR-aware), because a global config has no project location
+// to move to and a user-facing failure states what to do next.
+test('CWK-135(a) the GLOBAL config is reported too, independently of the project side, and its line names the GLOBAL file\'s own path (not the project-relative canonical)', (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-umb174-globalbad-'));
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-umb174-proj-'));
   t.after(() => { fs.rmSync(home, { recursive: true, force: true }); fs.rmSync(dir, { recursive: true, force: true }); });
@@ -645,7 +646,28 @@ test('UMB-174(b) the GLOBAL config is reported too, independently of the project
   assert.equal(r.status, 0); assert.equal(r.stderr, '');
   const notice = lines(r.stdout, 'UNREADABLE');
   assert.equal(notice.length, 1, `expected one UNREADABLE line for the global config, got: ${JSON.stringify(notice)}`);
-  assert.equal(notice[0], `[CoalTipple] UNREADABLE: ${globalPath} exists but is not a readable config (not a JSON object); it was skipped — canonical = ${CANON}`);
+  assert.equal(notice[0], `[CoalTipple] UNREADABLE: ${globalPath} exists but is not a readable config (not a JSON object); it was skipped — canonical = ${globalPath}`);
+  assert.ok(!notice[0].includes(CANON), 'the global tier must not point the user at the PROJECT-relative path');
+});
+
+test('CWK-135(a) with CLAUDE_CONFIG_DIR set, the global line names THAT dir\'s file (the path the hook really read), and the project line is unchanged', (t) => {
+  const cfgDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-cwk135-cfgdir-'));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-cwk135-home-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-cwk135-proj-'));
+  t.after(() => { for (const d of [cfgDir, home, dir]) fs.rmSync(d, { recursive: true, force: true }); });
+  fs.mkdirSync(path.join(dir, '.git'));
+  const globalPath = path.join(cfgDir, '.coaltipple.json');
+  fs.writeFileSync(globalPath, '{ bad', 'utf8');
+  const canonAbs = path.join(dir, ...CANON.split('/'));
+  fs.mkdirSync(path.dirname(canonAbs), { recursive: true });
+  fs.writeFileSync(canonAbs, '[1,2,3]', 'utf8');
+  const env = { ...process.env, USERPROFILE: home, HOME: home, CLAUDE_CONFIG_DIR: cfgDir };
+  const r = spawnSync(process.execPath, [HOOK], { input: JSON.stringify({ hook_event_name: 'SessionStart' }), cwd: dir, env, encoding: 'utf8', timeout: 20000 });
+  assert.equal(r.status, 0); assert.equal(r.stderr, '');
+  const notice = lines(r.stdout, 'UNREADABLE');
+  assert.equal(notice.length, 2, `expected two UNREADABLE lines, got: ${JSON.stringify(notice)}`);
+  assert.ok(notice.includes(`[CoalTipple] UNREADABLE: ${globalPath} exists but is not a readable config (malformed JSON); it was skipped — canonical = ${globalPath}`), `global line: ${JSON.stringify(notice)}`);
+  assert.ok(notice.includes(`[CoalTipple] UNREADABLE: ${CANON} exists but is not a readable config (not a JSON object); it was skipped — canonical = ${CANON}`), `project line keeps the verbatim flock string: ${JSON.stringify(notice)}`);
 });
 
 test('UMB-174(b) global and project UNREADABLE co-exist: both files broken at once are BOTH named, neither masks the other', (t) => {
@@ -662,4 +684,79 @@ test('UMB-174(b) global and project UNREADABLE co-exist: both files broken at on
   assert.equal(r.status, 0); assert.equal(r.stderr, '');
   const notice = lines(r.stdout, 'UNREADABLE');
   assert.equal(notice.length, 2, `expected two UNREADABLE lines, got: ${JSON.stringify(notice)}`);
+});
+
+// ---------------------------------------------------------------------------
+// R14 -- the CB-R1 class check (CWK-141 (1) shape; CoalBoard 0a4163b is the exemplar). Inside the
+// safety clamp an UNKNOWN project value (not in the key's enum, or not even a string) must read as
+// ABSENT -- the effective global wins -- never win through the shallow merge, and nothing but the
+// enum literal is ever printed. The old `if (gi === -1 || pi === -1) continue` left the raw junk as
+// the merged value, so a cloned repo's junk beat a global off. Fixtures: a sandboxed HOME (the
+// global tier) + a git-anchored project under os.tmpdir(), never the real config.
+// ---------------------------------------------------------------------------
+const SELF_UPDATE = /CoalTipple self-update/;
+const stampOf = (home) => path.join(home, '.claude', 'coal', 'coaltipple', 'update-check');
+const JUNK = ['junk', 'definitely-not-a-mode', 5, null, ['off'], {}, ''];
+
+test('CB-R1 class: a JUNK project updateMode under a global off reads as ABSENT -- the global off wins, no self-update line, no stamp, no junk echoed', (t) => {
+  for (const junk of JUNK) {
+    const p = proj(t, { [CANON]: { updateMode: junk } }, { updateMode: 'off' });
+    const r = session(p);
+    assert.equal(r.status, 0); assert.equal(r.stderr, '');
+    assert.ok(!SELF_UPDATE.test(r.stdout), `project updateMode ${JSON.stringify(junk)} beat the global off: ${JSON.stringify(r.stdout.slice(-300))}`);
+    assert.equal(fs.existsSync(stampOf(p.home)), false, `no throttle stamp is written when the effective mode is off (junk ${JSON.stringify(junk)})`);
+    if (typeof junk === 'string' && junk) assert.ok(!r.stdout.includes(junk), 'attacker text is never echoed');
+  }
+});
+
+test('CB-R1 class: a JUNK project mode under a global off reads as ABSENT -- routing stays OFF (the hook is silent)', (t) => {
+  for (const junk of JUNK) {
+    const p = proj(t, { [CANON]: { mode: junk } }, { mode: 'off' });
+    const r = session(p);
+    assert.equal(r.status, 0); assert.equal(r.stderr, '');
+    assert.equal(r.stdout, '', `project mode ${JSON.stringify(junk)} re-armed routing under a global off`);
+  }
+});
+
+test('CB-R1 class: a JUNK GLOBAL updateMode reads as the SCHEMA DEFAULT (ask) -- a project auto may not escalate past it', (t) => {
+  const p = proj(t, { [CANON]: { updateMode: 'auto' } }, { updateMode: 'of' }); // a typo'd global
+  const r = session(p);
+  assert.equal(r.status, 0); assert.equal(r.stderr, '');
+  assert.match(r.stdout, /ask the user ONCE/, 'the effective mode is the factory ask');
+  assert.ok(!/standing consent/.test(r.stdout), 'a typo in the global file must not hand a cloned repo standing auto consent');
+});
+
+test('CB-R1 class: quietening still works through the unknown-value handling (case-folded remind under a global ask; off under a global ask)', (t) => {
+  const a = proj(t, { [CANON]: { updateMode: 'REMIND' } }, { updateMode: 'ask' });
+  const ra = session(a);
+  assert.match(ra.stdout, /CoalTipple self-update reminder/, 'a project REMIND (case-folded) is the allowed quieter direction');
+  const b = proj(t, { [CANON]: { updateMode: 'off' } }, { updateMode: 'ask' });
+  assert.ok(!SELF_UPDATE.test(session(b).stdout), 'a project off is always allowed');
+});
+
+// CWK-135 (b), R14 -- measured: the shipped strings that name a sibling plugin are (1) the CWK-022
+// authority sentence, which stays BYTE-FOR-BYTE; (2) the Consent line's fan-out pointer, which now
+// carries CWK-111 R9's conditional wording (a plugin that is not present decides nothing); (3) the
+// double-hook cue (already conditional since v1.5.6, pinned by the cue tests above).
+test('CWK-135(b) the CWK-022 authority sentence is byte-for-byte; the fan-out pointer is conditional on CoalFace being present', () => {
+  const tmp = mk();
+  try {
+    const r = run({ hook_event_name: 'SessionStart' }, tmp, tmp);
+    assert.equal(r.status, 0);
+    assert.ok(r.stdout.includes("Spawn/fan-out discipline is CoalFace's authority, not this contract's."), 'CWK-022 authority sentence, byte-for-byte');
+    assert.ok(r.stdout.includes("Whether/how to fan out costly work is not this contract's: if CoalFace is present this session (its hook fired or its skill is listed) it is CoalFace's call; a plugin that is not present decides nothing."), 'the fan-out pointer carries the conditional wording');
+    assert.ok(!r.stdout.includes("is CoalFace's call, not this contract's."), 'the old unconditional pointer is gone');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
+// MARK 5 (CWK-143 = CWK-181 (b); UMB-316's rule: the bare alias, no version pin): the SessionStart contract
+// names no retired or versioned model id -- a version in emitted text rots at the next generation.
+test('MARK 5: the emitted routing contract names no versioned model id (bare aliases only)', () => {
+  const tmp = mk();
+  try {
+    const r = run({ hook_event_name: 'SessionStart' }, tmp, tmp);
+    assert.equal(r.status, 0);
+    const hit = r.stdout.match(/(opus|sonnet|haiku|fable)[ -]?\d+(?:[.-]\d+)*|claude-[a-z]+-\d[\w-]*/i);
+    assert.equal(hit, null, `a versioned model id leaked into the emitted contract: ${hit && hit[0]}`);
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 });

@@ -245,6 +245,38 @@ test('safer-value-wins clamp is case-insensitive (a project "AUTO" must not evad
   try { assert.equal(loadMergedConfig(s).mode, 'off'); } finally { cleanup(s); }
 });
 
+// R14, the CB-R1 class check (CoalBoard 0a4163b is the exemplar; the shipped conductor carries the
+// same fix, pinned in conductor.test.mjs). An UNKNOWN project value in a clamped key -- not in the
+// enum, or not even a string -- reads as ABSENT: the effective global wins, and the merged value is
+// the canonical enum literal, never the attacker's string (`configure --list` prints this object).
+test('CB-R1 class: a JUNK project mode/updateMode under a global off reads as ABSENT -- the global off wins (the old `continue` let the junk through the shallow merge)', () => {
+  for (const key of ['mode', 'updateMode']) {
+    for (const junk of ['junk', 'definitely-not-a-mode', 5, null, ['off'], {}, '']) {
+      const s = sandbox({ global: JSON.stringify({ [key]: 'off' }), project: JSON.stringify({ [key]: junk }) });
+      try { assert.equal(loadMergedConfig(s)[key], 'off', `${key}: ${JSON.stringify(junk)} must not beat a global off`); } finally { cleanup(s); }
+    }
+  }
+});
+
+test('CB-R1 class: a JUNK project value with NO global falls to the SCHEMA DEFAULT literal, never the raw string', () => {
+  const s = sandbox({ project: JSON.stringify({ mode: 'junk<script>', updateMode: 'junk<script>' }) });
+  try {
+    const cfg = loadMergedConfig(s);
+    assert.equal(cfg.mode, 'auto');
+    assert.equal(cfg.updateMode, 'ask');
+  } finally { cleanup(s); }
+});
+
+test('CB-R1 class: a JUNK GLOBAL value reads as the schema default -- a project auto may not escalate past a typo\'d global', () => {
+  const s = sandbox({ global: JSON.stringify({ updateMode: 'of' }), project: JSON.stringify({ updateMode: 'auto' }) });
+  try { assert.equal(loadMergedConfig(s).updateMode, 'ask'); } finally { cleanup(s); }
+});
+
+test('CB-R1 class: the merged value is the CANONICAL literal (a case-folded project REMIND under a global ask merges as remind)', () => {
+  const s = sandbox({ global: JSON.stringify({ updateMode: 'ask' }), project: JSON.stringify({ updateMode: 'REMIND' }) });
+  try { assert.equal(loadMergedConfig(s).updateMode, 'remind'); } finally { cleanup(s); }
+});
+
 test('CLAUDE_CONFIG_DIR redirects the GLOBAL paths (#6); comma-list -> first entry; project paths unaffected', () => {
   const saved = process.env.CLAUDE_CONFIG_DIR;
   try {
