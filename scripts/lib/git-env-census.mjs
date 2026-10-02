@@ -1,17 +1,35 @@
 // CWK-133/C-4 findings-back (INSPECT HIGH-1) -- a cheap TEXTUAL census: does every
 // spawnSync('git'.../execFileSync('git'... call under scripts/ carry an explicit `env:`
-// in the same call? This does NOT verify the env is SAFE (that is gitEnv()'s own job,
-// proven by git-env.test.mjs) -- it only proves nothing NEW can land a bare git spawn
-// that silently inherits process.env, the exact shape the reviewer found unguarded in
-// four sites this room's own gates never caught before this check existed.
+// in the same call? It stops anything NEW from landing a bare git spawn that silently
+// inherits process.env, the exact shape the reviewer found unguarded in four sites this
+// room's own gates never caught before this check existed.
 //
-// censusGitSpawns() is pure (a fixture map in, a findings array out) so it is unit-
-// tested directly, red-first, without a repo clone; collectScriptsMjs() is the real
-// filesystem walk, kept separate so the pure function never touches disk.
+// CWK-136 (R14) -- the second rung. PRESENCE of an `env:` key is not SAFETY: `env: process.env`
+// passes the first rung and re-opens the linked-worktree GIT_DIR hazard CWK-133 closed (a git
+// hook exports an ABSOLUTE GIT_DIR / GIT_INDEX_FILE; a fixture that inherits it re-initialises
+// the REAL repository). So the census also refuses an `env:` value whose text holds
+// process.env once every gitEnv(...) call is removed from it: gitEnv() is this room's
+// GIT_*-stripping helper (git-env.mjs, proven by git-env.test.mjs), and a spread of
+// process.env BESIDE a gitEnv() spread does not repair it -- a spread never deletes the GIT_*
+// keys process.env already put there. An identifier env (`env: E`) is resolved ONE hop to its
+// `const|let|var E =` initializer in the same file.
+//
+// THE NAMED CEILING (a textual census, not a JS parser; it errs only toward silence): an
+// identifier it cannot resolve in the same file (a parameter, an import) is not guessed at, a
+// second hop (`const A = B`) is not followed, and a `//` inside an earlier string on the
+// spawn's own line hides that call. What proves the env SAFE is gitEnv()'s own test; this
+// proves nothing NEW can land the two shapes the room has actually met.
+//
+// scanGitSpawns() is pure (a fixture map in, { findings, files, calls, safe } out) so it is
+// unit-tested directly, red-first, without a repo clone; censusGitSpawns() is its findings-only
+// view; collectScriptsMjs() is the real filesystem walk, kept separate so the pure functions
+// never touch disk.
 import fs from 'node:fs';
 import path from 'node:path';
 
 const CALL_RE = /(spawnSync|execFileSync)\(\s*['"]git['"]/g;
+const ENV_KEY_RE = /\benv\s*:/;
+const PROCESS_ENV_RE = /\bprocess\s*\.\s*env\b/;
 
 // A match on the same line as an EARLIER `//` is inside a line comment -- skip it. This is
 // a textual heuristic, not a real JS parser: it can under-detect (a `//` inside an earlier
@@ -31,28 +49,85 @@ function findMatchingClose(text, openIdx) {
   return -1;
 }
 
-export function censusGitSpawns(files) {
+// The text of ONE expression starting at `from`: up to the first top-level `,` (or `;` when
+// `stopAtSemi`), or the close of whatever encloses it. Brackets nest; a quoted string or a
+// template literal is skipped whole (a `${}` inside a template is not entered).
+function readExpr(text, from, stopAtSemi = false) {
+  let depth = 0;
+  for (let i = from; i < text.length; i++) {
+    const c = text[i];
+    if (c === '\'' || c === '"' || c === '`') {
+      for (i++; i < text.length && text[i] !== c; i++) if (text[i] === '\\') i++;
+      continue;
+    }
+    if (c === '(' || c === '[' || c === '{') depth++;
+    else if (c === ')' || c === ']' || c === '}') { if (depth === 0) return text.slice(from, i); depth--; }
+    else if (depth === 0 && (c === ',' || (stopAtSemi && c === ';'))) return text.slice(from, i);
+  }
+  return text.slice(from);
+}
+
+// `expr` with every gitEnv(...) call removed (balanced), so process.env inside gitEnv()'s own
+// ARGUMENT is not mistaken for the env value, while a process.env spread beside it still shows.
+function withoutGitEnvCalls(expr) {
+  let s = expr;
+  for (let at = s.indexOf('gitEnv('); at !== -1; at = s.indexOf('gitEnv(')) {
+    const close = findMatchingClose(s, at + 'gitEnv'.length);
+    if (close === -1) return s.slice(0, at);
+    s = s.slice(0, at) + s.slice(close + 1);
+  }
+  return s;
+}
+
+// true = the env value holds process.env that gitEnv() did not strip. `hop` bounds the identifier
+// resolution to ONE step.
+function holdsUnstrippedProcessEnv(expr, fileText, hop = 0) {
+  const rest = withoutGitEnvCalls(expr);
+  if (PROCESS_ENV_RE.test(rest)) return true;
+  const name = rest.trim();
+  if (hop === 0 && /^[A-Za-z_$][\w$]*$/.test(name)) {
+    const decl = new RegExp(`\\b(?:const|let|var)\\s+${name.replace(/\$/g, '\\$')}\\s*=\\s*`).exec(fileText);
+    if (decl) return holdsUnstrippedProcessEnv(readExpr(fileText, decl.index + decl[0].length, true), fileText, 1);
+  }
+  return false;
+}
+
+export function scanGitSpawns(files) {
   const findings = [];
+  let calls = 0;
+  let safe = 0;
   for (const { rel, text } of files) {
     CALL_RE.lastIndex = 0;
     let m;
     while ((m = CALL_RE.exec(text))) {
       if (isInLineComment(text, m.index)) continue;
+      calls++;
+      const line = text.slice(0, m.index).split('\n').length;
       const openIdx = text.indexOf('(', m.index);
       const closeIdx = findMatchingClose(text, openIdx);
       if (closeIdx === -1) {
-        const line = text.slice(0, m.index).split('\n').length;
         findings.push(`${rel}:${line} unbalanced parens scanning a ${m[1]}('git', ...) call -- census cannot verify it`);
         continue;
       }
       const callText = text.slice(openIdx, closeIdx + 1);
-      if (!/\benv\s*:/.test(callText)) {
-        const line = text.slice(0, m.index).split('\n').length;
+      const envKey = ENV_KEY_RE.exec(callText);
+      if (!envKey) {
         findings.push(`${rel}:${line} ${m[1]}('git', ...) carries no 'env:' -- must route through gitEnv() (CWK-133/C-4)`);
+        continue;
       }
+      const envExpr = readExpr(callText, envKey.index + envKey[0].length);
+      if (holdsUnstrippedProcessEnv(envExpr, text)) {
+        findings.push(`${rel}:${line} ${m[1]}('git', ...) env: holds process.env without gitEnv() -- ambient GIT_* reaches the child (CWK-133/C-4, CWK-136)`);
+        continue;
+      }
+      safe++;
     }
   }
-  return findings;
+  return { findings, files: files.length, calls, safe };
+}
+
+export function censusGitSpawns(files) {
+  return scanGitSpawns(files).findings;
 }
 
 // Real filesystem walk of scripts/**/*.mjs, `rel` relative to `repo` so a finding names the

@@ -571,12 +571,14 @@ try {
 // Detection logic lives in git-env-census.mjs (dynamically imported per node/runtime.md
 // section 1 -- this is a scripts/lib import inside the check that consumes it) and is unit-
 // tested there, red-first, with fixtures; this block only wires it into the gate.
-console.log('git spawn census (CWK-133/C-4 -- every git spawn under scripts/ must carry an explicit env:, never inherit ambient GIT_*):');
+// CWK-136 (R14): the second rung refuses an env: that holds process.env without gitEnv() -- presence
+// of an env: key was never safety. The ok line prints what the census COVERED.
+console.log('git spawn census (CWK-133/C-4 + CWK-136 -- every git spawn under scripts/ must carry an explicit env: that strips ambient GIT_*, never `env: process.env`):');
 try {
-  const { censusGitSpawns, collectScriptsMjs } = await import(pathToFileURL(path.join(repo, 'scripts', 'lib', 'git-env-census.mjs')).href);
-  const gitSpawnFindings = censusGitSpawns(collectScriptsMjs(repo));
-  if (gitSpawnFindings.length === 0) ok("every git spawn under scripts/ carries an explicit env:");
-  else gitSpawnFindings.forEach((m) => fail(m));
+  const { scanGitSpawns, collectScriptsMjs } = await import(pathToFileURL(path.join(repo, 'scripts', 'lib', 'git-env-census.mjs')).href);
+  const cov = scanGitSpawns(collectScriptsMjs(repo));
+  if (cov.findings.length === 0) ok(`every git spawn under scripts/ carries an env: that does not hold an unstripped process.env (covered ${cov.files} file(s), ${cov.calls} git spawn call(s), ${cov.safe} safe)`);
+  else cov.findings.forEach((m) => fail(m));
 } catch (e) { fail(`git spawn census: ${e.message}`); }
 
 console.log('plugin/ dist (the clean CC plugin vs source SSoT):');
