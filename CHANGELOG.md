@@ -2,6 +2,18 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.8.0] - 2026-10-02
+
+A junk config value can no longer re-arm a setting you turned off, and the config notice now names the file it actually read.
+
+### Changed
+- The session-start `UNREADABLE:` line for the global config now ends `canonical = <the global file's own path>` (`~/.claude/.coaltipple.json`, or the same file under `CLAUDE_CONFIG_DIR`) instead of the project path; the project line is unchanged.
+- The routing contract's fan-out pointer is conditional: if CoalFace is present this session it decides how to fan out costly work, and a plugin that is not present decides nothing. The line naming CoalFace's authority over spawn and fan-out discipline is unchanged.
+- The routing contract and the skill text no longer give a versioned model example; the same-tier step is described by tier only. The skill's page title is now `CoalTipple`.
+
+### Fixed
+- A project config value outside the allowed set for `mode` or `updateMode` (a typo, a number, `null`, an object, an empty string) no longer wins through the merge when the global config says `off`. An unknown project value is now read as absent (the global value applies), an unknown global value as its schema default, and only the canonical value is ever used. Before this, a project `updateMode: "junk"` under a global `updateMode: "off"` brought back the self-update question, and a project `mode: "junk"` under a global `mode: "off"` re-armed routing; `configure.mjs --list` and `grade-task.mjs` read the same wrong merged value.
+
 ## [1.7.0] - 2026-09-23
 
 ### Added
