@@ -31,3 +31,7 @@ coverage/
 
 # CoalBoard's per-project work output (reports, staged proposals); machine-local, never tracked (CWK-154)
 .coalboard/
+
+# Scratch/working files from agent sessions (drafts, throwaway probes): internal, never published.
+# Untracked-but-not-ignored, they are one broad `git add` from this repository's remote.
+scratchpad/
