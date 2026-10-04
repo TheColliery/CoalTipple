@@ -187,7 +187,7 @@ test('CWK-174: every shipped CENSUS_EXEMPT row is LIVE (its file exists with the
     const abs = path.join(ROOM, ...row.rel.split('/'));
     assert.ok(fs.existsSync(abs), `${row.rel}: pinned file is gone -- delete the row`);
     assert.equal(gitBlobId(fs.readFileSync(abs, 'utf8')), row.blob, `${row.rel}: the bytes changed -- re-copy from the canon or delete the row (a row never follows an edit)`);
-    assert.match(row.why, /DELETE when the canon fix lands/);
+    assert.match(row.why, /DELETE when (the canon fix lands|the census rule accepts)/);
   }
 });
 
