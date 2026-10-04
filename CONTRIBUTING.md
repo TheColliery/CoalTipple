@@ -27,7 +27,7 @@ node scripts/test.mjs           # runs the zero-dependency test runner (node --t
 node scripts/secret-gate.mjs    # the house secret scan of the tracked tree (the git hooks run it first)
 ```
 
-The pre-commit and pre-push hooks run the secret scan, then `verify.mjs`, then `test.mjs`. The secret-scan, secret-gate, release-notes and release-shape scripts (and their tests) are kept byte-identical to the canon in `TheColliery/.github`, so change them there, not here. One named exception: `scripts/release-notes.test.mjs` is held at the canon's previous version until the canon fixes an environment assertion that fails on macOS and under coverage (the reason sits in the header of `scripts/lib/git-env-census.mjs`). Commit with `git add <paths>` then `git commit -F <file>`, never `git commit -a` or a pathspec commit.
+The pre-commit and pre-push hooks run the secret scan, then `verify.mjs`, then `test.mjs`. The secret-scan, secret-gate, release-notes and release-shape scripts (and their tests) come from the canon in `TheColliery/.github` and are changed there, never here. A file that trails the canon or is held shows as DIFFERS in the CoalTipple rows of `node <.github repo>/scripts/skeleton-check.mjs`, and a held file is named with its reason in the header of `scripts/lib/git-env-census.mjs`. Commit with `git add <paths>` then `git commit -F <file>`, never `git commit -a` or a pathspec commit.
 
 ### Development Rules
 * **`keywords.mjs` is the Single Source of Truth:** Edit keywords there, run `node scripts/build-plugin.mjs` to re-sync the conductor, then `node scripts/build-dist.mjs` to compile the distribution. Do not hand-edit hooks directly.
