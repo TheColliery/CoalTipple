@@ -8,7 +8,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -40,6 +40,7 @@ const TESTS = [
   'scripts/verify-release-shape.test.mjs',
   'scripts/lib/release-shape.test.mjs',
   'scripts/lib/regex-escape.test.mjs',
+  'scripts/lib/test-spawn.test.mjs',
 ];
 
 const missing = TESTS.filter((t) => !fs.existsSync(path.join(repo, t)));
@@ -58,5 +59,8 @@ if (orphans.length) {
   process.exit(1);
 }
 
-const r = spawnSync(process.execPath, ['--test', ...TESTS], { cwd: repo, stdio: 'inherit' });
+// Heap cap in the child ENV + serial files (CWK-199's class): the plan lives in a lib so a test can read it.
+const { testSpawnPlan } = await import(pathToFileURL(path.join(repo, 'scripts', 'lib', 'test-spawn.mjs')).href);
+const plan = testSpawnPlan(TESTS, process.env);
+const r = spawnSync(process.execPath, plan.args, { cwd: repo, stdio: 'inherit', env: plan.env });
 process.exit(r.status ?? 1);
