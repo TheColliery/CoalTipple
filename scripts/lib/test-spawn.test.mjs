@@ -6,13 +6,17 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { testSpawnPlan, HEAP_FLAG } from './test-spawn.mjs';
+import { testSpawnPlan, HEAP_FLAG, TEST_TIMEOUT_MS } from './test-spawn.mjs';
 
 const ROOM = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
-test('test-spawn: the argv runs the files serially, before the file list, after --test', () => {
+test('test-spawn: the argv runs the files serially under a finite per-test clock, before the file list, after --test', () => {
   const { args } = testSpawnPlan(['a.test.mjs', 'b.test.mjs'], {});
-  assert.deepEqual(args, ['--test', '--test-concurrency=1', 'a.test.mjs', 'b.test.mjs']);
+  assert.deepEqual(args, ['--test', '--test-concurrency=1', `--test-timeout=${TEST_TIMEOUT_MS}`, 'a.test.mjs', 'b.test.mjs']);
+});
+
+test('test-spawn: the per-test deadline is a named, finite value above the slowest measured file (57 s, 2026-10-08) and not past two minutes', () => {
+  assert.ok(Number.isInteger(TEST_TIMEOUT_MS) && TEST_TIMEOUT_MS > 57382 && TEST_TIMEOUT_MS <= 120000, String(TEST_TIMEOUT_MS));
 });
 
 test('test-spawn: the env carries the heap cap for every per-file child', () => {
