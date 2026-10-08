@@ -45,8 +45,8 @@
 //   7. a comma operator inside an env expression ends it early;
 //   8. a file that rebinds `process` (an alias, the process module, a ['process'] lookup) is read only for a bare
 //      gitEnv() call: any other env in it is a finding, even a clean one (fail closed);
-//   9. a clean env literal handed to a callee that is not the spawn (a function that mutates its argument) is a
-//      finding, but one handed through a closure or a getter is not seen.
+//   9. an env mutated through a closure that captured it, or through a getter or setter defined elsewhere, is not seen;
+//      a callee that receives the env as an argument IS a finding (fill(env)), but the census does not read its body.
 //
 // scanGitSpawns() is pure (a fixture map in, { findings, files, calls, safe } out) so it is unit-tested directly,
 // red-first, without a repo clone; censusGitSpawns() is its findings-only view; collectScriptsMjs() is the real
