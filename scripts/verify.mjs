@@ -573,7 +573,7 @@ try {
 // tested there, red-first, with fixtures; this block only wires it into the gate.
 // CWK-136 (R14): the second rung refuses an env: that holds process.env without gitEnv() -- presence
 // of an env: key was never safety. The ok line prints what the census COVERED.
-console.log('git spawn census (CWK-133/C-4 + CWK-136 -- every git spawn under scripts/ must carry an explicit env: that strips ambient GIT_*, never `env: process.env`):');
+console.log('git spawn census (CWK-133/C-4 + CWK-136 -- every git spawn under scripts/ must carry an explicit env: that lets no ambient GIT_* reach the child (gitEnv() strips them, an allowlist env of named keys copies none), never `env: process.env`):');
 try {
   const { scanGitSpawns, collectScriptsMjs } = await import(pathToFileURL(path.join(repo, 'scripts', 'lib', 'git-env-census.mjs')).href);
   const cov = scanGitSpawns(collectScriptsMjs(repo));

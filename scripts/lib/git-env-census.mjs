@@ -23,7 +23,14 @@
 //      called gitEnv is trusted by name (secret-gate.mjs ships its own);
 //   4. bracket access to the env object (`env: process['env']`), which PROCESS_ENV_RE misses;
 //   5. destructuring (`const { env } = process; ... env: env`);
-//   6. a `//` inside an earlier string on the spawn's own line hides that call.
+//   6. a `//` inside an earlier string on the spawn's own line hides that call;
+//   7. (08c bounce 1) an allowlist env MUTATED through something other than its own name: an alias
+//      (`const e = env; e.GIT_DIR = x`), a callee that writes to its argument (`fill(env)`), a getter, a Proxy;
+//   8. (08c bounce 1) a binding or write the textual patterns cannot read: a parameter list that holds a nested call
+//      (`function f(a = g(), env)`), a write built by `eval` or inside a string, a `with` block.
+// The identifier lookups (the allowlist pass and the older process.env hop) are FILE-WIDE, not scope-aware: every
+// declaration and every write of the name in the file counts. That errs toward a finding, never toward silence (two
+// functions that each build a clean `env` are both refused; route one through gitEnv()).
 // (A name that merely ENDS in gitEnv, e.g. rawgitEnv(process.env), is NOT in this list: the call
 // is matched at an identifier boundary and the census refuses it.) What proves the env SAFE is
 // gitEnv()'s own test; this proves nothing NEW can land the shapes the room has actually met.
@@ -127,8 +134,11 @@ function holdsUnstrippedProcessEnv(expr, fileText, hop = 0) {
   if (PROCESS_ENV_RE.test(rest)) return true;
   const name = rest.trim();
   if (hop === 0 && /^[A-Za-z_$][\w$]*$/.test(name)) {
-    const decl = new RegExp(`\\b(?:const|let|var)\\s+${escapeRegExp(name)}\\s*=\\s*`).exec(fileText);
-    if (decl) return holdsUnstrippedProcessEnv(readExpr(fileText, decl.index + decl[0].length, true), fileText, 1);
+    // EVERY declaration of the name, not the first (08c bounce 1): a clean `const E` in one function must not vouch
+    // for a `const E = { ...process.env }` in another. File-wide, not scope-aware, so it errs toward a finding.
+    for (const decl of fileText.matchAll(new RegExp(`\\b(?:const|let|var)\\s+${escapeRegExp(name)}\\s*=\\s*`, 'g'))) {
+      if (holdsUnstrippedProcessEnv(readExpr(fileText, decl.index + decl[0].length, true), fileText, 1)) return true;
+    }
   }
   return false;
 }
@@ -144,9 +154,12 @@ function holdsUnstrippedProcessEnv(expr, fileText, hop = 0) {
 //   4. every GIT_* name in it, or in an array literal it names, is one of three that cannot aim git at another
 //      repository: GIT_CONFIG_NOSYSTEM, GIT_TERMINAL_PROMPT, GIT_CEILING_DIRECTORIES (the last only NARROWS where
 //      git searches). GIT_DIR, GIT_WORK_TREE, GIT_INDEX_FILE and the rest are refused, in any letter case.
+// An identifier (or the shorthand `env`) counts only if isBoundOnceAndNeverWritten() holds: declared once in the file,
+// never a parameter or destructured binding, never written to after its declaration (INSPECT M-1, 08c bounce 1).
 // Named ceiling, as for the rest of this file (a textual census, not a JS parser; it errs toward silence on shapes it
 // cannot read): a key built at run time from a variable the file does not declare as an array literal, a computed key
-// (`[k]: v`), and a second identifier hop are not seen.
+// (`[k]: v`), a second identifier hop, a write through an alias or through a callee that mutates its argument, and a
+// parameter list that holds a nested call are not seen.
 const SAFE_GIT_KEYS = new Set(['GIT_CONFIG_NOSYSTEM', 'GIT_TERMINAL_PROMPT', 'GIT_CEILING_DIRECTORIES']);
 const SHORTHAND_ENV_RE = /[{,]\s*env\s*(?=[,}])/;
 
@@ -155,9 +168,37 @@ function declInit(name, fileText) {
   return decl ? readExpr(fileText, decl.index + decl[0].length, true) : null;
 }
 
+// INSPECT M-1 (08c bounce 1): the allowlist pass reads ONE initializer, so it holds only if that initializer is the
+// whole story of the name. `name` must be (1) declared exactly once in the file, (2) never bound as a parameter (function,
+// arrow, method, catch), a destructured declaration, or a destructuring assignment, and (3) never written to after that:
+// no reassignment, no member write (`name.X =`, `name[k] =`, compound forms included), no `delete name`, and no
+// Object.assign / defineProperty / setPrototypeOf / Reflect.set on it. The check is file-wide, not scope-aware, so it errs
+// toward a finding: two functions that each build a clean `env` are refused too (route one through gitEnv()).
+function isBoundOnceAndNeverWritten(name, fileText) {
+  const id = `(?<![\\w$.])${escapeRegExp(name)}(?![\\w$])`;
+  const count = (src) => [...fileText.matchAll(new RegExp(src, 'g'))].length;
+  if (count(`\\b(?:const|let|var)\\s+${id}`) !== 1) return false;
+  if (count(`${id}\\s*=(?![=>])`) !== 1) return false; // the declaration's own `=`, and no other
+  const anywhere = [
+    `\\b(?:const|let|var)\\s*[{\\[][^;]*?${id}[^;]*?[}\\]]\\s*=(?![=>])`, // const { env } = o
+    `[{\\[][^;{}\\[\\]]*?${id}[^;{}\\[\\]]*?[}\\]]\\s*=(?![=>])`, // ({ env } = o)
+    `\\bfunction\\b[^(]*\\([^()]*${id}`,
+    `\\([^()]*${id}[^()]*\\)\\s*=>`,
+    `${id}\\s*=>`,
+    `(?<![\\w$.])(?!(?:if|while|switch|for|with)\\b)[\\w$]+\\s*\\([^()]*${id}[^()]*\\)\\s*\\{`, // method shorthand
+    `\\bcatch\\s*\\([^()]*${id}`,
+    `${id}(?:\\s*(?:\\.\\s*[\\w$]+|\\[[^\\]]*\\]))+\\s*(?:\\*\\*|<<|>>>?|&&|\\|\\||\\?\\?|[-+*/%&|^])?=(?![=>])`, // name.X = / name[k] ||=
+    `${id}\\s*(?:\\*\\*|<<|>>>?|&&|\\|\\||\\?\\?|[-+*/%&|^])=(?!=)`,
+    `\\bdelete\\s+${id}`,
+    `\\b(?:Object\\s*\\.\\s*(?:assign|defineProperty|defineProperties|setPrototypeOf)|Reflect\\s*\\.\\s*(?:set|defineProperty|deleteProperty|setPrototypeOf))\\s*\\(\\s*${id}`,
+  ];
+  return !anywhere.some((src) => new RegExp(src).test(fileText));
+}
+
 function isAllowlistEnv(expr, fileText) {
   let body = expr.trim();
   if (/^[A-Za-z_$][\w$]*$/.test(body)) {
+    if (!isBoundOnceAndNeverWritten(body, fileText)) return false;
     const init = declInit(body, fileText);
     if (init === null) return false;
     body = init.trim();

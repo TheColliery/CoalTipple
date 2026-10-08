@@ -290,3 +290,75 @@ test('08c: the canon release-notes.mjs passes the census with NO pin, and no CEN
   assert.equal(result.safe, 1);
   assert.ok(!CENSUS_EXEMPT.some((row) => row.rel === 'scripts/release-notes.mjs'), 'the pin is gone');
 });
+
+// 08c bounce 1 (INSPECT M-1, the reviewer's plants A1-A5 and A9) -- the allowlist pass trusted the FIRST `const NAME =` in the file
+// and read only that initializer. So one clean `const env` made every `{ env }` in the file pass (A1, A2, A9), and a later write
+// to the object (A3, A4, A5) was invisible. The pass is now refused when the name is bound more than once or as a parameter /
+// destructured binding, and when the file writes to the name after its declaration.
+const ALLOW_LIT = "{ PATH: process.env.PATH, GIT_CONFIG_NOSYSTEM: '1' }";
+const spawnWith = (arg) => `spawnSync('${GIT}', ['x'], ${arg})`;
+const B1_PLANTS = {
+  'A1 an allowlist env in fn a(), a full copy of process.env in fn b()': `function a() { const env = ${ALLOW_LIT}; return ${spawnWith('{ env }')}; }\nfunction b() { const env = { ...process.env }; return ${spawnWith('{ env }')}; }`,
+  'A2 the shorthand env is a PARAMETER, an allowlist const elsewhere': `const env = ${ALLOW_LIT};\nfunction run(env) { return ${spawnWith('{ env }')}; }`,
+  'A3 env.GIT_DIR assigned after a clean literal': `const env = ${ALLOW_LIT};\nenv.GIT_DIR = '/elsewhere/.git';\n${spawnWith('{ env }')};`,
+  'A4 Object.assign(env, process.env) after a clean literal': `const env = ${ALLOW_LIT};\nObject.assign(env, process.env);\n${spawnWith('{ env }')};`,
+  'A5 a key loop copies every ambient key into env': `const env = ${ALLOW_LIT};\nfor (const k of Object.keys(process.env)) env[k] = process.env[k];\n${spawnWith('{ env }')};`,
+  'A9 env: e2, two functions each declare e2, the first clean': `function a() { const e2 = ${ALLOW_LIT}; return ${spawnWith('{ env: e2 }')}; }\nfunction b() { const e2 = { ...process.env }; return ${spawnWith('{ env: e2 }')}; }`,
+  'A9b the same, the first declaration holds no process.env at all (the older identifier hop read only the first)': `function a() { const e2 = { PATH: '/bin' }; return ${spawnWith('{ env: e2 }')}; }\nfunction b() { const e2 = { ...process.env }; return ${spawnWith('{ env: e2 }')}; }`,
+};
+
+test('08c bounce 1 RED: the reviewer plants A1, A2, A3, A4, A5 and A9, and A9b, each yield a finding (the first six passed the first allowlist rule)', () => {
+  for (const [name, text] of Object.entries(B1_PLANTS)) {
+    const findings = censusGitSpawns([{ rel: 'fixture.mjs', text }], []);
+    assert.ok(findings.length >= 1, `${name}: the census passed it (${JSON.stringify(findings)})`);
+  }
+});
+
+test('08c bounce 1 RED: a name bound as a parameter in any spelling, a destructured binding, a catch binding or a loop binding is refused', () => {
+  const bound = [
+    `const env = ${ALLOW_LIT};\nconst run = (a, env) => ${spawnWith('{ env }')};`,
+    `const env = ${ALLOW_LIT};\nconst run = env => ${spawnWith('{ env }')};`,
+    `const env = ${ALLOW_LIT};\nfunction run(a, env = {}) { return ${spawnWith('{ env }')}; }`,
+    `const env = ${ALLOW_LIT};\nconst o = { run(env) { return ${spawnWith('{ env }')}; } };`,
+    `const env = ${ALLOW_LIT};\ntry { x(); } catch (env) { ${spawnWith('{ env }')}; }`,
+    `const { env } = opts;\n${spawnWith('{ env }')};`,
+    `const [env] = list;\n${spawnWith('{ env }')};`,
+    `const env = ${ALLOW_LIT};\nfor (const env of list) { ${spawnWith('{ env }')}; }`,
+  ];
+  for (const text of bound) assert.ok(censusGitSpawns([{ rel: 'fixture.mjs', text }], []).length >= 1, text);
+});
+
+test('08c bounce 1 RED: a write to the name after its declaration, in any spelling, is refused', () => {
+  const writes = [
+    "env['GIT_' + 'DIR'] = '/x';",
+    "env.GIT_DIR ||= '/x';",
+    "env.GIT_DIR += '/x';",
+    'delete env.PATH;',
+    "Object.assign(env, { GIT_DIR: '/x' });",
+    "Object.defineProperty(env, 'GIT_DIR', { value: '/x' });",
+    "Reflect.set(env, 'GIT_DIR', '/x');",
+    "env = { ...process.env };",
+    "({ env } = other);",
+  ];
+  for (const w of writes) {
+    const text = `const env = ${ALLOW_LIT};\n${w}\n${spawnWith('{ env }')};`;
+    assert.ok(censusGitSpawns([{ rel: 'fixture.mjs', text }], []).length >= 1, w);
+  }
+});
+
+test('08c bounce 1 GREEN: a once-bound, never-written allowlist env still passes, beside reads of it and writes to other names', () => {
+  const text = [
+    `const env = ${ALLOW_LIT};`,
+    'const other = {};',
+    "other.GIT_DIR = 'x';",
+    "envelope.X = 1; myenv[k] = 2;",
+    'const copy = { ...env, extra: 1 };',
+    "if (env.PATH === 'x') { console.log(Object.keys(env), env === copy); }",
+    spawnWith('{ env }') + ';',
+    spawnWith('{ env: env }') + ';',
+  ].join('\n');
+  const result = scanGitSpawns([{ rel: 'fixture.mjs', text }], []);
+  assert.deepEqual(result.findings, []);
+  assert.equal(result.calls, 2);
+  assert.equal(result.safe, 2);
+});
