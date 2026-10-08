@@ -139,7 +139,7 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
         node: [22, 24]  # supported LTS only (24 Active, 22 Maintenance); 18/20 are EOL — bump as the Node LTS schedule moves
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 10 # basis (CWK-154, 2026-10-02, REST, last 8 successful runs per leg): slowest leg windows 0.8 min, macos 0.3, ubuntu 0.2; ~12x the max
+    timeout-minutes: 10 # basis (re-measured 2026-10-08, REST, run 37687654219 at f1c9bf1, the one CI run with the serial test plan): slowest leg windows 1.15 min (test step 51 s; 26-34 s on the three runs before it), macos 0.72, ubuntu 0.47; ~8.7x the max (CWK-154 on 2026-10-02 read 0.8 min and ~12x, at the default test concurrency)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
