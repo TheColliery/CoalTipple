@@ -182,7 +182,9 @@ test('CWK-174: an exempt file (rel + blob both match) is skipped and COUNTED; on
 });
 
 test('CWK-174: every shipped CENSUS_EXEMPT row is LIVE (its file exists with the pinned blob) and names how it ends -- a stale row fails here, never silently', () => {
-  assert.ok(CENSUS_EXEMPT.length >= 1);
+  // 08d: the shipped list is empty (the target is no pin), so the loop may run zero times; the per-row checks below
+  // still bind any row a later unit adds.
+  assert.ok(Array.isArray(CENSUS_EXEMPT));
   for (const row of CENSUS_EXEMPT) {
     const abs = path.join(ROOM, ...row.rel.split('/'));
     assert.ok(fs.existsSync(abs), `${row.rel}: pinned file is gone -- delete the row`);

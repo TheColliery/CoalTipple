@@ -49,21 +49,15 @@ import { escapeRegExp } from './regex-escape.mjs';
 // (the umbrella's scripts/scanner-parity.mjs measures it), so its test file cannot be patched room-side
 // without breaking parity. A row matches only while the file's git blob id (line endings normalised
 // to LF) equals `blob`, so any edit, or a new source blob, re-arms the census on that file.
-// THE FIRST ROW, re-pinned at the 08c re-sync (Bankfire 4433fb56, the SOURCE of the scan; the .github
-// template still reads bd5b156c): scripts/secret-scan.test.mjs line 593 passes `env: cleanEnv`, where cleanEnv
-// is process.env with the GIT_* keys filtered out (Object.fromEntries over Object.entries(process.env)).
-// That env is safe, but it is not the named-keys ALLOWLIST shape the census accepts (no GIT_CONFIG_NOSYSTEM,
-// built from process.env rather than from named keys), so the census reads it as an unfiltered process.env.
-// The older findings of the previous test blob (gitAt() with no env:) are gone in this one: measured, the
-// census reports exactly that one finding on 4433fb56 without the row.
-// Measured when the first row was written: scripts/secret-gate.test.mjs and scripts/secret-gate.mjs
-// route every git spawn through their own GIT_*-stripping gitEnv(), so they carry NO row.
-//
-// (The second row, for scripts/release-notes.mjs, is gone: the allowlist rule below accepts the canon file's env, so it
-// needs no pin. The 05a hold of scripts/release-notes.test.mjs at d7e299c4 was released at the 08c re-sync.)
-export const CENSUS_EXEMPT = [
-  { rel: 'scripts/secret-scan.test.mjs', blob: '4433fb56bc97d1facc3fb27804e1934c0577115f', why: 'house secret-scan test, byte-equal to its Bankfire source by parity; line 593 passes env: cleanEnv, process.env with GIT_* filtered out, which is not the named-keys allowlist shape; DELETE when the census rule accepts a GIT_*-filtered process.env or the source builds its env from named keys' },
-];
+// THE LIST IS EMPTY (08d re-copy): no file in this room needs a pin. The last row, scripts/secret-scan.test.mjs,
+// was pinned at Bankfire 4433fb56 because its decoy git call passed `env: cleanEnv` (process.env with the GIT_* keys
+// filtered out), which is not the named-keys allowlist shape. Bankfire 6dd3c8e8 ("hand the decoy call the sandbox env")
+// moved that call to the sandbox env (blob d0db994d); measured on this room's census, with no exemptions, that blob
+// has 5 git spawn calls, all safe, so the row came out in the same commit as the re-copy. Earlier rows are gone for
+// the same reason: scripts/release-notes.mjs (the allowlist rule below accepts the canon file's env), and the 05a hold
+// of scripts/release-notes.test.mjs (released at the 08c re-sync). A new row is one file, its blob id and a `why`
+// that names how it ends; the CWK-174 test fails a row whose file changed.
+export const CENSUS_EXEMPT = [];
 
 // The git blob id of `text` (what `git hash-object` prints for that content), CRLF -> LF first so
 // a Windows autocrlf checkout of the same file pins the same row.
