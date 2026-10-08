@@ -52,19 +52,10 @@ import { escapeRegExp } from './regex-escape.mjs';
 // Measured when the first row was written: scripts/secret-gate.test.mjs and scripts/secret-gate.mjs
 // route every git spawn through their own GIT_*-stripping gitEnv(), so they carry NO row.
 //
-// THE SECOND ROW (08c re-sync, the canon overlay at .github 06c099d): scripts/release-notes.mjs (canon f8d998d8,
-// UMB-443 ruling 2) reads the origin remote with an EXPLICIT ALLOWLIST env -- an object built from named keys
-// (PATH, the temp and home variables, GIT_CEILING_DIRECTORIES), plus GIT_CONFIG_NOSYSTEM and GIT_TERMINAL_PROMPT --
-// passed to the spawn as the shorthand `env`. That env is safe (no ambient GIT_DIR or GIT_INDEX_FILE can reach
-// it: stricter than gitEnv()), but this census, until its allowlist rule lands (the next commit), recognises an
-// env only as `env:` carrying gitEnv(...). The row pins the file by its blob id meanwhile. The canon file is
-// byte-equal by parity and cannot be patched room-side.
-//
-// The 05a hold of scripts/release-notes.test.mjs at d7e299c4 (canon a8f3ba69 failed under coverage and on macOS) is
-// RELEASED: the canon's 8cf7e5fd (.github 06c099d) is in this room.
+// (The second row, for scripts/release-notes.mjs, is gone: the allowlist rule below accepts the canon file's env, so it
+// needs no pin. The 05a hold of scripts/release-notes.test.mjs at d7e299c4 was released at the 08c re-sync.)
 export const CENSUS_EXEMPT = [
   { rel: 'scripts/secret-scan.test.mjs', blob: '4433fb56bc97d1facc3fb27804e1934c0577115f', why: 'house secret-scan test, byte-equal to its Bankfire source by parity; line 593 passes env: cleanEnv, process.env with GIT_* filtered out, which is not the named-keys allowlist shape; DELETE when the census rule accepts a GIT_*-filtered process.env or the source builds its env from named keys' },
-  { rel: 'scripts/release-notes.mjs', blob: 'f8d998d8fe14a5972440043123398115d02fc50e', why: 'canon overlay file, byte-equal by parity; its git spawn passes an explicit allowlist env built from named keys as the shorthand `env`, which this census does not yet recognise; DELETE when the census rule accepts an explicit allowlist env' },
 ];
 
 // The git blob id of `text` (what `git hash-object` prints for that content), CRLF -> LF first so
@@ -142,6 +133,50 @@ function holdsUnstrippedProcessEnv(expr, fileText, hop = 0) {
   return false;
 }
 
+// THE ALLOWLIST ENV (08c re-sync, main's ruling UMB-456 (2)). An env built from NAMED keys reaches git with nothing
+// ambient but those keys, which is stricter than gitEnv() (that strips the GIT_* names from a full copy of
+// process.env). The census accepts exactly this shape, checked textually on the env's initializer (one hop for an
+// identifier, plus the array literals it names):
+//   1. an object literal;
+//   2. it sets GIT_CONFIG_NOSYSTEM to '1';
+//   3. every process.env in it is a NAMED read, `process.env[k]` or `process.env.NAME`, never a bare spread or
+//      argument (`...process.env`, `Object.assign({}, process.env)`, `Object.entries(process.env)`);
+//   4. every GIT_* name in it, or in an array literal it names, is one of three that cannot aim git at another
+//      repository: GIT_CONFIG_NOSYSTEM, GIT_TERMINAL_PROMPT, GIT_CEILING_DIRECTORIES (the last only NARROWS where
+//      git searches). GIT_DIR, GIT_WORK_TREE, GIT_INDEX_FILE and the rest are refused, in any letter case.
+// Named ceiling, as for the rest of this file (a textual census, not a JS parser; it errs toward silence on shapes it
+// cannot read): a key built at run time from a variable the file does not declare as an array literal, a computed key
+// (`[k]: v`), and a second identifier hop are not seen.
+const SAFE_GIT_KEYS = new Set(['GIT_CONFIG_NOSYSTEM', 'GIT_TERMINAL_PROMPT', 'GIT_CEILING_DIRECTORIES']);
+const SHORTHAND_ENV_RE = /[{,]\s*env\s*(?=[,}])/;
+
+function declInit(name, fileText) {
+  const decl = new RegExp(`\\b(?:const|let|var)\\s+${escapeRegExp(name)}\\s*=\\s*`).exec(fileText);
+  return decl ? readExpr(fileText, decl.index + decl[0].length, true) : null;
+}
+
+function isAllowlistEnv(expr, fileText) {
+  let body = expr.trim();
+  if (/^[A-Za-z_$][\w$]*$/.test(body)) {
+    const init = declInit(body, fileText);
+    if (init === null) return false;
+    body = init.trim();
+  }
+  if (!body.startsWith('{')) return false;
+  if (!/\bGIT_CONFIG_NOSYSTEM\s*:\s*['"]1['"]/.test(body)) return false;
+  for (const m of body.matchAll(/\bprocess\s*\.\s*env\b/g)) {
+    if (!/^\s*(?:\[|\.\s*[A-Za-z_$])/.test(body.slice(m.index + m[0].length))) return false;
+  }
+  let scanned = body;
+  for (const decl of fileText.matchAll(/\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*\[/g)) {
+    if (new RegExp(`(?<![\\w$])${escapeRegExp(decl[1])}(?![\\w$])`).test(body)) scanned += ' ' + readExpr(fileText, decl.index + decl[0].length - 1, true);
+  }
+  for (const g of scanned.matchAll(/\bGIT_[A-Z0-9_]+/gi)) {
+    if (!SAFE_GIT_KEYS.has(g[0].toUpperCase())) return false;
+  }
+  return true;
+}
+
 export function scanGitSpawns(files, exempt = CENSUS_EXEMPT) {
   const findings = [];
   let calls = 0;
@@ -163,11 +198,15 @@ export function scanGitSpawns(files, exempt = CENSUS_EXEMPT) {
       }
       const callText = text.slice(openIdx, closeIdx + 1);
       const envKey = ENV_KEY_RE.exec(callText);
+      if (!envKey && SHORTHAND_ENV_RE.test(callText) && isAllowlistEnv('env', text)) { safe++; continue; }
       if (!envKey) {
-        findings.push(`${rel}:${line} ${m[1]}('git', ...) carries no 'env:' -- must route through gitEnv() (CWK-133/C-4)`);
+        findings.push(SHORTHAND_ENV_RE.test(callText)
+          ? `${rel}:${line} ${m[1]}('git', ...) shorthand env is neither an allowlist env (named keys, GIT_CONFIG_NOSYSTEM=1, no GIT_* beyond the safe three) nor resolvable here -- route it through gitEnv() (CWK-133/C-4)`
+          : `${rel}:${line} ${m[1]}('git', ...) carries no 'env:' -- must route through gitEnv() (CWK-133/C-4)`);
         continue;
       }
       const envExpr = readExpr(callText, envKey.index + envKey[0].length);
+      if (isAllowlistEnv(envExpr, text)) { safe++; continue; }
       if (holdsUnstrippedProcessEnv(envExpr, text)) {
         findings.push(`${rel}:${line} ${m[1]}('git', ...) env: holds process.env without gitEnv() -- ambient GIT_* reaches the child (CWK-133/C-4, CWK-136)`);
         continue;

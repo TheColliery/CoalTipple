@@ -220,3 +220,73 @@ test('CWK-136: a $-named alias env resolves through the escaped declaration look
   const good = `const $E = gitEnv(root);\nspawnSync('${GIT}', ['init'], { env: $E });\n`;
   assert.deepEqual(censusGitSpawns([{ rel: 'fixture.mjs', text: good }]), []);
 });
+
+// 08c re-sync, step 3 (main's ruling UMB-456 (2)) -- the ALLOWLIST env shape. The canon release-notes.mjs reads the
+// origin remote with an env built from NAMED keys (PATH, the temp and home variables, GIT_CEILING_DIRECTORIES) plus
+// GIT_CONFIG_NOSYSTEM=1 and GIT_TERMINAL_PROMPT=0, passed as the shorthand `env`. That is stricter than gitEnv():
+// nothing ambient but the named keys can reach the child. The census accepts exactly that shape and nothing wider.
+const ALLOW_KEEP = "const keep = ['PATH', 'HOME', 'GIT_CEILING_DIRECTORIES'];";
+const ALLOW_ENV = "const env = { ...Object.fromEntries(keep.filter((k) => process.env[k] !== undefined).map((k) => [k, process.env[k]])), GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0' };";
+const allowFixture = (keep, env, call) => [keep, env, call].join('\n');
+const SHORTHAND_CALL = `const r = spawnSync('${GIT}', ['config', '--get', 'remote.origin.url'], { encoding: 'utf8', env });`;
+
+test('08c GREEN: the allowlist env (named keys read through process.env[k], GIT_CONFIG_NOSYSTEM=1, only the safe GIT_* names) passes, as the shorthand `env` and as `env:`', () => {
+  const shorthand = allowFixture(ALLOW_KEEP, ALLOW_ENV, SHORTHAND_CALL);
+  assert.deepEqual(censusGitSpawns([{ rel: 'fixture.mjs', text: shorthand }], []), []);
+  const keyed = allowFixture(ALLOW_KEEP, ALLOW_ENV, SHORTHAND_CALL.replace('encoding: \'utf8\', env }', 'encoding: \'utf8\', env: env }'));
+  assert.deepEqual(censusGitSpawns([{ rel: 'fixture.mjs', text: keyed }], []), []);
+  const literal = `const r = spawnSync('${GIT}', ['status'], { env: { PATH: process.env.PATH, HOME: process.env.HOME, GIT_CONFIG_NOSYSTEM: '1' } });`;
+  assert.deepEqual(censusGitSpawns([{ rel: 'fixture.mjs', text: literal }], []), [], 'an inline named-keys object passes too');
+  const counted = scanGitSpawns([{ rel: 'fixture.mjs', text: shorthand }], []);
+  assert.equal(counted.calls, 1);
+  assert.equal(counted.safe, 1, 'an allowlist env is counted SAFE, not exempt');
+});
+
+test('08c RED: a planted unfiltered spread of process.env still FAILS, in every spelling, with or without GIT_CONFIG_NOSYSTEM beside it', () => {
+  const spellings = [
+    "const env = { ...process.env };",
+    "const env = { ...process.env, GIT_CONFIG_NOSYSTEM: '1' };",
+    "const env = Object.assign({}, process.env);",
+    "const env = Object.assign({ GIT_CONFIG_NOSYSTEM: '1' }, process.env);",
+    "const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^GIT_/i.test(k)));",
+    "const env = { ...Object.fromEntries(Object.entries(process.env)), GIT_CONFIG_NOSYSTEM: '1' };",
+    "const env = process.env;",
+  ];
+  for (const env of spellings) {
+    const text = allowFixture(ALLOW_KEEP, env, SHORTHAND_CALL);
+    const findings = censusGitSpawns([{ rel: 'fixture.mjs', text }], []);
+    assert.equal(findings.length, 1, env);
+  }
+  const keyed = `const r = spawnSync('${GIT}', ['status'], { env: Object.assign({}, process.env) });`;
+  assert.equal(censusGitSpawns([{ rel: 'fixture.mjs', text: keyed }], []).length, 1, 'the keyed form fails too');
+});
+
+test('08c RED: an allowlist env that sets or keeps a GIT_* name beyond the three safe ones, or omits GIT_CONFIG_NOSYSTEM=1, FAILS', () => {
+  const bad = [
+    allowFixture("const keep = ['PATH', 'GIT_DIR'];", ALLOW_ENV, SHORTHAND_CALL),
+    allowFixture("const keep = ['PATH', 'git_index_file'];", ALLOW_ENV, SHORTHAND_CALL),
+    allowFixture(ALLOW_KEEP, ALLOW_ENV.replace("GIT_TERMINAL_PROMPT: '0'", "GIT_WORK_TREE: 'x'"), SHORTHAND_CALL),
+    allowFixture(ALLOW_KEEP, "const env = { ...Object.fromEntries(keep.map((k) => [k, process.env[k]])), GIT_TERMINAL_PROMPT: '0' };", SHORTHAND_CALL),
+    allowFixture(ALLOW_KEEP, "const env = { ...Object.fromEntries(keep.map((k) => [k, process.env[k]])), GIT_CONFIG_NOSYSTEM: '0' };", SHORTHAND_CALL),
+    `const r = spawnSync('${GIT}', ['status'], { env: { PATH: process.env.PATH, GIT_DIR: process.env.GIT_DIR, GIT_CONFIG_NOSYSTEM: '1' } });`,
+  ];
+  for (const text of bad) {
+    assert.equal(censusGitSpawns([{ rel: 'fixture.mjs', text }], []).length, 1, text);
+  }
+});
+
+test('08c RED: a shorthand `env` the census cannot resolve (a parameter) is a finding, never guessed safe', () => {
+  const text = `function run(env) { return spawnSync('${GIT}', ['status'], { encoding: 'utf8', env }); }`;
+  const findings = censusGitSpawns([{ rel: 'fixture.mjs', text }], []);
+  assert.equal(findings.length, 1);
+  assert.match(findings[0], /shorthand env is neither an allowlist env/, 'the message names the shorthand, not a missing env:');
+});
+
+test('08c: the canon release-notes.mjs passes the census with NO pin, and no CENSUS_EXEMPT row names it', () => {
+  const text = fs.readFileSync(path.join(ROOM, 'scripts', 'release-notes.mjs'), 'utf8');
+  const result = scanGitSpawns([{ rel: 'scripts/release-notes.mjs', text }], []);
+  assert.deepEqual(result.findings, []);
+  assert.equal(result.calls, 1);
+  assert.equal(result.safe, 1);
+  assert.ok(!CENSUS_EXEMPT.some((row) => row.rel === 'scripts/release-notes.mjs'), 'the pin is gone');
+});
