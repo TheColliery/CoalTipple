@@ -38,16 +38,18 @@ import { createHash } from 'node:crypto';
 import { escapeRegExp } from './regex-escape.mjs';
 
 // BLOB-PINNED EXEMPTIONS (CWK-174, R14; the chief's order r14 section 6, rail 2; the way CoalMine,
-// CoalBoard and CoalLedger answered it). The house secret scan is a BYTE-EQUAL canon copy (the
-// umbrella's scripts/scanner-parity.mjs measures it), so its test file cannot be patched room-side
-// without breaking parity. Its git spawns -- scripts/secret-scan.test.mjs (the gitAt helper, no env:)
-// -- inherit an ABSOLUTE GIT_INDEX_FILE whenever the pre-commit hook runs under a PATHSPEC commit
-// (git commit -F msg -- <file>) or git commit -a, so the fixtures stage into the REAL commit's
-// index: the CWK-133 class living in the canon TEMPLATE, routed to the .github deputy. Until that
-// fix lands the census exempts the file BY BYTES: a row matches only while the file's git blob id
-// (line endings normalised to LF) equals `blob`, so any edit, or the canon fix itself, re-arms the
-// census on that file. DELETE the row when the canon fix lands and this room re-copies the file.
-// Measured when the row was written: scripts/secret-gate.test.mjs and scripts/secret-gate.mjs
+// CoalBoard and CoalLedger answered it). The house secret scan is a BYTE-EQUAL copy of its source
+// (the umbrella's scripts/scanner-parity.mjs measures it), so its test file cannot be patched room-side
+// without breaking parity. A row matches only while the file's git blob id (line endings normalised
+// to LF) equals `blob`, so any edit, or a new source blob, re-arms the census on that file.
+// THE FIRST ROW, re-pinned at the 08c re-sync (Bankfire 4433fb56, the SOURCE of the scan; the .github
+// template still reads bd5b156c): scripts/secret-scan.test.mjs line 593 passes `env: cleanEnv`, where cleanEnv
+// is process.env with the GIT_* keys filtered out (Object.fromEntries over Object.entries(process.env)).
+// That env is safe, but it is not the named-keys ALLOWLIST shape the census accepts (no GIT_CONFIG_NOSYSTEM,
+// built from process.env rather than from named keys), so the census reads it as an unfiltered process.env.
+// The older findings of the previous test blob (gitAt() with no env:) are gone in this one: measured, the
+// census reports exactly that one finding on 4433fb56 without the row.
+// Measured when the first row was written: scripts/secret-gate.test.mjs and scripts/secret-gate.mjs
 // route every git spawn through their own GIT_*-stripping gitEnv(), so they carry NO row.
 //
 // THE SECOND ROW (order 2026-10-05a, the canon adoption of .github b4cf4ab): scripts/release-notes.mjs
@@ -68,7 +70,7 @@ import { escapeRegExp } from './regex-escape.mjs';
 // new release-notes.mjs 674592e0, plain and under NODE_V8_COVERAGE. Re-sync to the canon blob when the canon
 // ticket (the .github deputy, through main) fixes that assertion. skeleton-check reads this one file as DIFFERS.
 export const CENSUS_EXEMPT = [
-  { rel: 'scripts/secret-scan.test.mjs', blob: 'a9cb7145e31139ec3c490dd7714df8fa7dc6cf86', why: 'canon template test file, byte-equal by parity; gitAt() spawns carry no env: (absolute GIT_INDEX_FILE under a pathspec/-a commit); DELETE when the canon fix lands' },
+  { rel: 'scripts/secret-scan.test.mjs', blob: '4433fb56bc97d1facc3fb27804e1934c0577115f', why: 'house secret-scan test, byte-equal to its Bankfire source by parity; line 593 passes env: cleanEnv, process.env with GIT_* filtered out, which is not the named-keys allowlist shape; DELETE when the census rule accepts a GIT_*-filtered process.env or the source builds its env from named keys' },
   { rel: 'scripts/release-notes.mjs', blob: '674592e0ff25dbdc14a8a4e21e6a598953b90eaa', why: 'canon overlay file, byte-equal by parity; its git spawn passes an explicit allowlist env (PATH, temp and home variables, GIT_CONFIG_NOSYSTEM, GIT_TERMINAL_PROMPT) as the shorthand `env`, which this census does not recognise; DELETE when the census rule accepts an explicit allowlist env (re-sync when the census rule changes)' },
 ];
 
