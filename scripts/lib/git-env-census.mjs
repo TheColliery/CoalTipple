@@ -52,26 +52,19 @@ import { escapeRegExp } from './regex-escape.mjs';
 // Measured when the first row was written: scripts/secret-gate.test.mjs and scripts/secret-gate.mjs
 // route every git spawn through their own GIT_*-stripping gitEnv(), so they carry NO row.
 //
-// THE SECOND ROW (order 2026-10-05a, the canon adoption of .github b4cf4ab): scripts/release-notes.mjs
-// (canon 674592e0, UMB-443 ruling 2) reads the origin remote with an EXPLICIT ALLOWLIST env -- an object
-// holding only PATH, the temp and home variables, GIT_CONFIG_NOSYSTEM and GIT_TERMINAL_PROMPT, passed to
-// the spawn as the shorthand `env`. That env is safe (no ambient GIT_* can reach it: stricter than
-// gitEnv()), but this census recognises an env only as `env:` carrying gitEnv(...), so it reads the call
-// as carrying no env. The canon file is byte-equal by parity and cannot be patched room-side, so it is
-// pinned by its NEW blob id; re-sync the row when the census rule changes (the flock question the
-// CoalWorks chief carries up: should the census accept an explicit allowlist env?).
+// THE SECOND ROW (08c re-sync, the canon overlay at .github 06c099d): scripts/release-notes.mjs (canon f8d998d8,
+// UMB-443 ruling 2) reads the origin remote with an EXPLICIT ALLOWLIST env -- an object built from named keys
+// (PATH, the temp and home variables, GIT_CEILING_DIRECTORIES), plus GIT_CONFIG_NOSYSTEM and GIT_TERMINAL_PROMPT --
+// passed to the spawn as the shorthand `env`. That env is safe (no ambient GIT_DIR or GIT_INDEX_FILE can reach
+// it: stricter than gitEnv()), but this census, until its allowlist rule lands (the next commit), recognises an
+// env only as `env:` carrying gitEnv(...). The row pins the file by its blob id meanwhile. The canon file is
+// byte-equal by parity and cannot be patched room-side.
 //
-// NAMED DIVERGENCE FROM THE CANON (the same adoption; named here because a byte-equal file cannot carry its own
-// comment): scripts/release-notes.test.mjs is HELD at blob d7e299c4 (the canon's previous blob, .github 2bb0460),
-// NOT the canon's a8f3ba69 (.github 31e6b51). a8f3ba69 asserts the spawned child's environment holds nothing but
-// what node needs; macOS injects __CF_USER_TEXT_ENCODING and the coverage leg injects NODE_V8_COVERAGE, so it is
-// RED on the macOS gate legs and under Coverage (measured by CoalBoard, CI run 37224469491 at 2fb329d, and here:
-// 18 of 19 under NODE_V8_COVERAGE, the env-allowlist test the one failure). d7e299c4 passes 17 of 17 against the
-// new release-notes.mjs 674592e0, plain and under NODE_V8_COVERAGE. Re-sync to the canon blob when the canon
-// ticket (the .github deputy, through main) fixes that assertion. skeleton-check reads this one file as DIFFERS.
+// The 05a hold of scripts/release-notes.test.mjs at d7e299c4 (canon a8f3ba69 failed under coverage and on macOS) is
+// RELEASED: the canon's 8cf7e5fd (.github 06c099d) is in this room.
 export const CENSUS_EXEMPT = [
   { rel: 'scripts/secret-scan.test.mjs', blob: '4433fb56bc97d1facc3fb27804e1934c0577115f', why: 'house secret-scan test, byte-equal to its Bankfire source by parity; line 593 passes env: cleanEnv, process.env with GIT_* filtered out, which is not the named-keys allowlist shape; DELETE when the census rule accepts a GIT_*-filtered process.env or the source builds its env from named keys' },
-  { rel: 'scripts/release-notes.mjs', blob: '674592e0ff25dbdc14a8a4e21e6a598953b90eaa', why: 'canon overlay file, byte-equal by parity; its git spawn passes an explicit allowlist env (PATH, temp and home variables, GIT_CONFIG_NOSYSTEM, GIT_TERMINAL_PROMPT) as the shorthand `env`, which this census does not recognise; DELETE when the census rule accepts an explicit allowlist env (re-sync when the census rule changes)' },
+  { rel: 'scripts/release-notes.mjs', blob: 'f8d998d8fe14a5972440043123398115d02fc50e', why: 'canon overlay file, byte-equal by parity; its git spawn passes an explicit allowlist env built from named keys as the shorthand `env`, which this census does not yet recognise; DELETE when the census rule accepts an explicit allowlist env' },
 ];
 
 // The git blob id of `text` (what `git hash-object` prints for that content), CRLF -> LF first so
