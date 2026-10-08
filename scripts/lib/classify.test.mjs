@@ -353,13 +353,16 @@ test('MARK 5: pinned current ids behind each alias -- a sensitive route accepts 
   }
 });
 
-test('MARK 5: both Haiku generations land on the haiku rung (low), behind the alias or pinned, and a haiku id pinned above its rung never satisfies a sensitive floor', () => {
+test('MARK 5: a haiku id (5.5 or 4.5) pinned in low resolves there, and a known-weaker id (either haiku, or sonnet) pinned above its rung never satisfies a sensitive floor', () => {
   for (const h of [GEN.haiku, GEN.haiku45]) {
     const r = buildFloorRanking([], { low: [h] });
     assert.deepEqual(r.tiers.low, [h, 'haiku'], `${h} pinned in low sits before the alias floor`);
     assert.deepEqual(resolveWorker(r, 'low'), { tier: 'low', model: h }, `${h} resolves at the low rung`);
-    const above = buildFloorRanking([], { reasoning: [h] });
-    assert.deepEqual(resolveWorker(above, 'reasoning', { sensitive: true }), { tier: 'reasoning', model: 'fable' }, `${h} in reasoning is skipped for a sensitive route`);
+  }
+  // only these legs are family-sensitive (a pin is prepended whatever its name): a known-weaker id in reasoning is skipped
+  for (const weak of [GEN.haiku, GEN.haiku45, GEN.sonnet]) {
+    const above = buildFloorRanking([], { reasoning: [weak] });
+    assert.deepEqual(resolveWorker(above, 'reasoning', { sensitive: true }), { tier: 'reasoning', model: 'fable' }, `${weak} in reasoning is skipped for a sensitive route`);
   }
 });
 
