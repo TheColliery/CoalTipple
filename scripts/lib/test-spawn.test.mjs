@@ -36,6 +36,13 @@ test('test-spawn: a caller heap flag stays as the caller set it (their cap, neve
   assert.equal(env.NODE_OPTIONS, '--max-old-space-size=1024 --no-warnings');
 });
 
+test('test-spawn: a caller heap flag spelled with underscores is the same flag: kept as set, no second cap appended (Node accepts both spellings)', () => {
+  for (const caller of ['--max_old_space_size=1024', '--max-old_space-size=1024 --no-warnings', '--no-warnings --max_old_space_size=1024']) {
+    const { env } = testSpawnPlan(['a.test.mjs'], { NODE_OPTIONS: caller });
+    assert.equal(env.NODE_OPTIONS, caller);
+  }
+});
+
 test('test-spawn: the base env is not mutated', () => {
   const base = { NODE_OPTIONS: '--no-warnings' };
   testSpawnPlan(['a.test.mjs'], base);
