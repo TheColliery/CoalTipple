@@ -15,6 +15,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gitEnv } from './lib/git-env.mjs';
 import { escapeRegExp } from './lib/regex-escape.mjs';
+const SPAWN_TIMEOUT_MS = 30000; // every test spawn is bounded (testing.md: a finite clock); local git on a fixture repo, normally well under 5 s
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const VERIFY_ITEMS = ['skills', 'hooks', 'commands', 'platform-configs', '.claude-plugin', 'plugin', 'scripts', 'CHANGELOG.md'];
@@ -94,7 +95,7 @@ function mkGitSandbox() {
     fs.copyFileSync(path.join(repo, f), path.join(tmp, f));
   }
   const git = (args) => {
-    const r = spawnSync('git', args, { cwd: tmp, encoding: 'utf8', env: gitEnv(path.dirname(tmp)) });
+    const r = spawnSync('git', args, { cwd: tmp, encoding: 'utf8', timeout: SPAWN_TIMEOUT_MS, env: gitEnv(path.dirname(tmp)) });
     if (r.status !== 0) throw new Error(`git ${args.join(' ')} failed: ${r.stderr || r.error?.message}`);
     return r.stdout;
   };
@@ -189,7 +190,7 @@ test('verify.mjs pointer check: FIX 2 -- the lone-CR .gitignore line false-match
 
     const gitTmpEnv = gitEnv(path.dirname(tmp));
     const git = (args) => {
-      const r = spawnSync('git', args, { cwd: tmp, encoding: 'utf8', env: gitTmpEnv });
+      const r = spawnSync('git', args, { cwd: tmp, encoding: 'utf8', timeout: SPAWN_TIMEOUT_MS, env: gitTmpEnv });
       if (r.status !== 0) throw new Error(`git ${args.join(' ')} failed: ${r.stderr || r.error?.message}`);
       return r.stdout;
     };
@@ -206,19 +207,19 @@ test('verify.mjs pointer check: FIX 2 -- the lone-CR .gitignore line false-match
       'the probed root must be genuinely absent -- that absence is what the false match depends on');
 
     // THE DISCRIMINATING PAIR, at the git level, on the SAME real fixture.
-    const bare = spawnSync('git', ['check-ignore', '--stdin'], { cwd: tmp, encoding: 'utf8', input: 'totally-fake-root/\n', env: gitTmpEnv });
+    const bare = spawnSync('git', ['check-ignore', '--stdin'], { cwd: tmp, encoding: 'utf8', timeout: SPAWN_TIMEOUT_MS, input: 'totally-fake-root/\n', env: gitTmpEnv });
     assert.equal(bare.status, 0,
       'RED: the bare feed must reproduce the false match on THIS fixture -- an absent, un-patterned root reported ignored');
-    const probed = spawnSync('git', ['check-ignore', '--stdin'], { cwd: tmp, encoding: 'utf8', input: 'totally-fake-root/.pointer-check-probe\n', env: gitTmpEnv });
+    const probed = spawnSync('git', ['check-ignore', '--stdin'], { cwd: tmp, encoding: 'utf8', timeout: SPAWN_TIMEOUT_MS, input: 'totally-fake-root/.pointer-check-probe\n', env: gitTmpEnv });
     assert.equal(probed.status, 1, 'the injection-site feed correctly reports the SAME root as NOT ignored');
-    const verbose = spawnSync('git', ['check-ignore', '-v', '--stdin'], { cwd: tmp, encoding: 'utf8', input: 'totally-fake-root/\n', env: gitTmpEnv });
+    const verbose = spawnSync('git', ['check-ignore', '-v', '--stdin'], { cwd: tmp, encoding: 'utf8', timeout: SPAWN_TIMEOUT_MS, input: 'totally-fake-root/\n', env: gitTmpEnv });
     assert.match(verbose.stdout, /\.gitignore:2:/,
       'the matching pattern must be the lone-CR line (line 2), naming the source unambiguously');
 
     // CONTROL: a genuinely-ignored root still matches under BOTH feeds -- the probe loses
     // no true positive.
-    assert.equal(spawnSync('git', ['check-ignore', '--stdin'], { cwd: tmp, encoding: 'utf8', input: 'dogfood/\n', env: gitTmpEnv }).status, 0);
-    assert.equal(spawnSync('git', ['check-ignore', '--stdin'], { cwd: tmp, encoding: 'utf8', input: 'dogfood/.pointer-check-probe\n', env: gitTmpEnv }).status, 0);
+    assert.equal(spawnSync('git', ['check-ignore', '--stdin'], { cwd: tmp, encoding: 'utf8', timeout: SPAWN_TIMEOUT_MS, input: 'dogfood/\n', env: gitTmpEnv }).status, 0);
+    assert.equal(spawnSync('git', ['check-ignore', '--stdin'], { cwd: tmp, encoding: 'utf8', timeout: SPAWN_TIMEOUT_MS, input: 'dogfood/.pointer-check-probe\n', env: gitTmpEnv }).status, 0);
 
     // END-TO-END: the real gate, as fixed, must not be fooled by this fixture -- the
     // absent-root citation is silently out of scope (never even resolves), never the false
@@ -298,7 +299,7 @@ test('verify.mjs: an ambient poisoned GIT_DIR never redirects this gate\'s own g
   // pre-commit hook (which already exports its OWN ambient GIT_DIR before this test ever
   // runs), an unguarded decoyGit() redirects onto the REAL enclosing repo instead of
   // decoyRepo, committing "decoy baseline" + decoy-marker.md onto the user's own branch.
-  const decoyGit = (args) => spawnSync('git', args, { cwd: decoyRepo, encoding: 'utf8', env: gitEnv(path.dirname(decoyRepo)) });
+  const decoyGit = (args) => spawnSync('git', args, { cwd: decoyRepo, encoding: 'utf8', timeout: SPAWN_TIMEOUT_MS, env: gitEnv(path.dirname(decoyRepo)) });
   decoyGit(['init', '-q', '-b', 'main']);
   decoyGit(['config', 'user.email', 'test@test.invalid']);
   decoyGit(['config', 'user.name', 'Test']);

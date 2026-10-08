@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+const SPAWN_TIMEOUT_MS = 60000; // every test spawn is bounded (testing.md: a finite clock); the local link-check engine over fixture files, normally well under 5 s
 import {
   slugifyHeading,
   extractHeadingSlugs,
@@ -80,14 +81,14 @@ const ENGINE = path.join(repo, 'scripts', 'lib', 'link-check.mjs');
 
 test('link-check.mjs CLI: spawned against the RED fixture, exits 1 (the gate\'s ONLY mechanism -- process.exitCode -- pinned by a real spawn, not a pure-export call)', () => {
   const files = readTreeMd(path.join(FIXTURES, 'red')).map((abs) => path.relative(repo, abs).replace(/\\/g, '/'));
-  const r = spawnSync(process.execPath, [ENGINE, ...files], { cwd: repo, encoding: 'utf8' });
+  const r = spawnSync(process.execPath, [ENGINE, ...files], { cwd: repo, encoding: 'utf8', timeout: SPAWN_TIMEOUT_MS });
   assert.equal(r.status, 1, `RED fixture must exit 1, got status=${r.status}:\n${r.stdout}${r.stderr}`);
   assert.match(r.stdout, /^3 finding\(s\) across 4 file\(s\)$/m);
 });
 
 test('link-check.mjs CLI: spawned against the GREEN fixture, exits 0', () => {
   const files = readTreeMd(path.join(FIXTURES, 'green')).map((abs) => path.relative(repo, abs).replace(/\\/g, '/'));
-  const r = spawnSync(process.execPath, [ENGINE, ...files], { cwd: repo, encoding: 'utf8' });
+  const r = spawnSync(process.execPath, [ENGINE, ...files], { cwd: repo, encoding: 'utf8', timeout: SPAWN_TIMEOUT_MS });
   assert.equal(r.status, 0, `GREEN fixture must exit 0, got status=${r.status}:\n${r.stdout}${r.stderr}`);
   assert.match(r.stdout, /^0 finding\(s\) across 4 file\(s\)$/m);
 });
