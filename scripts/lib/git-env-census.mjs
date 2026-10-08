@@ -37,15 +37,18 @@
 //   1. the lexer decides regex-or-division by the previous token: after the `)` of an if/while/for/with head and after the `}`
 //      of a block a `/` starts a regex; after `]`, a name or a number it is division; after any other `)` or `}` it is
 //      division AND it might be a regex (a block whose `{` follows a label or a `case x:`, the head of a `for await`, an opener
-//      nobody has listed yet). Where a regex holding a quote was read as division plus a string, the rest of that line was lost
-//      and a whole spawn on it could hide (N17, N24, N25). So every such slash that has a closing slash on its line is read
-//      BOTH ways: as lexed, and again as the start of a regex, and the spawns on that line after it are judged under either
-//      reading (a spawn found by either is counted, a finding from either is a finding). A second ambiguous slash that shows
-//      only once the first is forced is forced in turn (N26), and a line with more than MAX_READINGS (16) readings is refused
-//      as a whole (N27). What it still does not do: read the OTHER way (a head or block it recognised that is really followed by
-//      division), read a slash with no closing slash on its line, or read a regex across lines (JS has none). The cost is a
-//      false finding on genuine division followed by a string on the same line as a git spawn: a visible refusal, never a
-//      silent pass (the real tree has none: its bare findings are the same twelve in the same four pinned files);
+//      nobody has listed yet). Where a regex holding a quote or a backtick was read as division plus a string or a template,
+//      the rest of that line was lost, and so was every line the string or template then ran onto (a template, or a string
+//      continued by a backslash at the end of a line, crosses lines), so a whole spawn could hide (N17, N24, N25, N28-N30). So
+//      every such slash that has a closing slash on its line is read BOTH ways: as lexed, and again as the start of a regex, and
+//      every spawn after it, to the end of the file, is judged under either reading (a spawn found by either is counted, a
+//      finding from either is a finding). A second ambiguous slash that shows only once the first is forced is forced in turn
+//      (N26), and a file with more than MAX_READINGS (16) readings is refused as a whole (N27). What it still does not do: read the
+//      OTHER way (a head or block it recognised that is really followed by division), or read a slash with no closing slash on
+//      its line (a regex holds no newline, so such a slash is division). The cost is a false finding on genuine division that
+//      is followed, later on its line, by a quote, a backtick or another slash, in a file that names a git spawn after it: a
+//      visible refusal, never a silent pass (the real tree has none: it holds no such slash, and its bare findings are the same
+//      twelve in the same four pinned files);
 //   2. identifier lookups are FILE-WIDE, not scope-aware: every declaration and use of a name counts, so two
 //      functions that each build a clean `env` are both refused (route one through gitEnv());
 //   3. an imported helper is trusted only under the names gitEnv and gitTestEnv, and only when it is imported under THAT name
@@ -62,7 +65,9 @@
 //   5. only spawnSync/execFileSync called with the literal command 'git', 'git.exe' or a template holding just git are
 //      spawns: a command held in a variable, spawn(), execFile(), exec(), a spawn reached by `const run = spawnSync`
 //      or by member access on a module object (cp['spawnSync']) are not counted (an import or a destructure under
-//      another name IS a finding, X3);
+//      another name IS a finding, X3); neither is a spawner whose NAME is written with a unicode escape sequence (a
+//      backslash, u and four hex digits standing for one of its letters): the lexer reads the name as it is written, so it is
+//      not spawnSync to the census although it is to the engine, and the spawn runs with whatever env it is given (X4);
 //   6. eval, new Function, a `with` block and a Proxy over process.env are not seen;
 //   7. a comma operator inside an env expression ends it early;
 //   8. a file that rebinds `process` (an alias, the process module, a ['process'] lookup) is read only for a bare
@@ -843,17 +848,15 @@ function scanOne(rel, ctx, accept) {
 }
 
 // The census of one file reads it more than once where a slash is ambiguous (ceiling item 1): once as lexed, and again for each '/' the
-// lexer took for division after a ')' or '}' that is not a block head, with that slash read as the start of a regex. Only the spawns
-// on that slash's line, after it, can differ, so only those are judged again; a spawn found by either reading is counted, and a
-// finding from either reading is a finding. A second ambiguous slash that only appears once the first is read as a regex is forced
-// in turn, and a line whose readings pass MAX_READINGS is itself a finding. The cost is a false finding on genuine division followed
-// by a string on the same line, never a silent pass.
+// lexer took for division after a ')' or '}' that is not a block head, with that slash read as the start of a regex. The two readings
+// can part ways past the slash's own line, because the division reading may open a template or a backslash-continued string that
+// runs onto later lines and swallows a spawn there (X1-X3), so every spawn after the slash, to the end of the file, is judged again;
+// a spawn found by either reading is counted, and a finding from either reading is a finding. A second ambiguous slash that only
+// appears once the first is read as a regex is forced in turn, and a file whose readings pass MAX_READINGS is itself a finding. The
+// cost is a false finding on genuine division followed by a quote or a backtick, in a file that names a git spawn after it, never
+// a silent pass.
 const MAX_READINGS = 16;
-const hasSpawner = (text, from) => {
-  const end = text.indexOf('\n', from);
-  const tail = text.slice(from, end === -1 ? text.length : end);
-  return [...SPAWNERS].some((s) => tail.includes(s));
-};
+const hasSpawner = (text, from) => { const tail = text.slice(from); return [...SPAWNERS].some((s) => tail.includes(s)); };
 
 export function scanGitSpawns(files, exempt = CENSUS_EXEMPT) {
   const findings = [];
@@ -871,10 +874,10 @@ export function scanGitSpawns(files, exempt = CENSUS_EXEMPT) {
       const { force, ln } = queue[r];
       if (r >= MAX_READINGS) { findings.push(`${rel}:${ln} more than ${MAX_READINGS} ways to read the slashes that precede a spawn (a '/' after a ')' or '}' may be division or a regex) -- the census stops reading and refuses the file`); break; }
       const alt = buildCtx(text, new Set(force), rel);
-      const res = scanOne(rel, alt, (t) => t.ln === ln && t.i > force[0]);
+      const res = scanOne(rel, alt, (t) => t.i > force[0]);
       for (const f of res.findings) if (!findings.includes(f)) findings.push(f);
       for (const [i, ok] of res.calls) state.set(i, (state.has(i) ? state.get(i) : true) && ok);
-      for (const a of alt.amb) if (a.ln === ln && a.i > force[force.length - 1] && hasSpawner(text, a.i)) queue.push({ force: [...force, a.i], ln });
+      for (const a of alt.amb) if (a.i > force[force.length - 1] && hasSpawner(text, a.i)) queue.push({ force: [...force, a.i], ln });
     }
     calls += state.size;
     for (const ok of state.values()) if (ok) safe++;

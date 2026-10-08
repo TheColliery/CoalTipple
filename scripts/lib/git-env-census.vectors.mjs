@@ -20,6 +20,10 @@ const RAW = "spawnSync('git', ['status'], { env: process.env });";
 const DIRTY = 'const env = { ...process.env };';
 const HIDE = (head, spawn) => `${head}\n/'/.test(String(1)) || ${spawn} // '\n`;
 const TWO = (spawn) => `L: {} /'/.test(1); L2: {} /"/.test(2) || ${spawn} // "\n`;
+// The same slash, but the division reading opens a template or a backslash-continued string that runs onto the NEXT line and swallows the spawn there.
+const BS = String.fromCharCode(92);
+const TPL = (head, spawn) => `${head}\n/${BT}/.test(String(1));\n${spawn}\n// ${BT}\n`;
+const CONT = (head, spawn) => `${head}\n/'/.test(String(1)); // ${BS}\n${spawn}\n// '\n`;
 
 export const VECTORS = [
   // whole-object copies, one or more hops away
@@ -110,6 +114,10 @@ export const VECTORS = [
   // two ambiguous slashes on one line: the second shows only once the first is read as a regex; and a line with more ways to read it than the budget
   { id: 'N26', expect: 'fail', texts: [TWO(RAW), `${DIRTY}\n${TWO(SHORT)}`, `${DIRTY}\n${TWO(KEYED)}`] },
   { id: 'N27', expect: 'fail', texts: [`const v = ${Array(20).fill('(a)').join(' / ')}; spawnSync('git', ['status'], { env: gitEnv(d) });\n`] },
+  // 08d bounce 3 (the re-INSPECT 2's M-2r, X1-X3): the division reading opens a template or a continued string that hides the spawn on a LATER line
+  { id: 'N28', expect: 'fail', texts: [TPL('L: {}', RAW), TPL(`${DIRTY}\nL: {}`, SHORT), TPL(`${DIRTY}\nL: {}`, KEYED)] },
+  { id: 'N29', expect: 'fail', texts: [CONT('L: {}', RAW), CONT(`${DIRTY}\nL: {}`, SHORT), CONT(`${DIRTY}\nL: {}`, KEYED)] },
+  { id: 'N30', expect: 'fail', texts: [TPL('const x = 1;\nswitch (x) { case 1: {}', RAW) + '}\n', TPL(`${DIRTY}\nconst x = 1;\nswitch (x) { case 1: {}`, SHORT) + '}\n', TPL(`${DIRTY}\nconst x = 1;\nswitch (x) { case 1: {}`, KEYED) + '}\n'] },
   // 08d bounce 2: an imported gitEnv / gitTestEnv is trusted only by that name from the room's own git-env.mjs (I1 refused, I2 passed)
   { id: 'I1', expect: 'fail', texts: [
     `import { gitEnv } from './elsewhere.mjs';\n${INLINE('gitEnv(d)')}\n`,
@@ -135,6 +143,7 @@ export const VECTORS = [
     ...both(`import { gitEnv } from './git-env.mjs';\nconst env = gitEnv(d);`),
   ] },
   { id: 'P7', expect: 'pass', texts: ["const half = (n + 1) / 2; spawnSync('git', ['status'], { env: gitEnv(d) }); // half/2\n", "const half = f(n) / 2; const s = '/x'; spawnSync('git', ['status'], { env: gitEnv(d) });\n"] },
+  { id: 'P8', expect: 'pass', texts: [TPL('L: {}', INLINE('gitEnv(d)')), CONT('L: {}', INLINE('gitEnv(d)'))] },
   { id: 'P3', expect: 'pass', texts: [INLINE('gitEnv(d)') + '\n', ...both('const env = gitEnv(d);')] },
   { id: 'P4', expect: 'pass', texts: [INLINE("{ PATH: process.env.PATH, HOME: process.env.HOME, GIT_CONFIG_NOSYSTEM: '1' }") + '\n'] },
   { id: 'P5', expect: 'pass', texts: [...both(`${KEEP}\nconst env = { ...Object.fromEntries(keep.filter((k) => k in process.env).map((k) => [k, process.env[k]])), ${NOSYS} };`), ...both(`${PICKENV(NOSYS)}`)] },
