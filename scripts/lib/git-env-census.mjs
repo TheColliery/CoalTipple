@@ -25,12 +25,18 @@
 //   parameter, a destructured or imported name, and every other use of it must be a read (a spread, a property or
 //   index read, a comparison, an argument of a pure builtin) -- an alias, a write, a call on it, a callee that
 //   receives it (fill(env), Reflect.set(env, ...), Object.assign(env, ...), Object(env)) is a finding (F15-F18,
-//   F35-F40). Anything the grammar does not read whole is a finding, never a silent pass.
+//   F35-F40); so is the env name inside a destructuring-assignment target or the left of a for-in / for-of head (B2),
+//   a key list handed to a callback method with more than one parameter (B3), JSON.stringify with a replacer (B4), a var
+//   or a declaration that comes after the spawn (B6), a gitEnv assigned in the file (B7), and a spawner named other than
+//   as a call (B8). Anything the grammar does not read whole is a finding, never a silent pass.
 //
 // THE NAMED CEILING (a token census, not a JS parser; it errs toward a finding wherever it can):
-//   1. the lexer decides regex-or-division by the previous token; after `)`, `]` and `}` a `/` is read as division,
-//      so `if (x) /re/.test(y)` desyncs the rest of that line (the bypass it allows must also make the whole file
-//      lex into a clean env, which the declaration and use checks make hard, not impossible);
+//   1. the lexer decides regex-or-division by the previous token: after `)` of an if/while/for/with head and after the `}`
+//      of a block a `/` starts a regex, after any other `)`, `]` or `}` it is division. Where that guess is wrong a regex
+//      holding a quote is read as division plus a string, and the rest of that line is lost: it can HIDE a whole spawn
+//      on that line (the first `if (x) /'/.test(y); spawnSync('git', ...)` shape did, until the head test was added), so
+//      the shapes the guess still gets wrong (a block `}` that the opener rule took for an object literal, `do {} while (x) /re/`)
+//      are an open hole of the same kind, not a harmless desync;
 //   2. identifier lookups are FILE-WIDE, not scope-aware: every declaration and use of a name counts, so two
 //      functions that each build a clean `env` are both refused (route one through gitEnv());
 //   3. an imported helper is trusted only under the names gitEnv and gitTestEnv; any other imported helper is a
@@ -46,7 +52,14 @@
 //   8. a file that rebinds `process` (an alias, the process module, a ['process'] lookup) is read only for a bare
 //      gitEnv() call: any other env in it is a finding, even a clean one (fail closed);
 //   9. an env mutated through a closure that captured it, or through a getter or setter defined elsewhere, is not seen;
-//      a callee that receives the env as an argument IS a finding (fill(env)), but the census does not read its body.
+//      a callee that receives the env as an argument IS a finding (fill(env)), but the census does not read its body;
+//  10. a whole-process write outside the env object that still reaches every env at run time is refused only where the file
+//      names the builtin it goes through (Object.prototype.X = ..., globalThis.X = ..., a rebound Object/JSON/Reflect/Array/
+//      String/Boolean/console): such a file is read only for a bare gitEnv() call. A write through a name the census does
+//      not know (a parameter called Object, a module another file imports and runs first) is not seen;
+//  11. a declaration is checked against the spawn by TOKEN POSITION (it must come before the spawn, and not be a var): a
+//      function that is declared above a const and called below it is judged as if the const came late, which errs toward a
+//      finding.
 //
 // scanGitSpawns() is pure (a fixture map in, { findings, files, calls, safe } out) so it is unit-tested directly,
 // red-first, without a repo clone; censusGitSpawns() is its findings-only view; collectScriptsMjs() is the real
@@ -83,11 +96,18 @@ export function gitBlobId(text) {
 // ---------------------------------------------------------------------------
 const KW_BEFORE_REGEX = new Set(['return', 'typeof', 'instanceof', 'in', 'of', 'new', 'delete', 'void', 'throw', 'case', 'do', 'else', 'yield', 'await']);
 const PUNCTS = ['>>>=', '...', '===', '!==', '**=', '<<=', '>>=', '>>>', '&&=', '||=', '??=', '=>', '==', '!=', '<=', '>=', '&&', '||', '??', '?.', '++', '--', '+=', '-=', '*=', '/=', '%=', '&=', '|=', '^=', '**', '<<', '>>'];
+const CTL_HEAD = new Set(['if', 'while', 'for', 'with']);
+const BLOCK_BEFORE = new Set(['else', 'do', 'try', 'finally']);
+// A '{' opens a BLOCK, not an object literal, at the start of the file, after ')' ';' '{' '}' '=>', after else/do/try/finally,
+// and after a plain name (a class head). It is an object literal after '(' ',' '=' ':' '[' an operator, or return/typeof/....
+const openIsBlock = (p) => !p || (p.k === 'p' ? [')', ';', '{', '}', '=>'].includes(p.v) : p.k === 'id' ? BLOCK_BEFORE.has(p.v) || !KW_BEFORE_REGEX.has(p.v) : false);
 const isIdChar = (c) => /[\w$]/.test(c) || c.charCodeAt(0) > 127;
 
 export function lex(text) {
   const toks = [];
   const holes = []; // brace depth at which each open template hole began
+  const parenCtl = []; // per open '(' : is it the head of if/while/for/with (a '/' after its ')' starts a regex)
+  const braceBlk = []; // per open '{' : is it a block (a '/' after its '}' starts a regex) or an object literal
   let braces = 0;
   let line = 1;
   let i = 0;
@@ -96,7 +116,7 @@ export function lex(text) {
   const regexAllowed = () => {
     const p = toks[toks.length - 1];
     if (!p) return true;
-    if (p.k === 'p') return !(p.v === ')' || p.v === ']' || p.v === '}');
+    if (p.k === 'p') return p.v === ')' || p.v === '}' ? !!p.ctl : p.v !== ']';
     if (p.k === 'id') return KW_BEFORE_REGEX.has(p.v);
     return p.k === 'tplopen';
   };
@@ -104,7 +124,7 @@ export function lex(text) {
     let j = from;
     while (j < text.length) {
       const d = text[j];
-      if (d === '\\') { j += 2; continue; }
+      if (d === '\\') { if (text[j + 1] === '\n') line++; j += 2; continue; }
       if (d === '`') { push('tpl', text.slice(from, j), from); i = j + 1; return; }
       if (d === '$' && text[j + 1] === '{') { push('tpl', text.slice(from, j), from); push('tplopen', '${', j); holes.push(braces); i = j + 2; return; }
       if (d === '\n') line++;
@@ -128,9 +148,9 @@ export function lex(text) {
     if (c === '"' || c === '\'') {
       const s = i;
       i++;
-      while (i < text.length && text[i] !== c && text[i] !== '\n') { if (text[i] === '\\') i++; i++; }
+      while (i < text.length && text[i] !== c && text[i] !== '\n') { if (text[i] === '\\') { if (text[i + 1] === '\n') line++; i++; } i++; }
       push('str', text.slice(s + 1, i), s);
-      i++;
+      if (text[i] === c) i++;
       continue;
     }
     if (c === '`') { templateChunk(i + 1); continue; }
@@ -173,9 +193,13 @@ export function lex(text) {
       continue;
     }
     const op = PUNCTS.find((p) => text.startsWith(p, i)) || c;
-    if (op === '{') braces++;
-    else if (op === '}') braces--;
-    push('p', op, i);
+    const tk = { k: 'p', v: op, i, ln: line };
+    const prevTok = toks[toks.length - 1];
+    if (op === '(') parenCtl.push(!!prevTok && prevTok.k === 'id' && CTL_HEAD.has(prevTok.v));
+    else if (op === ')') tk.ctl = parenCtl.pop() === true;
+    else if (op === '{') { braces++; braceBlk.push(openIsBlock(prevTok)); }
+    else if (op === '}') { braces--; tk.ctl = braceBlk.pop() === true; }
+    toks.push(tk);
     i += op.length;
   }
   return toks;
@@ -221,6 +245,8 @@ function exprEnd(ctx, from, semi) {
   return n;
 }
 
+const BUILTINS = new Set(['Object', 'JSON', 'Reflect', 'Array', 'String', 'Boolean', 'console']);
+
 function buildCtx(text) {
   const toks = lex(text);
   const m = bracketMap(toks);
@@ -228,14 +254,21 @@ function buildCtx(text) {
   const funcs = new Map(); // name -> [index of the name token of `function NAME`]
   let envImport = false;
   let processAlias = false;
+  let shadowed = false; // a builtin the grammar leans on (Object, JSON, ...) is rebound, or globalThis is in play
+  let gitEnvAssigned = false; // gitEnv / gitTestEnv is assigned somewhere in the file, so its name proves nothing
   for (let n = 0; n < toks.length; n++) {
     const t = toks[n];
     if (t.k === 'id') {
       if (t.v === 'process' && !isP(toks[n + 1], '.')) processAlias = true;
       const p = toks[n - 1];
+      if ((t.v === 'globalThis' || t.v === 'global') && !isP(p, '.')) shadowed = true;
+      if (t.v === 'prototype' && isP(p, '.') && toks[n - 2] && BUILTINS.has(toks[n - 2].v)) shadowed = true; // Object.prototype.X = ... reaches every env
+      if (BUILTINS.has(t.v) && (isP(p, '{') || isP(p, ',')) && (isP(toks[n + 1], '}') || isP(toks[n + 1], ',')) && isP(toks[nearestOpener({ toks, m }, n)], '{')) shadowed = true; // an import or destructure list names it
+      if (BUILTINS.has(t.v) && !isP(p, '.') && (isId(p, 'const') || isId(p, 'let') || isId(p, 'var') || isId(p, 'function') || isId(p, 'class') || isId(p, 'as') || isId(p, 'import') || isP(toks[n + 1], '='))) shadowed = true;
+      if ((t.v === 'gitEnv' || t.v === 'gitTestEnv') && isP(toks[n + 1], '=') && !(isId(p, 'const') || isId(p, 'let') || isId(p, 'var'))) gitEnvAssigned = true;
       if (isId(p) && (p.v === 'const' || p.v === 'let' || p.v === 'var')) {
         const list = decls.get(t.v) || [];
-        list.push({ n, init: isP(toks[n + 1], '=') ? n + 2 : -1 });
+        list.push({ n, kind: p.v, init: isP(toks[n + 1], '=') ? n + 2 : -1 });
         decls.set(t.v, list);
       } else if (isId(p, 'function')) {
         const list = funcs.get(t.v) || [];
@@ -245,14 +278,15 @@ function buildCtx(text) {
     } else if (t.k === 'str' && (t.v === 'node:process' || t.v === 'process') && (isId(toks[n - 1], 'from') || (isP(toks[n - 1], '(') && (isId(toks[n - 2], 'require') || isId(toks[n - 2], 'import'))))) envImport = true;
     else if (t.k === 'str' && t.v === 'process' && isP(toks[n - 1], '[')) processAlias = true;
   }
-  return { toks, m, decls, funcs, envImport, envTainted: envImport || processAlias, memo: new Set() };
+  return { toks, m, decls, funcs, envImport, shadowed, gitEnvAssigned, envTainted: envImport || processAlias || shadowed, memo: new Set() };
 }
 
 // ---------------------------------------------------------------------------
 // Uses of a name: every use must be a read.
 // ---------------------------------------------------------------------------
 const ALLOWED_CALLEES = new Set(['Object.keys', 'Object.values', 'Object.entries', 'Object.hasOwn', 'Object.getOwnPropertyNames', 'JSON.stringify', 'console.log', 'console.error', 'console.warn', 'console.info', 'Array.isArray', 'String', 'Boolean']);
-const PURE_LIST_METHODS = new Set(['filter', 'map', 'includes', 'indexOf', 'join', 'some', 'every', 'slice', 'concat', 'find', 'findIndex', 'forEach', 'flatMap', 'at']);
+const PURE_LIST_METHODS = new Set(['includes', 'indexOf', 'join', 'slice', 'concat', 'at']);
+const CALLBACK_LIST_METHODS = new Set(['filter', 'map', 'some', 'every', 'find', 'findIndex', 'forEach', 'flatMap']);
 const ASSIGN_OPS = new Set(['=', '+=', '-=', '*=', '/=', '%=', '&=', '|=', '^=', '**=', '<<=', '>>=', '>>>=', '&&=', '||=', '??=', '++', '--']);
 const COMPARE_OPS = new Set(['===', '!==', '==', '!=']);
 
@@ -276,7 +310,70 @@ function directCallee(ctx, n) {
     else { k--; break; }
   }
   if (isId(toks[k], 'function') || isId(toks[k], 'catch')) return null;
+  ctx.lastOpen = j; // the '(' of that call, for the caller that must look at the other arguments
   return parts.length ? parts.join('.') : null;
+}
+
+// The index of the nearest bracket that encloses token n and is still open there, or -1.
+function nearestOpener(ctx, n) {
+  const { toks, m } = ctx;
+  for (let j = n - 1; j >= 0; j--) {
+    const t = toks[j];
+    if ((t.k === 'p' && (t.v === ')' || t.v === ']' || t.v === '}')) || t.k === 'tplclose') { const o = m.get(j); if (o === undefined) return -1; j = o; continue; }
+    if ((t.k === 'p' && (t.v === '(' || t.v === '[' || t.v === '{')) || t.k === 'tplopen') return j;
+  }
+  return -1;
+}
+
+// true when token n is inside the target of a destructuring assignment ({ a: x.y } = o, [x.y] = a) or the left of a for-in / for-of head.
+function inAssignTarget(ctx, n) {
+  const { toks, m } = ctx;
+  let j = n - 1;
+  while (j >= 0) {
+    const t = toks[j];
+    if ((t.k === 'p' && (t.v === ')' || t.v === ']' || t.v === '}')) || t.k === 'tplclose') { const o = m.get(j); if (o === undefined) return false; j = o - 1; continue; }
+    if (t.k === 'p' && (t.v === '[' || t.v === '{')) { const c = m.get(j); if (c !== undefined && isP(toks[c + 1], '=')) return true; }
+    else if (isP(t, '(') && isId(toks[j - 1], 'for')) {
+      const c = m.get(j);
+      if (c === undefined) return false;
+      for (let k = n; k < c; k++) {
+        if ((toks[k].k === 'p' && (toks[k].v === '(' || toks[k].v === '[' || toks[k].v === '{')) || toks[k].k === 'tplopen') { const e = m.get(k); if (e === undefined) return false; k = e; continue; }
+        if (isP(toks[k], ';')) return false;
+        if (isId(toks[k], 'of') || isId(toks[k], 'in')) return true;
+      }
+      return false;
+    }
+    j--;
+  }
+  return false;
+}
+
+// A callback method is read-only only when its one argument is an arrow with at most one parameter: a third parameter hands
+// the callback the array itself (keep.forEach((k, i, a) => a.push(...))), and a thisArg or a function expression hands it more.
+function onlyUnaryArrow(ctx, open) {
+  const { toks, m } = ctx;
+  const c = m.get(open);
+  if (c === undefined || exprEnd(ctx, open + 1, false) !== c) return false;
+  const a = open + 1;
+  if (toks[a] && toks[a].k === 'id' && isP(toks[a + 1], '=>')) return true;
+  if (isP(toks[a], '(')) { const e = m.get(a); return e !== undefined && e - a <= 2 && isP(toks[e + 1], '=>'); }
+  return false;
+}
+
+// JSON.stringify(x) and JSON.stringify(x, null, 2) cannot run caller code; a replacer function sees the holder as `this`.
+function plainStringify(ctx, open) {
+  const { toks, m } = ctx;
+  const c = m.get(open);
+  if (c === undefined) return false;
+  const args = [];
+  for (let k = open + 1; k < c;) { const e = Math.min(exprEnd(ctx, k, false), c); args.push([k, e]); k = e + 1; }
+  if (args.length === 1) return true;
+  if (args.length > 3) return false;
+  const [a1, b1] = args[1];
+  if (!(b1 - a1 === 1 && toks[a1].k === 'id' && (toks[a1].v === 'null' || toks[a1].v === 'undefined'))) return false;
+  if (args.length === 2) return true;
+  const [a2, b2] = args[2];
+  return b2 - a2 === 1 && (toks[a2].k === 'num' || toks[a2].k === 'str');
 }
 
 // null when every use of `name` is a read; otherwise the reason. `sites` = the token indexes where it is handed to a spawn.
@@ -292,6 +389,7 @@ function usesCheck(ctx, name, sites, kind) {
     if ((isP(p, '{') || isP(p, ',')) && isP(q, ':')) continue; // an object key
     if (sites.has(n)) continue;
     const why = () => `${name} is used at line ${t.ln} in a way the census cannot read as a plain read`;
+    if (inAssignTarget(ctx, n)) return why();
     if (isP(p, '...')) continue;
     if (isId(p, 'return')) continue;
     if (isId(p, 'typeof') || isP(p, '!')) continue;
@@ -310,13 +408,14 @@ function usesCheck(ctx, name, sites, kind) {
       if (after && after.k === 'p' && ASSIGN_OPS.has(after.v)) return why();
       if (isP(after, '(') || (after && after.k === 'tpl')) {
         if (kind === 'list' && steps === 1 && last && PURE_LIST_METHODS.has(last)) continue;
+        if (kind === 'list' && steps === 1 && last && CALLBACK_LIST_METHODS.has(last) && isP(toks[j], '(') && onlyUnaryArrow(ctx, j)) continue;
         return why();
       }
       continue;
     }
     if ((isP(p, '(') || isP(p, ',')) && (isP(q, ')') || isP(q, ','))) {
       const callee = directCallee(ctx, n);
-      if (callee && ALLOWED_CALLEES.has(callee)) continue;
+      if (callee && ALLOWED_CALLEES.has(callee) && (callee !== 'JSON.stringify' || plainStringify(ctx, ctx.lastOpen))) continue;
     }
     return why();
   }
@@ -459,6 +558,8 @@ function judgeIdent(ctx, n, st) {
   const name = ctx.toks[n].v;
   const ds = ctx.decls.get(name) || [];
   if (ds.length !== 1 || ds[0].init < 0) return `${name} is not declared exactly once here with an initializer (a parameter, an import, a destructured or a repeated name)`;
+  if (ds[0].kind === 'var') return `${name} is a var: its declaration is hoisted, so at the spawn it can still be undefined, which hands the child the whole environment`;
+  if (ds[0].n > st.at) return `${name} is declared after the spawn that uses it, so it is undefined there (and undefined hands the child the whole environment)`;
   const r = usesCheck(ctx, name, st.sites, 'env');
   if (r) return r;
   return judgeExpr(ctx, ds[0].init, exprEnd(ctx, ds[0].init, true), st);
@@ -511,7 +612,11 @@ function judgeCall(ctx, a, b, st) {
   const name = ctx.toks[a].v;
   const defined = (ctx.decls.get(name) || []).length + (ctx.funcs.get(name) || []).length > 0;
   if (!defined) {
-    if (name === 'gitEnv' || name === 'gitTestEnv') { st.trusted = true; return null; }
+    if (name === 'gitEnv' || name === 'gitTestEnv') {
+      if (ctx.gitEnvAssigned || ctx.shadowed) return `${name} is assigned or reachable through globalThis in this file, so its name proves nothing`;
+      st.trusted = true;
+      return null;
+    }
     return `${name}(...) is a helper this file does not define (the census reads only same-file helpers, and trusts only gitEnv and gitTestEnv by name)`;
   }
   if (ctx.memo.has(name)) return `${name} calls itself`;
@@ -548,13 +653,13 @@ function judgeExpr0(ctx, a, b, st) {
 }
 
 // The whole judgement of one env value starting at token a, ending before b.
-function judgeEnv(ctx, a, b, sites) {
-  const st = { depth: 0, ambient: false, nosys: false, trusted: false, sites };
+function judgeEnv(ctx, a, b, sites, at) {
+  const st = { depth: 0, ambient: false, nosys: false, trusted: false, sites, at };
   const r = judgeExpr(ctx, a, b, st);
   if (r) return r;
   if (ctx.envTainted) {
     const bare = ctx.toks[a] && ctx.toks[a].k === 'id' && (ctx.toks[a].v === 'gitEnv' || ctx.toks[a].v === 'gitTestEnv') && isP(ctx.toks[a + 1], '(') && ctx.m.get(a + 1) === b - 1;
-    if (!(bare && st.trusted && !st.ambient)) return 'this file rebinds process (an alias or the process module), so only a bare gitEnv() call is read';
+    if (!(bare && st.trusted && !st.ambient)) return 'this file rebinds process or a builtin the grammar leans on (an alias, the process module, Object, JSON, globalThis ...), so only a bare gitEnv() call is read';
   }
   if (st.ambient && ctx.envImport) return 'this file imports the process module, so a named read of the environment cannot be told from a whole copy';
   if (st.ambient && !st.nosys && !st.trusted) return 'the env reads process.env but sets no GIT_CONFIG_NOSYSTEM: \'1\'';
@@ -598,7 +703,17 @@ export function scanGitSpawns(files, exempt = CENSUS_EXEMPT) {
     const spawns = [];
     for (let n = 0; n < toks.length; n++) {
       const t = toks[n];
-      if (t.k === 'id' && SPAWNERS.has(t.v) && (isId(toks[n + 1], 'as') || (isP(toks[n + 1], ':') && (isP(toks[n - 1], '{') || isP(toks[n - 1], ',')) && toks[n + 2] && toks[n + 2].k === 'id'))) { findings.push(`${rel}:${t.ln} ${t.v} is re-bound under another name -- the census cannot follow the alias, so it cannot count its git spawns (ceiling 5)`); continue; }
+      // A spawner named anywhere but as a call is a finding: an import under another name, a destructure with a rename, an alias
+      // (const run = spawnSync), a value, an argument, and spawnSync.call / .apply / .bind / Reflect.apply(spawnSync, ...), none of
+      // which the census can count. Only an import or destructure LIST names it without calling it.
+      if (t.k === 'id' && SPAWNERS.has(t.v) && !isP(toks[n + 1], '(')) {
+        const prev = toks[n - 1];
+        const next = toks[n + 1];
+        const o = nearestOpener(ctx, n);
+        const listShape = (isP(prev, '{') || isP(prev, ',')) && (isP(next, ',') || isP(next, '}')) && o >= 0 && isP(toks[o], '{');
+        if (!listShape) findings.push(`${rel}:${t.ln} ${t.v} is named other than as a call (re-bound, aliased, passed on, or reached by .call / .apply / .bind) -- the census cannot follow it, so it cannot count its git spawns`);
+        continue;
+      }
       if (t.k !== 'id' || !SPAWNERS.has(t.v) || !isP(toks[n + 1], '(')) continue;
       const first = toks[n + 2];
       const second = toks[n + 3];
@@ -636,7 +751,7 @@ export function scanGitSpawns(files, exempt = CENSUS_EXEMPT) {
       let bad = null;
       for (const s of sites) {
         const spreadBeside = s.spread;
-        const reason = spreadBeside ? 'the options object holds a spread, which could override env' : judgeEnv(ctx, s.a, s.b, fileSites);
+        const reason = spreadBeside ? 'the options object holds a spread, which could override env' : judgeEnv(ctx, s.a, s.b, fileSites, open);
         if (reason) { bad = { reason, s }; break; }
       }
       if (!bad) { safe++; continue; }
