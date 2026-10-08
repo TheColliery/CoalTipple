@@ -19,7 +19,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
-import { censusGitSpawns, scanGitSpawns, gitBlobId, lex, CENSUS_EXEMPT } from './git-env-census.mjs';
+import { censusGitSpawns, scanGitSpawns, gitBlobId, lex, lexAmb, CENSUS_EXEMPT } from './git-env-census.mjs';
 import { VECTORS } from './git-env-census.vectors.mjs';
 import { gitEnv } from './git-env.mjs';
 
@@ -454,4 +454,41 @@ test('08d F42: a same-file helper named gitEnv is judged by its body, and a clea
   assert.deepEqual(censusGitSpawns([{ rel: 'f.mjs', text: clean }], []), []);
   const dirty = "const gitEnv = (d) => ({ PATH: process.env.PATH, HOME: d });\nspawnSync('git', ['status'], { env: gitEnv(d) });";
   assert.equal(censusGitSpawns([{ rel: 'f.mjs', text: dirty }], []).length, 1, 'the helper reads the environment and sets no GIT_CONFIG_NOSYSTEM');
+});
+
+// 08d bounce 2 (re-INSPECT M-1r): a slash after a ')' or '}' that the lexer reads as division is ALSO read as the start of a regex.
+test('08d bounce 2 lexer: lexAmb lists a slash read as division after ) or } that a regex ending on the line could have started, and forcing it reads a regex', () => {
+  const text = "L: {}\n/'/.test(x)";
+  const { toks, amb } = lexAmb(text);
+  assert.deepEqual(amb, [{ i: 6, ln: 2 }]);
+  assert.ok(!toks.some((t) => t.k === 're'), 'read as division, no regex token');
+  assert.deepEqual(lexAmb(text, new Set([6])).toks.map((t) => `${t.k}:${t.v}`).slice(0, 6), ['id:L', 'p::', 'p:{', 'p:}', "re:/'/", 'p:.']);
+  assert.deepEqual(lexAmb('(a) / 2').amb, [], 'no closing slash on the line: nothing to read differently');
+  assert.deepEqual(lexAmb('(a) / 2 / 3').amb.map((a) => a.i), [4]);
+  assert.deepEqual(lexAmb('if (a) /x/.test(b)').amb, [], 'a block head already reads a regex');
+  assert.deepEqual(lexAmb('a / b / c').amb, [], 'only after ) or }');
+  assert.equal(lex(text).length, toks.length, 'lex() is the token list of lexAmb()');
+});
+
+test('08d bounce 2: a line with more ways to read its slashes than the budget is refused as a whole, naming the line', () => {
+  const text = `const v = ${Array(20).fill('(a)').join(' / ')}; spawnSync('git', ['status'], { env: gitEnv(d) });\n`;
+  const r = scanGitSpawns([{ rel: 'f.mjs', text }], []);
+  assert.equal(r.calls, 1);
+  assert.equal(r.findings.length, 1);
+  assert.match(r.findings[0], /^f\.mjs:1 more than 16 ways to read the slashes/);
+});
+
+test('08d bounce 2: an imported gitEnv is trusted only from the room\'s own git-env.mjs, resolved against the importing file\'s directory', () => {
+  const run = (rel, src) => scanGitSpawns([{ rel, text: `import { gitEnv } from '${src}';\nspawnSync('git', ['status'], { env: gitEnv(d) });\n` }], []);
+  for (const [rel, src] of [['scripts/lib/x.mjs', './git-env.mjs'], ['scripts/x.mjs', './lib/git-env.mjs'], ['scripts/lib/x.mjs', '../lib/git-env.mjs'], ['scripts/a/b.mjs', '../lib/git-env.mjs']]) {
+    assert.deepEqual(run(rel, src).findings, [], `${rel} imports ${src}`);
+  }
+  for (const [rel, src] of [['scripts/other/x.mjs', './git-env.mjs'], ['scripts/x.mjs', './git-env.mjs'], ['scripts/lib/x.mjs', './lib/git-env.mjs'], ['scripts/lib/x.mjs', 'git-env.mjs'], ['other/x.mjs', './git-env.mjs']]) {
+    const r = run(rel, src);
+    assert.equal(r.calls, 1, `${rel} imports ${src}`);
+    assert.equal(r.findings.length, 1, `${rel} imports ${src}`);
+    assert.match(r.findings[0], /not by that name from the room's own git-env\.mjs/);
+  }
+  const bare = scanGitSpawns([{ rel: 'f.mjs', text: "spawnSync('git', ['status'], { env: gitEnv(d) });\n" }], []);
+  assert.deepEqual(bare.findings, [], 'a gitEnv that is neither defined nor imported in the file keeps its name-trust (ceiling item 3)');
 });

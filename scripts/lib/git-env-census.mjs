@@ -11,7 +11,10 @@
 // An env is SAFE only when it is one of:
 //   (i)  gitEnv(...) / gitTestEnv(...) alone. A call to a name defined in the SAME file is judged by that
 //        definition's returned expressions (F42), so a local helper called gitEnv is not trusted by its name; one
-//        defined nowhere in the file is an import and is trusted by its name (git-env.mjs is proven by its own test).
+//        that is IMPORTED is trusted only when it comes in under that same name from the room's own git-env.mjs (I1:
+//        './git-env.mjs' or './lib/git-env.mjs', resolved against the importing file's directory; git-env.mjs is proven
+//        by its own test), and an import from any other source is a finding; one neither defined nor imported keeps its
+//        name-trust (ceiling item 3).
 //   (ii) a helper of this file whose every returned expression is safe (F13, F14), up to a few hops.
 //   (iii) an object literal made only of: spreads of a safe expression; `KEY: value` and shorthand members whose
 //        KEY is a plain name or string, appears once, and is not a GIT_ name beyond GIT_CONFIG_NOSYSTEM (the literal
@@ -31,16 +34,29 @@
 //   as a call (B8). Anything the grammar does not read whole is a finding, never a silent pass.
 //
 // THE NAMED CEILING (a token census, not a JS parser; it errs toward a finding wherever it can):
-//   1. the lexer decides regex-or-division by the previous token: after `)` of an if/while/for/with head and after the `}`
-//      of a block a `/` starts a regex, after any other `)`, `]` or `}` it is division. Where that guess is wrong a regex
-//      holding a quote is read as division plus a string, and the rest of that line is lost: it can HIDE a whole spawn
-//      on that line (the first `if (x) /'/.test(y); spawnSync('git', ...)` shape did, until the head test was added), so
-//      the shapes the guess still gets wrong (a block `}` that the opener rule took for an object literal, `do {} while (x) /re/`)
-//      are an open hole of the same kind, not a harmless desync;
+//   1. the lexer decides regex-or-division by the previous token: after the `)` of an if/while/for/with head and after the `}`
+//      of a block a `/` starts a regex; after `]`, a name or a number it is division; after any other `)` or `}` it is
+//      division AND it might be a regex (a block whose `{` follows a label or a `case x:`, the head of a `for await`, an opener
+//      nobody has listed yet). Where a regex holding a quote was read as division plus a string, the rest of that line was lost
+//      and a whole spawn on it could hide (N17, N24, N25). So every such slash that has a closing slash on its line is read
+//      BOTH ways: as lexed, and again as the start of a regex, and the spawns on that line after it are judged under either
+//      reading (a spawn found by either is counted, a finding from either is a finding). A second ambiguous slash that shows
+//      only once the first is forced is forced in turn (N26), and a line with more than MAX_READINGS (16) readings is refused
+//      as a whole (N27). What it still does not do: read the OTHER way (a head or block it recognised that is really followed by
+//      division), read a slash with no closing slash on its line, or read a regex across lines (JS has none). The cost is a
+//      false finding on genuine division followed by a string on the same line as a git spawn: a visible refusal, never a
+//      silent pass (the real tree has none: its bare findings are the same twelve in the same four pinned files);
 //   2. identifier lookups are FILE-WIDE, not scope-aware: every declaration and use of a name counts, so two
 //      functions that each build a clean `env` are both refused (route one through gitEnv());
-//   3. an imported helper is trusted only under the names gitEnv and gitTestEnv; any other imported helper is a
-//      finding; an imported gitEnv is trusted by name;
+//   3. an imported helper is trusted only under the names gitEnv and gitTestEnv, and only when it is imported under THAT name
+//      from the room's own git-env.mjs (the specifier './git-env.mjs' or './lib/git-env.mjs', resolved against the importing
+//      file's directory where the file has one; the module itself is not opened). An import of either name from another
+//      source, under another name, as a default or a namespace, or by destructuring an import() or require() whose source is
+//      not one string literal, is a finding, and so is any other imported helper. A name neither defined nor imported in the
+//      file keeps its name-trust (a bare call in a fixture reads as the room's gitEnv; at run time it would be a
+//      ReferenceError unless something assigned it, and a file that assigns it loses the trust, item 10 and B7). A
+//      PARAMETER or catch binding called gitEnv is not seen, and a name bound by an import the census cannot parse
+//      (an import statement with no `from 'literal'`) is not seen either;
 //   4. a helper's returned expression is read, not its callers: a helper that returns a clean literal and is then
 //      handed to code that mutates it by another route (a closure, a getter, a Proxy) is not seen;
 //   5. only spawnSync/execFileSync called with the literal command 'git', 'git.exe' or a template holding just git are
@@ -103,8 +119,14 @@ const BLOCK_BEFORE = new Set(['else', 'do', 'try', 'finally']);
 const openIsBlock = (p) => !p || (p.k === 'p' ? [')', ';', '{', '}', '=>'].includes(p.v) : p.k === 'id' ? BLOCK_BEFORE.has(p.v) || !KW_BEFORE_REGEX.has(p.v) : false);
 const isIdChar = (c) => /[\w$]/.test(c) || c.charCodeAt(0) > 127;
 
-export function lex(text) {
+// lex() is the token list alone. lexAmb() also returns `amb`: every '/' it read as DIVISION after a ')' or '}' that is not a block
+// head, where a regex ending on the same line could have started instead (the fail-closed reading, ceiling item 1), and takes
+// `force`, a set of offsets of such slashes to read as the start of a regex.
+export function lex(text) { return lexAmb(text).toks; }
+
+export function lexAmb(text, force = null) {
   const toks = [];
+  const amb = [];
   const holes = []; // brace depth at which each open template hole began
   const parenCtl = []; // per open '(' : is it the head of if/while/for/with (a '/' after its ')' starts a regex)
   const braceBlk = []; // per open '{' : is it a block (a '/' after its '}' starts a regex) or an object literal
@@ -166,24 +188,30 @@ export function lex(text) {
       push('id', text.slice(s, i), s);
       continue;
     }
-    if (c === '/' && regexAllowed()) {
-      let j = i + 1;
-      let inClass = false;
-      let ok = false;
-      while (j < text.length && text[j] !== '\n') {
-        const d = text[j];
-        if (d === '\\') { j += 2; continue; }
-        if (d === '[') inClass = true;
-        else if (d === ']') inClass = false;
-        else if (d === '/' && !inClass) { ok = true; break; }
-        j++;
-      }
-      if (ok) {
-        j++;
-        while (j < text.length && /[a-z]/i.test(text[j])) j++;
-        push('re', text.slice(i, j), i);
-        i = j;
-        continue;
+    if (c === '/') {
+      const allowed = regexAllowed() || (force !== null && force.has(i));
+      const p = toks[toks.length - 1];
+      const maybe = !allowed && !!p && p.k === 'p' && (p.v === ')' || p.v === '}');
+      if (allowed || maybe) {
+        let j = i + 1;
+        let inClass = false;
+        let ok = false;
+        while (j < text.length && text[j] !== '\n') {
+          const d = text[j];
+          if (d === '\\') { j += 2; continue; }
+          if (d === '[') inClass = true;
+          else if (d === ']') inClass = false;
+          else if (d === '/' && !inClass) { ok = true; break; }
+          j++;
+        }
+        if (ok && allowed) {
+          j++;
+          while (j < text.length && /[a-z]/i.test(text[j])) j++;
+          push('re', text.slice(i, j), i);
+          i = j;
+          continue;
+        }
+        if (ok) amb.push({ i, ln: line });
       }
     }
     if (c === '}' && holes.length && braces === holes[holes.length - 1]) {
@@ -202,7 +230,7 @@ export function lex(text) {
     toks.push(tk);
     i += op.length;
   }
-  return toks;
+  return { toks, amb };
 }
 
 const isP = (t, v) => !!t && t.k === 'p' && t.v === v;
@@ -247,8 +275,60 @@ function exprEnd(ctx, from, semi) {
 
 const BUILTINS = new Set(['Object', 'JSON', 'Reflect', 'Array', 'String', 'Boolean', 'console']);
 
-function buildCtx(text) {
-  const toks = lex(text);
+// Where the room's own git-env.mjs lives, and the two specifiers its files import it by (for a file under scripts/ the specifier is
+// resolved against that file's own directory; a bare fixture name has no directory, so the specifier is matched as written).
+const GIT_ENV_HOME = 'scripts/lib/git-env.mjs';
+const GIT_ENV_SPECS = new Set(['./git-env.mjs', './lib/git-env.mjs']);
+const TRUSTED_NAMES = new Set(['gitEnv', 'gitTestEnv']);
+
+function ownGitEnvSource(rel, src) {
+  if (typeof src !== 'string') return false;
+  if (!rel.includes('/')) return GIT_ENV_SPECS.has(src);
+  return /^\.\.?\//.test(src) && path.posix.normalize(path.posix.join(path.posix.dirname(rel), src)) === GIT_ENV_HOME;
+}
+
+// Every name bound by an import of this file, as local -> { src, imported }: `import a, { b, c as d } from 'x'`, `import * as n from 'x'`,
+// and `const { g, h: i } = await import('x') / require('x')` (src null when the source is not one string literal).
+function collectImports(toks, m) {
+  const imports = new Map();
+  const bind = (local, src, imported) => { imports.set(local, [...(imports.get(local) || []), { src, imported }]); };
+  for (let n = 0; n < toks.length; n++) {
+    const t = toks[n];
+    if (isId(t, 'import') && !isP(toks[n - 1], '.') && !isP(toks[n + 1], '(') && !isP(toks[n + 1], '.') && !(toks[n + 1] && toks[n + 1].k === 'str')) {
+      let j = n + 1;
+      let inBrace = false;
+      const pending = [];
+      for (; j < toks.length && j < n + 400 && !isP(toks[j], ';'); j++) {
+        const x = toks[j];
+        if (isId(x, 'from') && toks[j + 1] && toks[j + 1].k === 'str') break;
+        if (isP(x, '{')) inBrace = true;
+        else if (isP(x, '}')) inBrace = false;
+        else if (isP(x, '*') && isId(toks[j + 1], 'as') && toks[j + 2] && toks[j + 2].k === 'id') { pending.push([toks[j + 2].v, '*']); j += 2; }
+        else if (x.k === 'id' && isId(toks[j + 1], 'as') && toks[j + 2] && toks[j + 2].k === 'id') { pending.push([toks[j + 2].v, x.v]); j += 2; }
+        else if (x.k === 'id') pending.push([x.v, inBrace ? x.v : 'default']);
+      }
+      const src = toks[j + 1] && toks[j + 1].k === 'str' && isId(toks[j], 'from') ? toks[j + 1].v : null;
+      if (src !== null) for (const [local, imported] of pending) bind(local, src, imported);
+    } else if (isP(t, '{') && (isId(toks[n - 1], 'const') || isId(toks[n - 1], 'let') || isId(toks[n - 1], 'var')) && m.get(n) !== undefined && isP(toks[m.get(n) + 1], '=')) {
+      // a destructuring declaration: find the one string literal of an import(...) / require(...) in its initializer
+      let src = null;
+      const end = Math.min(toks.length, m.get(n) + 12);
+      for (let k = m.get(n) + 2; k < end; k++) {
+        if ((isId(toks[k], 'import') || isId(toks[k], 'require')) && isP(toks[k + 1], '(') && toks[k + 2] && toks[k + 2].k === 'str' && isP(toks[k + 3], ')')) { src = toks[k + 2].v; break; }
+      }
+      for (let k = n + 1; k < m.get(n); k++) {
+        const x = toks[k];
+        if (x.k !== 'id' || (!isP(toks[k - 1], '{') && !isP(toks[k - 1], ',') && !isP(toks[k - 1], ':'))) continue;
+        if (isP(toks[k + 1], ':')) continue; // a key: its local name follows the colon
+        bind(x.v, src, isP(toks[k - 1], ':') && toks[k - 2] && toks[k - 2].k === 'id' ? toks[k - 2].v : x.v);
+      }
+    }
+  }
+  return imports;
+}
+
+function buildCtx(text, force = null, rel = '') {
+  const { toks, amb } = lexAmb(text, force);
   const m = bracketMap(toks);
   const decls = new Map(); // name -> [{ n, init }]  (init = index of the first token after `=`, or -1)
   const funcs = new Map(); // name -> [index of the name token of `function NAME`]
@@ -278,7 +358,7 @@ function buildCtx(text) {
     } else if (t.k === 'str' && (t.v === 'node:process' || t.v === 'process') && (isId(toks[n - 1], 'from') || (isP(toks[n - 1], '(') && (isId(toks[n - 2], 'require') || isId(toks[n - 2], 'import'))))) envImport = true;
     else if (t.k === 'str' && t.v === 'process' && isP(toks[n - 1], '[')) processAlias = true;
   }
-  return { toks, m, decls, funcs, envImport, shadowed, gitEnvAssigned, envTainted: envImport || processAlias || shadowed, memo: new Set() };
+  return { toks, m, decls, funcs, envImport, shadowed, gitEnvAssigned, envTainted: envImport || processAlias || shadowed, memo: new Set(), amb, rel, imports: collectImports(toks, m) };
 }
 
 // ---------------------------------------------------------------------------
@@ -612,8 +692,11 @@ function judgeCall(ctx, a, b, st) {
   const name = ctx.toks[a].v;
   const defined = (ctx.decls.get(name) || []).length + (ctx.funcs.get(name) || []).length > 0;
   if (!defined) {
-    if (name === 'gitEnv' || name === 'gitTestEnv') {
+    if (TRUSTED_NAMES.has(name)) {
       if (ctx.gitEnvAssigned || ctx.shadowed) return `${name} is assigned or reachable through globalThis in this file, so its name proves nothing`;
+      // every binding of the name counts (a function-scope destructure of another module beside a trusted top-level import)
+      const imp = (ctx.imports.get(name) || []).find((b) => !(b.imported === name && ownGitEnvSource(ctx.rel, b.src)));
+      if (imp) return `${name} is imported ${imp.src === null ? 'from a source the census cannot read' : `from '${imp.src}'${imp.imported === name ? '' : ` as ${imp.imported}`}`}, not by that name from the room's own git-env.mjs (the census does not open the module, so it trusts only that one)`;
       st.trusted = true;
       return null;
     }
@@ -690,6 +773,88 @@ function holdsWholeEnv(ctx, a, b) {
 const GIT_COMMAND = /^(?:.*[\\/])?git(?:\.exe)?$/i;
 const SPAWNERS = new Set(['spawnSync', 'execFileSync']);
 
+// One reading of one file: every spawner token `accept` takes, judged. Returns the findings in source order and, for each counted git
+// spawn (keyed by the offset of its spawner token), whether its env was judged safe.
+function scanOne(rel, ctx, accept) {
+  const findings = [];
+  const calls = new Map();
+  const { toks, m } = ctx;
+  const fileSites = new Set();
+  const spawns = [];
+  for (let n = 0; n < toks.length; n++) {
+    const t = toks[n];
+    if (t.k !== 'id' || !SPAWNERS.has(t.v) || !accept(t)) continue;
+    // A spawner named anywhere but as a call is a finding: an import under another name, a destructure with a rename, an alias
+    // (const run = spawnSync), a value, an argument, and spawnSync.call / .apply / .bind / Reflect.apply(spawnSync, ...), none of
+    // which the census can count. Only an import or destructure LIST names it without calling it.
+    if (!isP(toks[n + 1], '(')) {
+      const prev = toks[n - 1];
+      const next = toks[n + 1];
+      const o = nearestOpener(ctx, n);
+      const listShape = (isP(prev, '{') || isP(prev, ',')) && (isP(next, ',') || isP(next, '}')) && o >= 0 && isP(toks[o], '{');
+      if (!listShape) findings.push(`${rel}:${t.ln} ${t.v} is named other than as a call (re-bound, aliased, passed on, or reached by .call / .apply / .bind) -- the census cannot follow it, so it cannot count its git spawns`);
+      continue;
+    }
+    const first = toks[n + 2];
+    const second = toks[n + 3];
+    const gitCmd = first && ((first.k === 'str' && GIT_COMMAND.test(first.v)) || (first.k === 'tpl' && !(second && second.k === 'tplopen') && GIT_COMMAND.test(first.v)));
+    if (!gitCmd || !(isP(second, ',') || isP(second, ')'))) continue;
+    calls.set(t.i, false);
+    const open = n + 1;
+    const close = m.get(open);
+    if (close === undefined) { findings.push(`${rel}:${t.ln} unbalanced parens scanning a ${t.v}('git', ...) call -- census cannot verify it`); continue; }
+    // The env must be a top-level member of an OBJECT ARGUMENT of this call (the options), never one nested in the args array
+    // or in another value: a decoy env elsewhere in the call would be judged while the real options inherit process.env.
+    const sites = [];
+    let ca = open + 1;
+    while (ca < close) {
+      const ce = Math.min(exprEnd(ctx, ca, false), close);
+      if (isP(toks[ca], '{') && m.get(ca) === ce - 1) {
+        const found = [];
+        let spread = false;
+        for (let k = ca + 1; k < ce - 1;) {
+          const me = Math.min(exprEnd(ctx, k, false), ce - 1);
+          if (isP(toks[k], '...')) spread = true;
+          else if ((isId(toks[k], 'env') || (toks[k] && toks[k].k === 'str' && toks[k].v === 'env')) && isP(toks[k + 1], ':')) found.push({ j: k, a: k + 2, b: me, shorthand: false });
+          else if (isId(toks[k], 'env') && me - k === 1) found.push({ j: k, a: k, b: k + 1, shorthand: true });
+          k = me + 1;
+        }
+        for (const x of found) sites.push({ ...x, spread });
+      }
+      ca = ce + 1;
+    }
+    if (!sites.length) { findings.push(`${rel}:${t.ln} ${t.v}('git', ...) carries no 'env:' -- must route through gitEnv() (CWK-133/C-4)`); continue; }
+    for (const s of sites) fileSites.add(s.shorthand ? s.j : s.b - s.a === 1 ? s.a : -1);
+    spawns.push({ t, open, close, sites });
+  }
+  for (const { t, open, sites } of spawns) {
+    let bad = null;
+    for (const s of sites) {
+      const reason = s.spread ? 'the options object holds a spread, which could override env' : judgeEnv(ctx, s.a, s.b, fileSites, open);
+      if (reason) { bad = { reason, s }; break; }
+    }
+    if (!bad) { calls.set(t.i, true); continue; }
+    const whole = holdsWholeEnv(ctx, bad.s.a, bad.s.b);
+    if (whole) findings.push(`${rel}:${t.ln} ${t.v}('git', ...) env: holds process.env without gitEnv() -- ambient GIT_* reaches the child (CWK-133/C-4, CWK-136)`);
+    else if (bad.s.shorthand) findings.push(`${rel}:${t.ln} ${t.v}('git', ...) shorthand env is neither an allowlist env (named keys, GIT_CONFIG_NOSYSTEM=1, no GIT_* beyond the safe three) nor resolvable here (${bad.reason}) -- route it through gitEnv() (CWK-133/C-4)`);
+    else findings.push(`${rel}:${t.ln} ${t.v}('git', ...) env: is neither gitEnv() nor an allowlist env of named keys (${bad.reason}) -- route it through gitEnv() (CWK-133/C-4)`);
+  }
+  return { findings, calls };
+}
+
+// The census of one file reads it more than once where a slash is ambiguous (ceiling item 1): once as lexed, and again for each '/' the
+// lexer took for division after a ')' or '}' that is not a block head, with that slash read as the start of a regex. Only the spawns
+// on that slash's line, after it, can differ, so only those are judged again; a spawn found by either reading is counted, and a
+// finding from either reading is a finding. A second ambiguous slash that only appears once the first is read as a regex is forced
+// in turn, and a line whose readings pass MAX_READINGS is itself a finding. The cost is a false finding on genuine division followed
+// by a string on the same line, never a silent pass.
+const MAX_READINGS = 16;
+const hasSpawner = (text, from) => {
+  const end = text.indexOf('\n', from);
+  const tail = text.slice(from, end === -1 ? text.length : end);
+  return [...SPAWNERS].some((s) => tail.includes(s));
+};
+
 export function scanGitSpawns(files, exempt = CENSUS_EXEMPT) {
   const findings = [];
   let calls = 0;
@@ -697,69 +862,22 @@ export function scanGitSpawns(files, exempt = CENSUS_EXEMPT) {
   let exempted = 0;
   for (const { rel, text } of files) {
     if (exempt.some((e) => e.rel === rel && e.blob === gitBlobId(text))) { exempted++; continue; }
-    const ctx = buildCtx(text);
-    const { toks, m } = ctx;
-    const fileSites = new Set();
-    const spawns = [];
-    for (let n = 0; n < toks.length; n++) {
-      const t = toks[n];
-      // A spawner named anywhere but as a call is a finding: an import under another name, a destructure with a rename, an alias
-      // (const run = spawnSync), a value, an argument, and spawnSync.call / .apply / .bind / Reflect.apply(spawnSync, ...), none of
-      // which the census can count. Only an import or destructure LIST names it without calling it.
-      if (t.k === 'id' && SPAWNERS.has(t.v) && !isP(toks[n + 1], '(')) {
-        const prev = toks[n - 1];
-        const next = toks[n + 1];
-        const o = nearestOpener(ctx, n);
-        const listShape = (isP(prev, '{') || isP(prev, ',')) && (isP(next, ',') || isP(next, '}')) && o >= 0 && isP(toks[o], '{');
-        if (!listShape) findings.push(`${rel}:${t.ln} ${t.v} is named other than as a call (re-bound, aliased, passed on, or reached by .call / .apply / .bind) -- the census cannot follow it, so it cannot count its git spawns`);
-        continue;
-      }
-      if (t.k !== 'id' || !SPAWNERS.has(t.v) || !isP(toks[n + 1], '(')) continue;
-      const first = toks[n + 2];
-      const second = toks[n + 3];
-      const gitCmd = first && ((first.k === 'str' && GIT_COMMAND.test(first.v)) || (first.k === 'tpl' && !(second && second.k === 'tplopen') && GIT_COMMAND.test(first.v)));
-      if (!gitCmd || !(isP(second, ',') || isP(second, ')'))) continue;
-      calls++;
-      const open = n + 1;
-      const close = m.get(open);
-      if (close === undefined) { findings.push(`${rel}:${t.ln} unbalanced parens scanning a ${t.v}('git', ...) call -- census cannot verify it`); continue; }
-      // The env must be a top-level member of an OBJECT ARGUMENT of this call (the options), never one nested in the args array
-      // or in another value: a decoy env elsewhere in the call would be judged while the real options inherit process.env.
-      const sites = [];
-      let ca = open + 1;
-      while (ca < close) {
-        const ce = Math.min(exprEnd(ctx, ca, false), close);
-        if (isP(toks[ca], '{') && m.get(ca) === ce - 1) {
-          const found = [];
-          let spread = false;
-          for (let k = ca + 1; k < ce - 1;) {
-            const me = Math.min(exprEnd(ctx, k, false), ce - 1);
-            if (isP(toks[k], '...')) spread = true;
-            else if ((isId(toks[k], 'env') || (toks[k] && toks[k].k === 'str' && toks[k].v === 'env')) && isP(toks[k + 1], ':')) found.push({ j: k, a: k + 2, b: me, shorthand: false });
-            else if (isId(toks[k], 'env') && me - k === 1) found.push({ j: k, a: k, b: k + 1, shorthand: true });
-            k = me + 1;
-          }
-          for (const x of found) sites.push({ ...x, spread });
-        }
-        ca = ce + 1;
-      }
-      if (!sites.length) { findings.push(`${rel}:${t.ln} ${t.v}('git', ...) carries no 'env:' -- must route through gitEnv() (CWK-133/C-4)`); continue; }
-      for (const s of sites) fileSites.add(s.shorthand ? s.j : s.b - s.a === 1 ? s.a : -1);
-      spawns.push({ t, open, close, sites });
+    const ctx = buildCtx(text, null, rel);
+    const base = scanOne(rel, ctx, () => true);
+    findings.push(...base.findings);
+    const state = new Map(base.calls);
+    const queue = ctx.amb.filter((a) => hasSpawner(text, a.i)).map((a) => ({ force: [a.i], ln: a.ln }));
+    for (let r = 0; r < queue.length; r++) {
+      const { force, ln } = queue[r];
+      if (r >= MAX_READINGS) { findings.push(`${rel}:${ln} more than ${MAX_READINGS} ways to read the slashes that precede a spawn (a '/' after a ')' or '}' may be division or a regex) -- the census stops reading and refuses the file`); break; }
+      const alt = buildCtx(text, new Set(force), rel);
+      const res = scanOne(rel, alt, (t) => t.ln === ln && t.i > force[0]);
+      for (const f of res.findings) if (!findings.includes(f)) findings.push(f);
+      for (const [i, ok] of res.calls) state.set(i, (state.has(i) ? state.get(i) : true) && ok);
+      for (const a of alt.amb) if (a.ln === ln && a.i > force[force.length - 1] && hasSpawner(text, a.i)) queue.push({ force: [...force, a.i], ln });
     }
-    for (const { t, open, close, sites } of spawns) {
-      let bad = null;
-      for (const s of sites) {
-        const spreadBeside = s.spread;
-        const reason = spreadBeside ? 'the options object holds a spread, which could override env' : judgeEnv(ctx, s.a, s.b, fileSites, open);
-        if (reason) { bad = { reason, s }; break; }
-      }
-      if (!bad) { safe++; continue; }
-      const whole = holdsWholeEnv(ctx, bad.s.a, bad.s.b);
-      if (whole) findings.push(`${rel}:${t.ln} ${t.v}('git', ...) env: holds process.env without gitEnv() -- ambient GIT_* reaches the child (CWK-133/C-4, CWK-136)`);
-      else if (bad.s.shorthand) findings.push(`${rel}:${t.ln} ${t.v}('git', ...) shorthand env is neither an allowlist env (named keys, GIT_CONFIG_NOSYSTEM=1, no GIT_* beyond the safe three) nor resolvable here (${bad.reason}) -- route it through gitEnv() (CWK-133/C-4)`);
-      else findings.push(`${rel}:${t.ln} ${t.v}('git', ...) env: is neither gitEnv() nor an allowlist env of named keys (${bad.reason}) -- route it through gitEnv() (CWK-133/C-4)`);
-    }
+    calls += state.size;
+    for (const ok of state.values()) if (ok) safe++;
   }
   return { findings, files: files.length, calls, safe, exempted };
 }
