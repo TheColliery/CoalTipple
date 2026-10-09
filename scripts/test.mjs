@@ -49,9 +49,6 @@ const TESTS = [
   'scripts/lib/test-suite.test.mjs',
 ];
 
-// The one file that runs ALONE, after the wave, with the runner's preload stripped (scripts/lib/test-suite.mjs, runSolo: a courier finding against the canon test).
-const SOLO = ['scripts/lib/wave-run.test.mjs'];
-
 async function main() {
   const missing = TESTS.filter((t) => !fs.existsSync(path.join(repo, t)));
   if (missing.length) {
@@ -80,7 +77,7 @@ async function main() {
     process.exitCode = 1;
     return;
   }
-  const { code } = await suite.runSuite({ repo, tests: TESTS.filter((f) => !SOLO.includes(f)), solo: SOLO });
+  const { code } = await suite.runSuite({ repo, tests: TESTS });
   process.exitCode = code;
 }
 

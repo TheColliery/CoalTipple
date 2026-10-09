@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
-import { pathToFileURL } from 'node:url';
 // The room's glue between scripts/test.mjs and the canon wave runner (scripts/lib/wave-run.mjs, adopted by blob id, never edited here). 09a unit 1.
 //
 // WHAT THE CANON RUNNER ALREADY CARRIES (so this file does not): one `node --test --test-reporter=tap --test-force-exit` child per file, the next admitted only
@@ -14,7 +13,7 @@ import { pathToFileURL } from 'node:url';
 // deadline, the suite is red), and a backstop that kills the runner's whole tree if the runner itself hangs.
 //
 // SIZING (this room's own variables, never the canon's), measured 2026-10-09 on this box, Node 24.19, each file ALONE and serial, with another seat's wave running
-// beside: slowest file scripts/verify.test.mjs 49.9 s (57.4 s on 2026-10-08), next secret-scan.test.mjs 34.6 s, secret-gate.test.mjs 29.5 s; the 27-file serial total 166.9 s (28 files with the wave-run test, which runs solo).
+// beside: slowest file scripts/verify.test.mjs 49.9 s (57.4 s on 2026-10-08), next secret-scan.test.mjs 34.6 s, secret-gate.test.mjs 29.5 s; the 27-file serial total 166.9 s, and every file, wave-run.test.mjs included, runs in the wave.
 //  - fileTimeoutMs 120000: on Node 22 the clock of --test-timeout is per FILE (nodejs/node PR #57672 landed in v24, where it is per test), so it must hold the slowest FILE
 //    with headroom: 120 s is 2.4x 49.9 s and 2.1x the 57.4 s of 2026-10-08, the value CoalHearth and CoalWash use.
 //  - fileClockMs 240000: the wall clock of one file in a wave that shares the box, 4x the slowest serial file; it ends a hang before the first test, which
@@ -23,7 +22,6 @@ import { pathToFileURL } from 'node:url';
 //    waves wait for BREATHE, so a busy box stretches the run); with the 60 s backstop margin the runner is gone by 8 minutes, under the CI gate job's timeout-minutes (10, ci.yml)
 //    with the job's checkout, setup and verify around it.
 export const LIMITS = Object.freeze({ heapMb: 2048, fileTimeoutMs: 120000, fileClockMs: 240000, deadlineMs: 420000, backstopMarginMs: 60000 });
-
 
 export function waveRunArgs(tests, limits = LIMITS) {
   return [
@@ -41,9 +39,9 @@ function killTree(child) {
   try { process.kill(-child.pid, 'SIGKILL'); } catch (e) { if (e.code !== 'ESRCH') child.kill('SIGKILL'); }
 }
 
-// Runs the wave roster through the canon runner from `repo`. Resolves { code, output } and never rejects: 0 only when the runner ended 0, else 1, with a `FAIL test runner:` line
+// Runs the roster through the canon runner from `repo`. Resolves { code, output } and never rejects: 0 only when the runner ended 0, else 1, with a `FAIL test runner:` line
 // naming why when the runner itself failed. `quiet` keeps the output out of this process's own streams (a test reads it from `output`).
-function runWave({ repo, tests, limits = LIMITS, env = process.env, quiet = false }) {
+export function runSuite({ repo, tests, limits = LIMITS, env = process.env, quiet = false }) {
   return new Promise((resolve) => {
     let output = '';
     const say = (line) => { output += line + '\n'; if (!quiet) process.stdout.write(line + '\n'); };
@@ -76,58 +74,4 @@ function runWave({ repo, tests, limits = LIMITS, env = process.env, quiet = fals
       finish(1);
     });
   });
-}
-
-// A SOLO file runs outside the wave, plain, after it. The one reason (courier finding, 09a): the canon wave-run.test.mjs 792dfd01 has a leg that spawns a recorder node
-// with `--import <recorder> --import <stdout-sync>` and expects to see the preload's two setBlocking calls, but under the canon runner the file's own NODE_OPTIONS already carries
-// the preload, which runs BEFORE the recorder is installed, so the recorder sees none and the leg fails (34 of 34 pass alone, 33 of 34 under the runner). The room does not patch the
-// canon file, so that one file runs here with the preload stripped from NODE_OPTIONS and without --test-force-exit (its tail is safe: nothing calls process.exit), classified by the
-// canon's own classifyFile from its TAP, so a vacuous or failed solo file is as red as any other. An empty `solo` list is the end of this exception.
-function runSolo({ repo, file, limits, env, quiet }) {
-  return new Promise((resolve) => {
-    let output = '';
-    const say = (line) => { output += line + '\n'; if (!quiet) process.stdout.write(line + '\n'); };
-    const fail = (why) => { say('FAIL test runner: ' + why); resolve({ code: 1, output }); };
-    import(pathToFileURL(path.join(repo, 'scripts', 'lib', 'wave-run.mjs')).href).then((canon) => {
-      const childEnv = { ...env };
-      delete childEnv.NODE_TEST_CONTEXT;
-      childEnv.NODE_OPTIONS = canon.nodeOptionsWithHeap(String(env.NODE_OPTIONS || '').replace(/\s*--import\s+\S*stdout-sync\.mjs/g, '').trim(), limits.heapMb);
-      const child = spawn(process.execPath, ['--test', '--test-reporter=tap', '--test-timeout=' + limits.fileTimeoutMs, file], { cwd: repo, env: childEnv, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32', windowsHide: true });
-      let out = '';
-      let err = '';
-      let killedBy = null;
-      child.stdout.setEncoding('utf8');
-      child.stderr.setEncoding('utf8');
-      child.stdout.on('data', (d) => { out += d; });
-      child.stderr.on('data', (d) => { err += d; });
-      const clock = setTimeout(() => { killedBy = 'killed at the file clock (' + limits.fileClockMs + ' ms)'; killTree(child); }, limits.fileClockMs);
-      child.on('error', (e) => { clearTimeout(clock); fail('the solo file ' + file + ' could not start (' + (e.code || e.message) + ')'); });
-      child.on('close', (code, signal) => {
-        clearTimeout(clock);
-        const r = canon.classifyFile({ file, code, signal, stdout: out, killedBy });
-        const ok = r.status === canon.STATUS.PASS || r.status === canon.STATUS.SKIP;
-        if (!ok) { say(r.status + ' ' + file + ': ' + r.reason); output += '--- ' + file + ' (' + r.status + ') ---\n' + out + err + '\n'; if (!quiet) process.stderr.write('--- ' + file + ' (' + r.status + ') ---\n' + out + err + '\n'); }
-        say('solo: ' + file + ' ' + r.status + ' (run alone, preload stripped)');
-        resolve({ code: ok ? 0 : 1, output });
-      });
-    }, (e) => fail('cannot load scripts/lib/wave-run.mjs for the solo file ' + file + ' (' + (e && e.code ? e.code : e.message) + ')'));
-  });
-}
-
-// The wave, then each solo file. Resolves { code, output } and never rejects; code is 0 only when every part ended 0.
-export async function runSuite(opts) {
-  const { solo = [], tests, limits = LIMITS, env = process.env, quiet = false, repo } = opts;
-  let code = 0;
-  let output = '';
-  if (tests.length) {
-    const w = await runWave(opts);
-    code = w.code;
-    output += w.output;
-  }
-  for (const file of solo) {
-    const s = await runSolo({ repo, file, limits, env, quiet });
-    if (s.code) code = 1;
-    output += s.output;
-  }
-  return { code, output };
 }

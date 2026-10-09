@@ -19,7 +19,6 @@ const PLANTS = {
   leak: [IMPORT, 'setInterval(() => {}, 1000);', "test('passes while the file leaks an interval', () => {});"],
   hangTest: [IMPORT, 'setInterval(() => {}, 1000);', "test('awaits forever', async () => { await new Promise(() => {}); });"],
   hangFile: ['setInterval(() => {}, 1000);', 'await new Promise(() => {});'],
-  noPreload: [IMPORT, "import assert from 'node:assert/strict';", "test('NODE_OPTIONS carries no stdout-sync preload', () => { assert.ok(!(process.env.NODE_OPTIONS || '').includes('stdout-sync')); });"],
 };
 const TINY = { heapMb: 512, fileTimeoutMs: 4000, fileClockMs: 9000, deadlineMs: 30000, backstopMarginMs: 2000 };
 
@@ -121,29 +120,4 @@ test('test-suite: a runner that ends with a code that is no verdict (a crash) is
   const r = await runSuite({ repo: dir, tests, limits: TINY, quiet: true });
   assert.equal(r.code, 1);
   assert.match(r.output, /FAIL test runner: wave-run ended with exit code 2/);
-});
-
-test('test-suite: a solo file runs alone with the runner preload stripped from NODE_OPTIONS, where the same file in the wave sees it (why wave-run.test.mjs runs solo)', async (t) => {
-  const inWave = tree(t, { probe: 'noPreload' });
-  const w = await runSuite({ repo: inWave.dir, tests: inWave.tests, limits: TINY, quiet: true });
-  assert.equal(w.code, 1, 'under the runner the preload is on NODE_OPTIONS: ' + w.output);
-  const alone = tree(t, { probe: 'noPreload' });
-  const s = await runSuite({ repo: alone.dir, tests: [], solo: alone.tests, limits: TINY, quiet: true });
-  assert.equal(s.code, 0, s.output);
-  assert.match(s.output, /solo: scripts[/]probe[.]test[.]mjs PASS/);
-});
-
-test('test-suite: a solo file is judged by its TAP like any other: one that exits 0 before its tests register is VACUOUS and red', async (t) => {
-  const { dir, tests } = tree(t, { ghost: 'vacuous' });
-  const r = await runSuite({ repo: dir, tests: [], solo: tests, limits: TINY, quiet: true });
-  assert.equal(r.code, 1, r.output);
-  assert.match(r.output, /VACUOUS scripts[/]ghost[.]test[.]mjs/);
-  assert.match(r.output, /solo: scripts[/]ghost[.]test[.]mjs VACUOUS/);
-});
-
-test('test-suite: a solo file that hangs is killed at the file clock and red', async (t) => {
-  const { dir, tests } = tree(t, { frozen: 'hangFile' });
-  const r = await runSuite({ repo: dir, tests: [], solo: tests, limits: { ...TINY, fileClockMs: 2500 }, quiet: true });
-  assert.equal(r.code, 1, r.output);
-  assert.match(r.output, /killed at the file clock/);
 });
