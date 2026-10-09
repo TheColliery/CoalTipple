@@ -12,15 +12,18 @@ import { spawn, spawnSync } from 'node:child_process';
 // WHAT IS THIS ROOM'S: the numbers below, a named `FAIL test runner` line for every way the runner itself can fail (it never starts, it crashes, it outlives its own
 // deadline, the suite is red), and a backstop that kills the runner's whole tree if the runner itself hangs.
 //
-// SIZING (this room's own variables, never the canon's), measured 2026-10-09 on this box, Node 24.19, each file ALONE and serial, with another seat's wave running
-// beside: slowest file scripts/verify.test.mjs 49.9 s (57.4 s on 2026-10-08), next secret-scan.test.mjs 34.6 s, secret-gate.test.mjs 29.5 s; the 27-file serial total 166.9 s, and every file, wave-run.test.mjs included, runs in the wave.
+// SIZING (this room's own variables, never the canon's), re-measured 2026-10-09 on this box, Node 24.19, all 28 files, each ALONE and serial (scratchpad/r09a/measure-files.mjs),
+// with another seat's wave running beside (CPU 64-87% busy): slowest file scripts/verify.test.mjs 57.4 s (49.9 s earlier the same day, 57.4 s on 2026-10-08), then secret-scan.test.mjs 44.3 s,
+// wave-run.test.mjs 39.8 s, secret-gate.test.mjs 38.9 s, test-suite.test.mjs 19.8 s; the 28-file serial total 262.9 s (the 27-file figure of 166.9 s was taken without wave-run.test.mjs and
+// on a quieter box). Through this runner, in waves, node scripts/test.mjs took 227.6 s on the busy box and 61.0 s straight after it; every file, wave-run.test.mjs included, runs in the wave.
+// The worst case a wave can reach is the serial total, because a box that never breathes admits one file at a time.
 //  - fileTimeoutMs 120000: on Node 22 the clock of --test-timeout is per FILE (nodejs/node PR #57672 landed in v24, where it is per test), so it must hold the slowest FILE
-//    with headroom: 120 s is 2.4x 49.9 s and 2.1x the 57.4 s of 2026-10-08, the value CoalHearth and CoalWash use.
-//  - fileClockMs 240000: the wall clock of one file in a wave that shares the box, 4x the slowest serial file; it ends a hang before the first test, which
+//    with headroom: 120 s is 2.1x the 57.4 s slowest, the value CoalHearth and CoalWash use.
+//  - fileClockMs 240000: the wall clock of one file in a wave that shares the box, 4.2x the slowest serial file; it ends a hang before the first test, which
 //    --test-timeout never reaches, without waiting for the whole-run deadline.
-//  - deadlineMs 420000: 2.5x the serial total and 1.95x the 215 s the whole suite took through this runner, in waves, on this box with that other seat's wave running beside (the
-//    waves wait for BREATHE, so a busy box stretches the run); with the 60 s backstop margin the runner is gone by 8 minutes, under the CI gate job's timeout-minutes (10, ci.yml)
-//    with the job's checkout, setup and verify around it.
+//  - deadlineMs 420000: 1.6x the 262.9 s serial total (the worst case) and 1.85x the 227.6 s the wave actually took on the busy box (the waves wait for BREATHE, so a busy box stretches the run);
+//    with the 60 s backstop margin the runner is gone by 8 minutes, under the CI gate job's timeout-minutes (10, ci.yml) with the job's checkout, setup and verify around it. The CI legs
+//    (run 37928363807 at 02b8c20) ran the suite in 49 to 86 s, 4.9x under the deadline at the slowest; a CI runner is a quieter box than this one.
 export const LIMITS = Object.freeze({ heapMb: 2048, fileTimeoutMs: 120000, fileClockMs: 240000, deadlineMs: 420000, backstopMarginMs: 60000 });
 
 export function waveRunArgs(tests, limits = LIMITS) {
