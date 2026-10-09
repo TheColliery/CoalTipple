@@ -32,8 +32,8 @@ test('the real tree passes with exactly the pinned files exempt, every pin hides
   for (const rel of pinned) assert.ok(inside.has(rel), rel + ' is pinned but the census finds nothing in it: delete the row');
 });
 
-test('no pin names a file the canon already passes: the rewritten secret-gate test and the canon release scripts carry none', () => {
-  for (const rel of ['scripts/secret-gate.test.mjs', 'scripts/release-notes.mjs', 'scripts/release-notes.test.mjs', 'scripts/verify-release-shape.mjs']) {
+test('no pin names a file the canon already passes: the rewritten secret-gate and secret-scan tests and the canon release scripts carry none', () => {
+  for (const rel of ['scripts/secret-gate.test.mjs', 'scripts/secret-scan.test.mjs', 'scripts/release-notes.mjs', 'scripts/release-notes.test.mjs', 'scripts/verify-release-shape.mjs']) {
     assert.ok(!CENSUS_PINS.some((row) => row.rel === rel), rel + ': no pin');
   }
 });
