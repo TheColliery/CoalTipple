@@ -23,7 +23,7 @@ Keep the verification gates green before and after making edits:
 node scripts/build-plugin.mjs   # re-sync the conductor from keywords.mjs (the SSoT)
 node scripts/build-dist.mjs     # compile plugin/ from source
 node scripts/verify.mjs         # validates config schemas, plugins, and SSoT sync
-node scripts/test.mjs           # runs the zero-dependency test runner (node --test)
+node scripts/test.mjs           # runs the zero-dependency test suite: the canon wave runner over node --test, each file judged by its TAP
 node scripts/secret-gate.mjs    # the house secret scan of the tracked tree (the git hooks run it first)
 ```
 
