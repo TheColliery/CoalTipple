@@ -1,13 +1,13 @@
-// CWK-133/C-4 findings-back (INSPECT HIGH-1) -- a census of the git spawns under scripts/: does every
-// spawnSync('git'.../execFileSync('git'... call carry an explicit `env:` whose value cannot let an ambient
-// GIT_* name reach the child? A git hook exports an ABSOLUTE GIT_DIR / GIT_INDEX_FILE, and a fixture that
-// inherits them re-initialises the REAL repository (CWK-133, CWK-136).
+// ponytail: 915 lines at declaration -- one token census: the lexer, the binding index and every env rule (alias, helper, allowlist literal, key list, options object) read the same token arrays, so splitting them would force each rule to re-pass the shared indexes.
+// THE CANON GIT-SPAWN CENSUS (08d D1/D3, 2026-10-09) -- the ONE rule the flock holds for what environment a `git` child gets. Does every spawnSync/execFileSync('git', ...)
+// carry an explicit `env:` whose value cannot let an ambient GIT_* name reach the child? A git hook exports an ABSOLUTE GIT_DIR / GIT_INDEX_FILE, and a fixture or a gate that
+// inherits them acts on (or re-initialises) the REAL repository (CWK-133, CWK-136). Seven rooms built this census seven ways and each reviewer found a bypass the others had
+// not; CoalTipple's token census is the base because it passed every one of the witness vectors the others had found, and this file carries it once, with the
+// witnesses as its test corpus (git-env-census.vectors.mjs, git-env-census.test.mjs). A room adopts this file by blob id instead of keeping its own, and passes its own
+// pins to scanGitSpawns(files, pins); a room-local widening past the witness list is a named divergence, and a new bypass goes back to the list as a candidate row.
 //
-// 08d REWRITE (the witness list, U/scratchpad/dispatch/08d-census-witness-list.md: F1-F42 refused, R1-R2
-// counted, P1-P6 passed). The census used to be a set of regular expressions over raw text; seven rooms'
-// reviewers found a bypass for each. It is now a TOKEN census: lex() turns the file into tokens (comments
-// dropped; strings, templates, regex literals and punctuation told apart, so a quote inside a regex or a backtick
-// inside a template can no longer desync it, F41), and the env is judged by a small grammar over those tokens.
+// It is a TOKEN census, not a set of regular expressions: lex() turns the file into tokens (comments dropped; strings, templates, regex literals and punctuation told apart, so a
+// quote inside a regex or a backtick inside a template can no longer desync it, F41), and the env is judged by a small grammar over those tokens.
 // An env is SAFE only when it is one of:
 //   (i)  gitEnv(...) / gitTestEnv(...) alone. A call to a name defined in the SAME file is judged by that
 //        definition's returned expressions (F42), so a local helper called gitEnv is not trusted by its name; one
@@ -58,8 +58,8 @@
 //      not one string literal, is a finding, and so is any other imported helper. A name neither defined nor imported in the
 //      file keeps its name-trust (a bare call in a fixture reads as the room's gitEnv; at run time it would be a
 //      ReferenceError unless something assigned it, and a file that assigns it loses the trust, item 10 and B7). A
-//      PARAMETER or catch binding called gitEnv is not seen, and a name bound by an import the census cannot parse
-//      (an import statement with no `from 'literal'`) is not seen either;
+//      name bound as a PARAMETER or catch binding (F60) makes every bare gitEnv() call of the file a finding, and a name bound by an import the census cannot parse
+//      (an import statement with no `from 'literal'`) is not seen;
 //   4. a helper's returned expression is read, not its callers: a helper that returns a clean literal and is then
 //      handed to code that mutates it by another route (a closure, a getter, a Proxy) is not seen;
 //   5. only spawnSync/execFileSync called with the literal command 'git', 'git.exe' or a template holding just git are
@@ -69,7 +69,7 @@
 //      backslash, u and four hex digits standing for one of its letters): the lexer reads the name as it is written, so it is
 //      not spawnSync to the census although it is to the engine, and the spawn runs with whatever env it is given (X4);
 //   6. eval, new Function, a `with` block and a Proxy over process.env are not seen;
-//   7. a comma operator inside an env expression ends it early;
+//   7. a comma operator inside an env expression ends it early (but a helper's return statement is read whole, F46: `return { ... }, process.env` is a finding);
 //   8. a file that rebinds `process` (an alias, the process module, a ['process'] lookup) is read only for a bare
 //      gitEnv() call: any other env in it is a finding, even a clean one (fail closed);
 //   9. an env mutated through a closure that captured it, or through a getter or setter defined elsewhere, is not seen;
@@ -89,20 +89,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 
-// BLOB-PINNED EXEMPTIONS (CWK-174; the chief's order r14 section 6, rail 2). The house secret scan and gate are
-// BYTE-EQUAL copies of their sources (the umbrella's scripts/scanner-parity.mjs measures it), so those files cannot
-// be patched room-side without breaking parity. A row matches only while the file's git blob id (line endings
-// normalised to LF) equals `blob`, so any edit, or a new source blob, re-arms the census on that file.
-// 08d: with the token census a file that defines its OWN gitEnv() is judged by that body, never by the name (F42).
-// The three house-scan files below each build their env by copying process.env minus the GIT_* names (a strip filter),
-// which is safe but is not the named-keys allowlist the witness list accepts, so each is pinned at its blob with the
-// finding quoted; a pin comes out the day its source builds the env from named keys, or the canon rule reads a strip
-// filter. git-env.test.mjs plants GIT_DIR on purpose, to reproduce the hazard CWK-133 closed.
-export const CENSUS_EXEMPT = [
-  { rel: 'scripts/lib/git-env.test.mjs', blob: '84446707c2c68a0146be2b18aa0b6536e38955ae', why: 'plants GIT_DIR in poisonedEnv on purpose (lines 97 and 104 hand it to a git spawn) to reproduce the CWK-133 hazard; KEEP while the test reproduces the hazard' },
-  { rel: 'scripts/secret-gate.mjs', blob: '856956a1cca6f716e5507f6c23ac90ed34cbbe5f', why: 'canon gate, byte-equal by skeleton-check; its gitEnv() copies process.env minus GIT_* but keeps GIT_INDEX_FILE and GIT_CEILING_DIRECTORIES by design (lines 57 and 60 are the findings); DELETE when the census rule accepts a GIT_*-stripping copy of process.env or the canon builds its env from named keys' },
-  { rel: 'scripts/secret-scan.test.mjs', blob: 'd0db994df855ccd647f3ded878a6867bb198e196', why: 'house secret-scan test, byte-equal to its Bankfire source by parity; its gitEnv() is (envSeen = { ...withoutGit(), named keys, GIT_CONFIG_NOSYSTEM }) with withoutGit() a GIT_*-stripping copy of process.env (lines 547, 548, 715, 820 and 825 are the findings); DELETE when the census rule accepts a GIT_*-stripping copy of process.env or the source builds its env from named keys' },
-];
+// BLOB-PINNED EXEMPTIONS (CWK-174). A room whose own file cannot be fixed room-side (a byte-equal copy of a source elsewhere, a test that plants GIT_DIR on purpose) passes a
+// row { rel, blob, why } to scanGitSpawns(files, pins). A row matches only while the file's git blob id (line endings normalised to LF) equals `blob`, so any edit, or a new
+// source blob, re-arms the census on that file. The canon ships NO pins of its own: the default is the empty list, and the canon's one pinned carrier (the secret gate, which
+// keeps GIT_INDEX_FILE by design) is pinned in git-env-census.test.mjs, where the reason is quoted. With the token census a file that defines its OWN gitEnv() is judged by
+// that body, never by the name (F42).
+export const CENSUS_EXEMPT = [];
 
 // The git blob id of `text` (what `git hash-object` prints for that content), CRLF -> LF first so
 // a Windows autocrlf checkout of the same file pins the same row.
@@ -258,14 +250,14 @@ const STMT_KW = new Set(['const', 'let', 'var', 'function', 'class', 'if', 'for'
 
 // The end of the expression that starts at token `from`: the first top-level `,` (or `;` when `semi`), or the closer of
 // whatever encloses it. Brackets nest. With `semi`, a statement keyword that starts a new line also ends it (no ASI).
-function exprEnd(ctx, from, semi) {
+function exprEnd(ctx, from, semi, commaOk = false) {
   const { toks, m } = ctx;
   let n = from;
   while (n < toks.length) {
     const t = toks[n];
     if (t.k === 'p') {
       if (t.v === '(' || t.v === '[' || t.v === '{') { const c = m.get(n); if (c === undefined) return toks.length; n = c + 1; continue; }
-      if (t.v === ')' || t.v === ']' || t.v === '}' || t.v === ',' || (semi && t.v === ';')) return n;
+      if (t.v === ')' || t.v === ']' || t.v === '}' || (t.v === ',' && !commaOk) || (semi && t.v === ';')) return n;
     } else if (t.k === 'tplopen') {
       const c = m.get(n);
       n = (c === undefined ? toks.length : c) + 1;
@@ -362,7 +354,24 @@ function buildCtx(text, force = null, rel = '') {
     } else if (t.k === 'str' && (t.v === 'node:process' || t.v === 'process') && (isId(toks[n - 1], 'from') || (isP(toks[n - 1], '(') && (isId(toks[n - 2], 'require') || isId(toks[n - 2], 'import'))))) envImport = true;
     else if (t.k === 'str' && t.v === 'process' && isP(toks[n - 1], '[')) processAlias = true;
   }
-  return { toks, m, decls, funcs, envImport, shadowed, gitEnvAssigned, envTainted: envImport || processAlias || shadowed, memo: new Set(), amb, rel, imports: collectImports(toks, m) };
+  // gitEnv / gitTestEnv is BOUND as a parameter or a catch binding somewhere (F60): a bare call to it is then not the helper, whatever it is called. A call, a member name, an
+  // object key and a declaration (judged by its body) are not that; anything else that mentions the name inside a parameter list (or as the one parameter of an arrow) is.
+  let gitEnvParam = false;
+  for (let n = 0; n < toks.length && !gitEnvParam; n++) {
+    const t = toks[n];
+    if (t.k !== 'id' || (t.v !== 'gitEnv' && t.v !== 'gitTestEnv')) continue;
+    const p = toks[n - 1];
+    const q = toks[n + 1];
+    if (isP(q, '(') || isP(p, '.') || isP(p, '?.')) continue;
+    if (isId(p) && ['const', 'let', 'var', 'function', 'class'].includes(p.v)) continue;
+    if ((isP(p, '{') || isP(p, ',')) && isP(q, ':')) continue;
+    if (isP(q, '=>')) { gitEnvParam = true; continue; }
+    for (let o = nearestOpener({ toks, m }, n); o >= 0; o = nearestOpener({ toks, m }, o)) {
+      const c = m.get(o);
+      if (isP(toks[o], '(') && c !== undefined && (isP(toks[c + 1], '=>') || isP(toks[c + 1], '{'))) { gitEnvParam = true; break; }
+    }
+  }
+  return { toks, m, decls, funcs, envImport, shadowed, gitEnvAssigned, gitEnvParam, envTainted: envImport || processAlias || shadowed, memo: new Set(), amb, rel, imports: collectImports(toks, m) };
 }
 
 // ---------------------------------------------------------------------------
@@ -685,7 +694,7 @@ function helperReturns(ctx, name) {
   const out = [];
   for (let n = body.block[0]; n < body.block[1]; n++) {
     if (isId(toks[n], 'return')) {
-      const e = Math.min(exprEnd(ctx, n + 1, true), body.block[1]);
+      const e = Math.min(exprEnd(ctx, n + 1, true, true), body.block[1]); // a comma in a return is the comma operator: the value is the last operand, so the whole statement is read (F46)
       if (e > n + 1) out.push([n + 1, e]);
     }
   }
@@ -697,7 +706,7 @@ function judgeCall(ctx, a, b, st) {
   const defined = (ctx.decls.get(name) || []).length + (ctx.funcs.get(name) || []).length > 0;
   if (!defined) {
     if (TRUSTED_NAMES.has(name)) {
-      if (ctx.gitEnvAssigned || ctx.shadowed) return `${name} is assigned or reachable through globalThis in this file, so its name proves nothing`;
+      if (ctx.gitEnvAssigned || ctx.shadowed || ctx.gitEnvParam) return `${name} is assigned, bound as a parameter or catch binding, or reachable through globalThis in this file, so its name proves nothing`;
       // every binding of the name counts (a function-scope destructure of another module beside a trusted top-level import)
       const imp = (ctx.imports.get(name) || []).find((b) => !(b.imported === name && ownGitEnvSource(ctx.rel, b.src)));
       if (imp) return `${name} is imported ${imp.src === null ? 'from a source the census cannot read' : `from '${imp.src}'${imp.imported === name ? '' : ` as ${imp.imported}`}`}, not by that name from the room's own git-env.mjs (the census does not open the module, so it trusts only that one)`;
@@ -818,7 +827,7 @@ function scanOne(rel, ctx, accept) {
         let spread = false;
         for (let k = ca + 1; k < ce - 1;) {
           const me = Math.min(exprEnd(ctx, k, false), ce - 1);
-          if (isP(toks[k], '...')) spread = true;
+          if (isP(toks[k], '...') || isP(toks[k], '[') || ((isId(toks[k], 'get') || isId(toks[k], 'set')) && toks[k + 1] && (toks[k + 1].k === 'id' || toks[k + 1].k === 'str') && isP(toks[k + 2], '('))) spread = true;
           else if ((isId(toks[k], 'env') || (toks[k] && toks[k].k === 'str' && toks[k].v === 'env')) && isP(toks[k + 1], ':')) found.push({ j: k, a: k + 2, b: me, shorthand: false });
           else if (isId(toks[k], 'env') && me - k === 1) found.push({ j: k, a: k, b: k + 1, shorthand: true });
           k = me + 1;
@@ -834,7 +843,7 @@ function scanOne(rel, ctx, accept) {
   for (const { t, open, sites } of spawns) {
     let bad = null;
     for (const s of sites) {
-      const reason = s.spread ? 'the options object holds a spread, which could override env' : judgeEnv(ctx, s.a, s.b, fileSites, open);
+      const reason = s.spread ? 'the options object holds a spread, a computed key or an accessor, which could override env' : judgeEnv(ctx, s.a, s.b, fileSites, open);
       if (reason) { bad = { reason, s }; break; }
     }
     if (!bad) { calls.set(t.i, true); continue; }
