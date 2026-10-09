@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // CoalTipple test runner — the canonical gate suite. Enumerates EVERY test file
 // explicitly and FAILS LOUD on drift in BOTH directions:
-//   listed-but-missing — `node --test` silently ignores missing file args, and
-//     the directory form is unreliable on Node 24 (MODULE_NOT_FOUND);
+//   listed-but-missing — every missing file is named in ONE line here, before any runner starts. `node --test` alone is not the check (Node 24.19, measured 2026-10-09):
+//     a missing path fails loud (`Could not find`, exit 1) only when NO argument matches a file; beside one that exists it is ignored and the exit is 0.
+//     The directory form is also unreliable on Node 24 (MODULE_NOT_FOUND);
 //   on-disk-but-unlisted — an orphan *.test.mjs would silently never run.
 // Run by pre-commit / pre-push alongside verify.mjs. Fail-loud CLI (not a hook).
 //
