@@ -1,0 +1,114 @@
+name: link-check
+
+# on: paths -- SAFE HERE, and the reason is worth stating (findings-back, CW-017
+# round 1 LOW-1): CWK-058 moved path filtering OUT of ci.yml and codeql.yml, the two
+# workflows holding this room's REQUIRED status checks, because a path-skipped
+# workflow leaves its required context PENDING rather than green -- an unsatisfiable
+# ruleset. link-check.yml is not, and is not meant to become, a required context (it
+# is a repo-hygiene gate this room chose to add, not one GitHub's branch protection
+# enforces); `markdownlint.yml` and `scorecard.yml` are the room's other two
+# `on: paths`-filtered, non-required workflows, for the same reason. If link-check is
+# ever made required, this `on: paths` block owes the SAME job-level-classifier fix
+# CWK-058 already gave ci.yml/codeql.yml -- do not just delete this comment.
+on:
+  push:
+    branches: [main]
+    paths:
+      - '**.md'
+  pull_request:
+    branches: [main]
+    paths:
+      - '**.md'
+
+permissions:
+  contents: read
+
+# cancel-in-progress: TRUE (CWK-058, canon: .github/SKILL-REPO-PATTERN.md) -- this
+# workflow reads files and publishes nothing, so a superseded run leaves nothing
+# half-done to clean up (the atomicity test, applied at this workflow's own site).
+concurrency:
+  group: link-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10 # testing.md: every run has a finite clock. Basis (CWK-154, 2026-10-02, REST, last 6 successful runs): job max 0.2 min
+    steps:
+      # PR24 #5 -- persist-credentials: false. This job never pushes (`contents: read`
+      # above, a pure read-and-scan gate) -- the checkout token has no legitimate use
+      # once the checkout completes, and leaving it in .git/config for the rest of the
+      # job widens the blast radius of anything else that runs in this job for no gain.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      # NOT continue-on-error, unlike markdownlint.yml -- this is a real gate, not a
+      # report-only cleanup pass (say why, since the two sit side by side and a
+      # reader will ask): markdownlint checks markdown FORMAT and this room accepted
+      # it report-only because format drift is cosmetic; a BROKEN LINK is a real
+      # defect a reader hits, so it blocks.
+      #
+      # ENGINE: this room's own scripts/lib/link-check.mjs (CW-017, zero-dep,
+      # regex-based -- .github/SKILL-REPO-PATTERN.md:91's own DEFAULT reading). No
+      # AST vendored; CoalLedger's own link-check uses its doc-structure canary's
+      # vendored CommonMark+GFM engine instead, a different room's different budget.
+      #
+      # SCOPE: every TRACKED root/skill/command .md file, excluding `plugin/**` (the
+      # GENERATED dist copy -- scanning it double-reports every finding the source
+      # copy already caught) and `scripts/fixtures/**` (the engine's OWN test
+      # fixtures, which deliberately carry planted defects its unit tests assert
+      # against -- scanning them here would fail this gate by design, forever).
+      #
+      # NOT WRAPPED (a genuine divergence from CoalLedger's own workflow, named
+      # rather than copied past): CoalLedger's engine (md-checks.mjs) always exits 0
+      # -- its OTHER consumer reads `--json` and never relies on the process exit --
+      # so its workflow wraps the call in a `grep -qE '^0 finding'` predicate to turn
+      # that into a real gate. Ours (link-check.mjs) exits non-zero NATIVELY on a
+      # finding (scripts-quality.md's fail-LOUD CLI discipline) -- adding the same
+      # wrapper here would be a SECOND mechanism for a property the engine already
+      # guarantees, the over-hardening this flock bans. Proven both directions before
+      # shipping (CW-017's own return): the engine exits 1 on a planted-defect
+      # fixture and 0 on this room's real 12-file scope; the step below (bare
+      # invocation, no wrapper) reproduces both exit codes unchanged.
+      #
+      # FAILS CLOSED ON AN EMPTY FILE LIST -- ported from CoalLedger's own FIX for
+      # this exact hole (that room's findings-back CWK-092 LOW-1), not the hole
+      # itself: an empty file list is asserted and exits 1 BEFORE the engine ever
+      # runs, naming the scope filter as broken rather than the tree. Without this
+      # guard a layout change moving every doc under an excluded prefix would scan
+      # nothing and the engine's own native exit-0-on-no-findings would read that
+      # as a clean pass -- a silently-inert gate. This guard covers a DIFFERENT
+      # hole than the "NOT WRAPPED" note above (nothing scanned at all, not a
+      # scanned-and-clean run) and stays regardless of which engine shape is on
+      # the other side of it.
+      #
+      # PR24 #6 -- NUL-DELIMITED ARRAY, not a bare `$files` word-split. The prior
+      # `files=$(git ls-files ...)` + unquoted `$files` on the final invocation line
+      # relied on IFS word-splitting to turn the newline-separated list back into
+      # argv entries -- correct for an ordinary path, but a path containing a SPACE
+      # would silently split into two argv entries, and a path containing a glob
+      # metacharacter (`*`, `?`, `[`) would undergo pathname expansion against the
+      # CWD instead of being passed through literally. `git ls-files -z` + `grep -z`
+      # + `mapfile -d ''` carries every path through as one exact array element
+      # regardless of its bytes (verified locally: a planted "with space.md" lands as
+      # ONE array entry, not two).
+      #
+      # This also RETIRES the `|| true` the r34 INSPECT LOW-2 round added to the old
+      # `files=$(...)` assignment: that fix existed because a failing last-stage `grep
+      # -v` made the ASSIGNMENT itself the failing command under GitHub's default
+      # `bash -e {0}` shell, aborting the script before the `if [ -z "$files" ]` guard
+      # ever ran. `mapfile -d '' -t files < <(...)` reads from a PROCESS SUBSTITUTION,
+      # whose exit status `set -e` does not inspect -- verified directly (`set -e;
+      # mapfile -d '' -t x < <(printf 'a\0' | grep -z nomatch); echo reached` prints
+      # "reached", count 0) -- so the empty-array guard below is reachable natively,
+      # with no `|| true` needed to make it so.
+      - run: |
+          mapfile -d '' -t files < <(git ls-files -z '*.md' | grep -zv '^plugin/' | grep -zv '^scripts/fixtures/')
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "::error::link-check found NO markdown files to scan -- the scope filter is broken, not the tree"
+            exit 1
+          fi
+          node scripts/lib/link-check.mjs "${files[@]}"

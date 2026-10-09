@@ -1,0 +1,13 @@
+# CoalTipple CodeQL config.
+# js/automatic-semicolon-insertion is excluded because it is a style/quality rule
+# (security_severity: none) and every flagged spot is ASI-safe: the line that follows
+# each statement always begins with a keyword (const, let, if, return, …) rather than
+# a continuation token (open-paren, open-bracket, template-literal, etc.), so the JS
+# engine cannot mis-parse the boundary. There is no actual mis-parse risk; the alert
+# is noise. ALL security queries and the rest of the quality suite are kept.
+name: "CoalTipple CodeQL config"
+queries:
+  - uses: security-and-quality
+query-filters:
+  - exclude:
+      id: js/automatic-semicolon-insertion

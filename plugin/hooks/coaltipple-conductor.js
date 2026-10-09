@@ -1,0 +1,449 @@
+#!/usr/bin/env node
+// CoalTipple conductor — ADVISE-ONLY routing hook (Phoenix-pure: no network, no
+// child process, no LLM, fail-silent, ~0ms). On SessionStart it injects the
+// routing contract; on EVERY UserPromptSubmit it injects a short routing forcer so
+// the model trips over that contract (SKILL.md) before acting, plus a 0-token
+// complexity hint on a hot keyword.
+// The MODEL performs the actual spawn/route (a hook cannot) and self-heals the
+// model ranking via the coaltipple skill. This file only advises.
+// Self-contained / standalone-portable (Phoenix #9): no imports from scripts/.
+
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+
+// --- config cascade (BOM- and comment-tolerant, cached): GLOBAL then PROJECT ---
+//   GLOBAL  = <home>/.claude/.coaltipple.json   the user's defaults for ALL projects
+//   PROJECT = optional per-project OVERRIDE, resolved under an agent dir (namespace
+//             campaign #69+#39, owner-designated 2026-08-08) -- see the
+//             projectConfigCandidates walk below for the full read order and the
+//             LEGACY fallback it still honors.
+// Shallow per-key merge, PROJECT wins (project > global > schema default). Either
+// file may be missing/corrupt — each is read in isolation and contributes nothing
+// on failure, so the merge always yields the best available config (never throws).
+// Inlined (not imported) to keep the hook standalone-portable (Phoenix #9).
+// Keep findGitRoot byte-identical to scripts/lib/config-load.mjs.
+// The read-order WALK below must stay in sync with config-load.mjs's
+// projectConfigCandidates -- not just findGitRoot's own body (verify.mjs's
+// config-path-sync gate guards the project-config PATH SEGMENTS, not the function body).
+function findGitRoot(startDir) {
+  let dir = path.resolve(startDir);
+  while (true) {
+    if (fs.existsSync(path.join(dir, '.git'))) return dir;
+    const parent = path.dirname(dir);
+    if (parent === dir) return startDir;
+    dir = parent;
+  }
+}
+// Namespace campaign (#69+#39): first-found-wins over the SAME order as
+// config-load.mjs's projectConfigCandidates -- own agent dir (always .claude for
+// this room) -> .agents -> .gemini -> LEGACY-1 <gitroot>/.claude/.coaltipple.json
+// -> LEGACY-2 <gitroot>/.coaltipple.json (UMB-133).
+const AGENT_DIR_ORDER = ['.claude', '.agents', '.gemini'];
+function projectConfigCandidates(cwd) {
+  const root = findGitRoot(cwd);
+  const candidates = AGENT_DIR_ORDER.map((d) => path.join(root, d, 'coal', 'coaltipple.json'));
+  candidates.push(path.join(root, '.claude', '.coaltipple.json')); // LEGACY-1
+  candidates.push(path.join(root, '.coaltipple.json')); // LEGACY-2, always last
+  return candidates;
+}
+// UMB-174(b) -- returns { cfg, reason }, never a bare object-or-null. An ABSENT file
+// (ENOENT) is the normal, silent case: reason stays null, nothing to report. Any other
+// failure mode is a file that EXISTS but could not be turned into a config, and each
+// gets its own named reason so the SessionStart report (projectConfigNotices, below)
+// can tell a user WHY their file was skipped instead of silently treating it as if it
+// were never there -- the exact gap UMB-174 exists to close.
+// BOM strip happens BEFORE any parse/classification attempt, matching config-load.mjs's
+// readJsonc and configure.mjs's parseConfig (verified consistent, not re-derived here) --
+// a BOM-prefixed VALID object must be READ, never reported as "malformed JSON" by an
+// implementation that tried to parse before stripping.
+function readCfgFile(file) {
+  let content;
+  try {
+    content = fs.readFileSync(file, 'utf8');
+  } catch (e) {
+    if (e.code === 'ENOENT') return { cfg: null, reason: null }; // absent -- nothing to report
+    if (e.code === 'EISDIR') return { cfg: null, reason: 'a directory' };
+    return { cfg: null, reason: 'unreadable' }; // EACCES / EPERM / any other read failure
+  }
+  if (content.charCodeAt(0) === 0xFEFF) content = content.slice(1); // BOM-safe, no literal BOM
+  // String-aware JSONC stripper (CM #12 fix): the string alternative consumes
+  // an escaped char (\\.) or any non-quote/non-backslash char, so a value
+  // ending in a literal backslash terminates the string correctly instead of
+  // leaking escape state into the next token and mis-stripping a later comment.
+  const cleanJson = content.replace(/"(?:\\.|[^"\\])*"|\/\/.*|\/\*[\s\S]*?\*\//g, (m) => (m[0] === '"' ? m : ''));
+  let parsed;
+  try {
+    // Prototype-pollution guard (OWASP Node.js; flock-canonical -- CoalMine/CoalBoard's own
+    // conductors carry the same reviver inline for the identical Phoenix #9 standalone reason).
+    parsed = JSON.parse(cleanJson, (k, v) => (k === '__proto__' || k === 'constructor' || k === 'prototype' ? undefined : v));
+  } catch {
+    return { cfg: null, reason: 'malformed JSON' };
+  }
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return { cfg: parsed, reason: null };
+  return { cfg: null, reason: 'not a JSON object' };
+}
+// SAFER-VALUE-WINS (hooks-safety.md §9): a project .coaltipple.json arrives WITH A
+// CLONED REPO -- untrusted. Only the keys THIS hook actually reads+branches on need the
+// clamp (mode gates routingOff below; updateMode gates the self-update nudge) --
+// fableConsent is agent-executed / never read by this hook, so its clamp lives only in
+// scripts/lib/config-load.mjs (used by configure.mjs --list), not duplicated here dead.
+// Index 0 = safest. Keep in sync with config-load.mjs's SAFER_ENUM (same ordering rationale).
+const SAFER_ENUM = { mode: ['off', 'delegation', 'escalation', 'auto'], updateMode: ['off', 'remind', 'ask', 'auto'] };
+// R2 (hooks-safety.md §9, corrected 2026-07-27): an ABSENT global is the SCHEMA DEFAULT,
+// not "nothing to clamp" -- matches config-load.mjs's SCHEMA_DEFAULT_ENUM (mode's default
+// 'auto' is a no-op ceiling; updateMode's 'ask' genuinely protects a zero-customization
+// install). fableConsent has no entry here at all (see the header comment above), so it
+// never needed this and isn't part of the discussion the config-load.mjs comment records.
+const SCHEMA_DEFAULT_ENUM = { mode: 'auto', updateMode: 'ask' };
+// CB-R1 class (R14; CoalBoard 0a4163b is the exemplar): an UNKNOWN value -- not in the key's enum,
+// or not even a string -- is neither clamped nor validated by "skip it": the shallow-merge result
+// was then the raw junk, so a cloned repo's junk beat a global off. Inside the clamp an unknown
+// value reads as ABSENT (a project's falls to the effective global, a global's to the schema
+// default), and the merged value is always the CANONICAL enum literal from `order`, never the
+// config string -- so nothing downstream (routingOff, the update directive) can see attacker text.
+function enumLiteral(order, v) {
+  if (typeof v !== 'string') return null;
+  const i = order.indexOf(v.toLowerCase());
+  return i === -1 ? null : order[i];
+}
+let _cfg;
+// What the walk resolved, kept for the SessionStart report (UMB-133 + UMB-174): the git
+// root, the candidate list, the index of the winning EXISTING candidate (-1 = none
+// exists), and each side's UNREADABLE reason (null = readable or absent).
+let _walk = null;
+function loadCfg() {
+  if (_cfg !== undefined) return _cfg;
+  // CLAUDE_CONFIG_DIR (#6) redirects ~/.claude (portable / multi-account / CI); first entry if a comma-list.
+  const cfgDir = claudeBaseDir();
+  const globalPath = path.join(cfgDir, '.coaltipple.json');
+  const { cfg: global, reason: globalReason } = readCfgFile(globalPath);
+  // First EXISTING candidate wins (matches config-load.mjs's projectConfigPath
+  // exactly) -- an existing-but-corrupt file still stops the walk there and
+  // contributes nothing (readCfgFile's cfg is null), it does NOT fall through to
+  // a lower-priority candidate's real content.
+  const root = findGitRoot(process.cwd()); // idempotent: projectConfigCandidates(root) resolves the same root
+  const candidates = projectConfigCandidates(root);
+  const hitIdx = candidates.findIndex((c) => fs.existsSync(c));
+  const projectPath = hitIdx === -1 ? candidates[0] : candidates[hitIdx];
+  const { cfg: project, reason: projectReason } = readCfgFile(projectPath);
+  _walk = { root, candidates, hitIdx, globalPath, globalReason, projectReason };
+  // Merge only when something loaded; keep null (= "no config") if neither did, so
+  // the existing `if (cfg && ...)` guards in main() behave exactly as before.
+  const merged = global || project ? { ...(global || {}), ...(project || {}) } : null;
+  if (merged && project) {
+    for (const [key, order] of Object.entries(SAFER_ENUM)) {
+      if (project[key] === undefined) continue;
+      const g = enumLiteral(order, global && global[key]); // unknown/absent global = its schema default, not "anything goes"
+      const effectiveGlobal = g !== null ? g : SCHEMA_DEFAULT_ENUM[key];
+      const p = enumLiteral(order, project[key]); // unknown project value = ABSENT
+      merged[key] = p !== null && order.indexOf(p) <= order.indexOf(effectiveGlobal) ? p : effectiveGlobal; // project may not move PAST the effective global toward the weaker end
+    }
+  }
+  _cfg = merged;
+  return _cfg;
+}
+
+// --- Self-update (KIND 1 — skill version): persistent once-per-window throttle ---
+// Ported from CoalMine's conductor (CM v3.7.5). The hook only SCHEDULES the nudge;
+// the version CHECK lives in the /coaltipple:update agent procedure (a fail-silent
+// offline hook cannot verify a published version — Phoenix #7). The stamp is an ISO
+// date; the conductor reads it to decide if a nudge is due, then rewrites it to today
+// so the nudge fires at most once per updateCheckDays (no re-nag). Sandbox-compliant
+// (Phoenix #10): only the global .claude dir is touched. CT has no gold-standard
+// rules, so there is no KIND 2 (rule-freshness) scan — KIND 1 only.
+// Namespace campaign (#69+#39 part 2): the stamp moved to <CLAUDE_CONFIG_DIR or
+// ~>/.claude/coal/coaltipple/update-check. A pre-campaign stamp at the OLD bare
+// location (.claude/.coaltipple-update-check) is still READ if the new one is
+// absent (so an existing user's throttle window isn't silently reset to "due"),
+// and is best-effort dropped on the next write (write-new-then-drop-old, same
+// pattern as the ranking migration this session).
+const UPDATE_STAMP = '.coaltipple-update-check';
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+// CLAUDE_CONFIG_DIR (#6 / #10) redirects the global .claude dir; first entry if a
+// comma-list; a degenerate (empty / whitespace) value falls back to ~/.claude.
+function claudeBaseDir() {
+  const c = process.env.CLAUDE_CONFIG_DIR;
+  return (c && c.split(',')[0].trim()) || path.join(os.homedir(), '.claude');
+}
+
+// Today as YYYY-MM-DD in UTC — deterministic for a calendar day, no TZ drift between
+// the write and the next read (Phoenix #8: the date is the only sanctioned time input).
+function todayISO(now) {
+  return new Date(now).toISOString().slice(0, 10);
+}
+// Whole-day delta between two YYYY-MM-DD strings (b - a), or null if either is
+// unparseable. Date.parse on a date-only string is UTC, matching todayISO.
+function dayDiff(a, b) {
+  const ta = Date.parse(a);
+  const tb = Date.parse(b);
+  if (isNaN(ta) || isNaN(tb)) return null;
+  return Math.floor((tb - ta) / MS_PER_DAY);
+}
+function updateStampPath() {
+  return path.join(claudeBaseDir(), 'coal', 'coaltipple', 'update-check');
+}
+function oldUpdateStampPath() {
+  return path.join(claudeBaseDir(), UPDATE_STAMP);
+}
+function readUpdateStamp() {
+  for (const p of [updateStampPath(), oldUpdateStampPath()]) {
+    try { return fs.readFileSync(p, 'utf8').trim(); } catch { /* try next */ }
+  }
+  return null;
+}
+// Due when there is no stamp, a corrupt stamp, or the window has elapsed.
+function updateDue(stamp, today, days) {
+  if (!stamp) return true;
+  const d = dayDiff(stamp, today);
+  if (d === null) return true; // unparseable stamp -> self-heal by treating as due
+  return d >= days;
+}
+// Crash-safe write: temp sibling then atomic rename, so a kill mid-write can never
+// leave a half-written (unparseable) stamp.
+function writeUpdateStamp(today) {
+  try {
+    const dir = path.dirname(updateStampPath());
+    try { fs.mkdirSync(dir, { recursive: true }); } catch {}
+    const final = updateStampPath();
+    const tmp = final + '.tmp';
+    fs.writeFileSync(tmp, today, 'utf8');
+    fs.renameSync(tmp, final);
+    try { fs.rmSync(oldUpdateStampPath(), { force: true }); } catch {}
+  } catch {}
+}
+
+// The KIND-1 directive per updateMode. English (the agent localizes for the user,
+// same convention as the routing contract's langLine). Returns the line to inject,
+// or null for a mode that emits nothing (off / unknown).
+function updateDirective(mode, days) {
+  switch (mode) {
+    case 'ask':
+      return `- CoalTipple self-update (ask the user ONCE via your question tool, in their language): "How should CoalTipple keep itself current?" Offer 3 — **auto** (I check for a newer version about every ${days} days and apply updates when you approve; ~1-2K tokens per check), **remind** (a free periodic reminder; you run \`claude plugin update coaltipple@coaltipple\` yourself), **off** (no reminders). Save the choice: \`node scripts/configure.mjs --updateMode <auto|remind|off>\` (from the CoalTipple repo, or wherever .coaltipple.json lives). Do not check now — the saved mode drives future sessions.`;
+    case 'auto':
+      return '- CoalTipple self-update (standing consent — do this now): follow /coaltipple:update to web-check the latest CoalTipple tag vs the installed plugin.json version. If newer, OFFER `claude plugin update coaltipple@coaltipple` + `/reload-plugins`; if current, say "up to date"; if git/network is unavailable, say so and suggest updating manually later (never assume).';
+    case 'remind':
+      return `- CoalTipple self-update reminder (relay to the user in their language, no action needed): it has been ~${days}d since the last CoalTipple update-check — consider \`claude plugin update coaltipple@coaltipple\` to refresh, or switch to auto (\`node scripts/configure.mjs --updateMode auto\`).`;
+    default:
+      return null; // 'off' (or unknown) -> nothing
+  }
+}
+
+// --- lean 0-token prompt grader (hook sees only the prompt; the skill does the
+//     fuller file-aware grade). The grader/hint below fires ONLY on a hot
+//     keyword; the always-on routing forcer in main() fires on every prompt. ---
+// <coaltipple-shared: hot-keywords> — synced from scripts/lib/keywords.mjs by build-plugin.mjs; edit keywords.mjs, NOT this block
+const HOT5 = ['concurrency', 'mutex', 'mutexes', 'race condition', 'deadlock', 'deadlocks', 'thread-saf*', 'atomic', 'crypto', 'cryptograph*', 'timing attack', 'timing-attack', 'constant-time', 'constant time', 'timing-safe', 'side-channel', 'encrypt*', 'decrypt*', 'mathematical proof', 'formal proof', 'derive equation', 'complexity bound'];
+const HOT4 = ['oauth', 'authenticat*', 'authoriz*', 'auth bypass', 'sql injection', 'access control', 'permission*', 'secret', 'secrets', 'token', 'tokens', 'password', 'passwords', 'session', 'sessions', 'migrat*', 'schema change', 'payment', 'payments', 'billing', 'rate limit', 'optimize query', 'bug scan', 'scan for bugs', 'find bugs', 'find all bugs', 'security audit', 'security review', 'vulnerability scan', 'audit the codebase', 'code audit', 'legal contract', 'compliance', 'license terms', 'financial audit', 'tax filing', 'valuation', 'medical diagnosis', 'clinical diagnosis', 'dosage', 'clinical trial', 'gdpr', 'hipaa', 'pii'];
+// </coaltipple-shared: hot-keywords>
+// Match a hot keyword with the SAME stem-vs-whole-word convention as the grader
+// (grade.mjs includesAny): a trailing `*` = STEM (prefix, leading \b only); a bare
+// word = WHOLE-WORD (leading + trailing \b), so the conductor's hint can't over-match
+// where the grader doesn't (token -> tokenizer, crypto -> cryptocurrency). `t` is lowercased.
+function matchKw(t, list) {
+  for (const k of list) {
+    const raw = String(k).toLowerCase();
+    const stem = raw.endsWith('*');
+    const word = (stem ? raw.slice(0, -1) : raw).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (!word) continue;
+    if (new RegExp('\\b' + word + (stem ? '' : '\\b')).test(t)) return true;
+  }
+  return false;
+}
+function hintFor(prompt) {
+  const t = String(prompt || '').toLowerCase();
+  if (matchKw(t, HOT5)) return { grade: 5, tier: 'reasoning', why: 'reasoning-hard keyword' };
+  if (matchKw(t, HOT4)) return { grade: 4, tier: 'heavy', why: 'sensitive keyword' };
+  return null;
+}
+
+// The deterministic HOT keyword flags are ENGLISH literals, so a non-English prompt fires
+// NO flag. This per-turn nudge covers only the part detectable by SCRIPT: a non-Latin char
+// — anything outside Basic Latin + Latin-1 Supplement + Latin Extended-A/B (code point
+// <= 0x24F), while excluding the General Punctuation block (0x2000-0x206F: em-dash / smart
+// quotes / ellipsis, common in English text) so an English prompt with typographic
+// punctuation does NOT trigger a false nudge. Catches Thai / CJK / Arabic / Cyrillic /
+// Hebrew / Devanagari / etc. LATIN-SCRIPT non-English (Spanish/French/German/Portuguese/
+// Indonesian) is INDISTINGUISHABLE from English by script, so it cannot be caught here —
+// the resident SessionStart contract (contract()) carries the all-language "grade
+// sensitivity by MEANING" line as the deterministic aid that covers it. The character
+// class is BUILT from char codes — never a raw high-Unicode literal in source (the tool
+// layer mangles those; this hook must stay deterministic + portable, Phoenix #8/#9).
+const NON_LATIN_RE = (() => {
+  const cc = String.fromCharCode;
+  const cls = '[^' + cc(0x00) + '-' + cc(0x24f) + cc(0x2000) + '-' + cc(0x206f) + ']';
+  return new RegExp(cls);
+})();
+function hasNonLatinScript(prompt) {
+  return NON_LATIN_RE.test(String(prompt || ''));
+}
+
+// The contract is model-facing English (the model reads it fine); the language
+// LEVER is a directive telling the model what language to PRODUCE for the user —
+// the same approach CoalMine's conductor uses. cfg.language drives it, so the
+// config key is live, not inert. Translate prose, never technical terms.
+const LANG_NAME = { th: 'Thai', en: 'English', ja: 'Japanese', zh: 'Chinese', es: 'Spanish' };
+function langLine(cfg) {
+  const l = cfg && typeof cfg.language === 'string' ? cfg.language.toLowerCase() : 'auto';
+  const who = LANG_NAME[l] || "the user's language";
+  return `- Respond to the user in ${who}: translate prose only — NEVER translate technical terms (commands, paths, identifiers, config keys, tier/effort/grade/model names, severity labels); code and config stay verbatim.`;
+}
+function contract(cfg) {
+  return [
+    '[CoalTipple] Model/effort routing active. Before delegating, ensure a valid model-tier ranking exists (it is the alias floor haiku<sonnet<opus<fable + your modelTiers pins; fable = the top rung, a real-money spawn you ASK before using [once/always-this-project/no], else cap at the rung BELOW fable as READ from the ranking, never a hardcoded model; rebuild it via the coaltipple skill if missing/corrupt). Then:',
+    '- Routing degrades safe on any Claude Code version: an unfamiliar model classifies as a strong tier, a failed spawn falls to the next available, and the platform resolves each alias to its current best model at spawn-time (verified across the 2.1.x line).',
+    '- DELEGATE-DOWN a task you can do but is large + cheap, to a lower tier — ONLY with a compact task-contract (goal+constraints+interface+done) AND verify the returned output on merge. Skip it for small tasks (spawn overhead beats the saving).',
+    '- ESCALATE-UP a task beyond the current tier for quality. A worker that fails RETURNS its result and the MAIN re-routes. Spawn/fan-out discipline is CoalFace\'s authority, not this contract\'s.',
+    '- Grade by the deterministic rubric, not a model self-assessment. Opus is scarce: cheapest lever first - raise effort, then a stronger same-tier version, before escalating the tier.',
+    '- Sensitivity is graded by MEANING in ANY language: the keyword/complexity hints are an English-only fast-path, so a non-English prompt (Spanish/French/Thai/CJK - any script) fires NO keyword flag. Never read "no flag" as "not sensitive" - judge crypto/auth/payment/security by intent and keep never-down (delegate-down stays forbidden for sensitive work).',
+    '- mode (.coaltipple.json, default auto): auto = route both directions per grade; delegation = delegate-down only (escalate-up suppressed, a budget-saving mode); escalation = escalate-up only (delegate-down suppressed, a quality mode); off = routing off, do it yourself. The sensitive HARD GATE overrides mode (sensitive is still never-down and may always escalate up).',
+    '- Honor qualityBar (.coaltipple.json, 0-100, default 60): a result must clear it or climb the model ladder — start at the grade floor, verify vs the contract done-criteria by domain-appropriate means (code: tests/build; text: completeness; research: sourced claims), climb one rung if short, jump to the top tier if far below or out of attempts. 0 = anything passes (cheapest); 100 = climb until best.',
+    langLine(cfg),
+    '- Consent + token spend: honor .coaltipple.json for routing spend. Whether/how to fan out costly work is not this contract\'s: if CoalFace is present this session (its hook fired or its skill is listed) it is CoalFace\'s call; a plugin that is not present decides nothing.',
+  ].join('\n');
+}
+
+function readStdin() {
+  try { return fs.readFileSync(0, 'utf8'); } catch { return ''; }
+}
+
+// Routing is OFF when the master switch is off OR mode is "off" (do-it-yourself).
+// Both silence the SessionStart contract AND the per-prompt forcer — the off switch.
+function routingOff(cfg) {
+  if (!cfg) return false;
+  if (cfg.enableRouting === false || cfg.routing === false) return true; // legacy key honored
+  if (typeof cfg.mode === 'string' && cfg.mode.toLowerCase() === 'off') return true; // mode:"off" short-circuit
+  return false;
+}
+
+// UMB-133 -- a project config the walk will NOT read must be NAMED, never silently walked
+// past (a fableConsent written to <gitroot>/.coaltipple.json sat dead for 14 days, and silence
+// read as "honoured"), and a config read from a LEGACY shape is told where to move.
+// SessionStart ONLY: this is session state, not turn state, so the per-prompt forcer never
+// carries it (Phoenix #13: the sanctioned surfaces, no stderr). The probe is a FIXED list of
+// near-miss shapes under the SAME roots the walk reads -- never a crawl (Phoenix #3 budgets the
+// work this hook ADDS): 2 + 3 agent dirs x (2, +1 for the two non-.claude dirs) = 10 existsSync.
+// <gitroot>/.coaltipple.json is NOT on it: it is LEGACY-2, a candidate.
+// routingOff / disableRouting:'all' return in main() BEFORE this runs and that is deliberate:
+// a user who silenced the conductor is not re-armed by this report.
+const CANON_REL = '.claude/coal/coaltipple.json';
+function projectConfigNotices() {
+  const lines = [];
+  try {
+    if (!_walk) return lines;
+    const { root, candidates, hitIdx, globalPath, globalReason, projectReason } = _walk;
+    const rel = (p) => path.relative(root, p).split(path.sep).join('/');
+    // UMB-174(b) -- the winning candidate EXISTS but could not be turned into a config
+    // (malformed JSON / a directory / unreadable / not a JSON object): name it and the
+    // reason, never silently treat it as "no config" the way an absent file correctly is.
+    // Takes precedence over the LEGACY branch below: a file that failed to parse was not
+    // actually "read" -- claiming it was would be a second false statement in one line.
+    if (hitIdx !== -1 && projectReason) {
+      lines.push(`[CoalTipple] UNREADABLE: ${rel(candidates[hitIdx])} exists but is not a readable config (${projectReason}); it was skipped — canonical = ${CANON_REL}`);
+    } else if (hitIdx >= AGENT_DIR_ORDER.length) { // the winner is one of the LEGACY shapes (they sit after the canonical dirs)
+      lines.push(`[CoalTipple] LEGACY: ${rel(candidates[hitIdx])} is read as this project's config but is deprecated; canonical = ${CANON_REL} -- move it there.`);
+    }
+    // CWK-135 (a), main's ruling 2026-09-24 (the open flock question B2-1 raised): the
+    // UNREADABLE line names the path of the TIER that failed. The PROJECT line above keeps the
+    // verbatim flock string (canonical = .claude/coal/coaltipple.json); the GLOBAL line names
+    // the global file's OWN path -- globalPath, the CLAUDE_CONFIG_DIR-aware path this hook
+    // actually read -- because a global config has no project location to move to, and a
+    // user-facing failure states what to do next (fix THAT file).
+    if (globalReason) {
+      lines.push(`[CoalTipple] UNREADABLE: ${globalPath} exists but is not a readable config (${globalReason}); it was skipped — canonical = ${globalPath}`);
+    }
+    const candSet = new Set(candidates.map(rel));
+    const near = ['coaltipple.json', 'coal/coaltipple.json'];
+    for (const d of AGENT_DIR_ORDER) {
+      near.push(`${d}/coaltipple.json`, `${d}/coal/.coaltipple.json`);
+      if (d !== '.claude') near.push(`${d}/.coaltipple.json`); // .claude/.coaltipple.json is LEGACY-1, a candidate
+    }
+    for (const n of near) {
+      if (candSet.has(n)) continue;
+      if (fs.existsSync(path.join(root, ...n.split('/')))) lines.push(`[CoalTipple] IGNORED: ${n} is not a config path; canonical = ${CANON_REL}`);
+    }
+  } catch {}
+  return lines;
+}
+
+function main() {
+  const cfg = loadCfg();
+  if (routingOff(cfg)) return;
+  const disabled = cfg && cfg.disableRouting;
+  if (Array.isArray(disabled) && disabled.includes('all')) return;
+
+  let input = {};
+  // Guard the parse result: valid JSON that is NOT a plain object (null, a number,
+  // an array) must not become `input`, or the `input.hook_event_name` read below is a
+  // null-deref / silent-wrong read. Non-object -> keep the empty-object default.
+  try { const parsed = JSON.parse(readStdin() || '{}'); if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) input = parsed; } catch {}
+  const event = input.hook_event_name || input.hookEventName || '';
+
+  if (event === 'UserPromptSubmit') {
+    const prompt = input.prompt || input.user_prompt || '';
+    const h = hintFor(prompt);
+    const hint = h ? ` Complexity hint: grade ${h.grade} (${h.why}) -> start tier "${h.tier}"; fold into the grade, then the result must clear qualityBar or routing climbs the ladder.` : '';
+    // The English HOT-keyword hint cannot fire on a non-English prompt. For a non-LATIN
+    // script (Thai/CJK/…) we detect it here and add a per-turn nudge; a Latin-script
+    // non-English prompt (Spanish/French/…) is undetectable per-turn and is covered by the
+    // resident contract's grade-by-MEANING line instead (see contract() + the NON_LATIN_RE
+    // note above). Complements (never replaces) the English hint above.
+    const nonLatin = hasNonLatinScript(prompt);
+    const nonEnglish = nonLatin ? ' Non-English prompt -- grade by MEANING and apply the sensitive-gate by intent; the English keyword flags will not fire.' : '';
+    // Double-hook arbitration cue (CB<->CT coordination). CONDITIONAL ON WORDING, NOT ON AN
+    // INSTALL PROBE (main's ruling, r35a, R9 -- INSPECT C MEDIUM-3, scratchpad/r34/inspect-c-return.md
+    // SS5): the OLD text named "CoalBoard leads" / "-> CoalBoard" unconditionally, so a
+    // CoalTipple-only user's agent was told an ABSENT plugin leads -- CoalBoard's own mirrored
+    // cue has the identical defect the other way. Fixed by making the SENTENCE conditional on
+    // PRESENCE the agent already knows (which hooks fired, which skills are listed) rather than
+    // adding a runtime probe (zero-dep, Phoenix #7 offline/no-new-dependency): sibling present
+    // -> the arbitration reads as it always did; sibling absent -> stakes work STILL HALTS and
+    // asks the user, and no absent plugin is named as the leader. CoalTipple authors this
+    // sentence; CoalBoard's own conductor conforms to the identical text second.
+    //
+    // Fires CONDITIONAL on a hint or non-Latin signal -- those mirror CoalBoard's own AND-gate
+    // seeds, so they are the only turns it might also fire on; a signal-free turn has nothing to
+    // arbitrate. Lets the model arbitrate silently rather than act on both / surface a "conflict"
+    // (Phoenix #13 zero-noise).
+    const cue = (h || nonLatin) ? ' Triage (binds even when only ONE hook fired): STAKES = your Layer-2 verdict that the TASK is stakes-domain work (security · crypto · migration · money); fired keywords of any vocabulary are Layer-1 evidence only, never the verdict, and a Layer-2 acquittal STANDS -- no keyword re-arms it. Stakes -> HALT and ask the user before acting, always; if CoalBoard is present this session (its hook fired or its skill is listed) it leads and CoalTipple, if present, is its tier-lever -- a plugin that is not present leads nothing. No stakes: CoalTipple, if present, leads only if the WORK\'s OWN size/complexity calls for delegate-down or escalate-up -- a fired grade is evidence, never the verdict -- else neither. Layer 2 genuinely undecidable -> treat it as stakes. Both conductors fired -> ARBITRATE silently by this same rule: act on one, never surface it.' : '';
+    // HOOK-LEAN (2026-07-15): the full routing rubric is RESIDENT from SessionStart (incl. a
+    // :compact re-inject); this per-turn line is a POINTER to it, not a re-teach. Honest caveat:
+    // on a very long session that never compacts, early-context attention on that resident
+    // contract can fade -- this one-liner is the safety net that re-surfaces "there is a
+    // contract, go check it". A shrink, never a removal.
+    process.stdout.write(`[CoalTipple] Route this turn per the resident routing contract.${hint}${nonEnglish}${cue}`);
+    return;
+  }
+  // SessionStart (and any non-prompt event) -> inject the routing contract, plus the
+  // KIND-1 self-update directive when due. Self-update is ORTHOGONAL to routing but
+  // shares the SessionStart channel; it never fires here when the conductor is wholly
+  // disabled (routingOff / disableRouting:all both returned above). Its own off-switch
+  // is updateMode:"off". The per-prompt forcer (UserPromptSubmit, above) is untouched.
+  let out = contract(cfg);
+  for (const n of projectConfigNotices()) out += '\n' + n; // UMB-133: LEGACY hit / IGNORED non-candidates, SessionStart only
+  let updateMode = 'ask';
+  let updateCheckDays = 14;
+  if (cfg && typeof cfg.updateMode === 'string') {
+    const v = cfg.updateMode.toLowerCase();
+    if (v === 'ask' || v === 'auto' || v === 'remind' || v === 'off') updateMode = v;
+  }
+  if (cfg && Number.isInteger(cfg.updateCheckDays) && cfg.updateCheckDays >= 1 && cfg.updateCheckDays <= 365) {
+    updateCheckDays = cfg.updateCheckDays;
+  }
+  // Throttled by the persistent stamp: fires at most once per updateCheckDays.
+  // 'off' emits nothing and skips the stamp entirely (no disk touch).
+  if (updateMode !== 'off') {
+    try {
+      const today = todayISO(Date.now());
+      if (updateDue(readUpdateStamp(), today, updateCheckDays)) {
+        const directive = updateDirective(updateMode, updateCheckDays);
+        if (directive) out += '\n' + directive;
+        writeUpdateStamp(today); // throttle -> no re-nag until the window elapses
+      }
+    } catch {}
+  }
+  process.stdout.write(out);
+}
+
+try { main(); } catch {}

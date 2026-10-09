@@ -1,0 +1,74 @@
+# Contributing to CoalTipple
+
+CoalTipple is the model/effort router of the [TheColliery](https://github.com/TheColliery) series. We welcome issues, bug reports, and pull requests.
+
+---
+
+## 🤝 Proposing a Change
+
+1. **Open an issue first** describing the problem, routing gap, or proposed feature (especially for changes to `SKILL.md`).
+2. Make your code changes and ensure the verification gates remain green.
+3. For routing or `SKILL.md` changes, **dogfood it live** on Claude Code and document the routing behavior in your PR description.
+
+---
+
+## 💻 Developing & Testing
+
+CoalTipple is **zero-dependency** (built using Node.js built-ins only, Node 22+). No `npm install` is required.
+
+Keep the verification gates green before and after making edits:
+
+```bash
+# after editing a skill, hook, or manifest, rebuild the dist FIRST — verify checks dist-sync:
+node scripts/build-plugin.mjs   # re-sync the conductor from keywords.mjs (the SSoT)
+node scripts/build-dist.mjs     # compile plugin/ from source
+node scripts/verify.mjs         # validates config schemas, plugins, and SSoT sync
+node scripts/test.mjs           # runs the zero-dependency test suite: the canon wave runner over node --test, each file judged by its TAP
+node scripts/secret-gate.mjs    # the house secret scan of the tracked tree (the git hooks run it first)
+```
+
+The pre-commit and pre-push hooks run the secret scan, then `verify.mjs`, then `test.mjs`. The secret scanner and its test (`scripts/lib/secret-scan.mjs`, `scripts/secret-scan.test.mjs`) are copied byte for byte from the org's scan source, which the org tooling's `scanner-parity.mjs` measures; the secret gate, the hooks, the release-notes and release-shape scripts (and their tests), the wave runner that `scripts/test.mjs` drives through `scripts/lib/test-suite.mjs` (`scripts/lib/wave-run.mjs`, its test, `stdout-sync.mjs` and `machine-reading.mjs`), the git-spawn census (`scripts/lib/git-env-census.mjs`, its test and its vectors) and the `create-release` workflow come from the canon in `TheColliery/.github`. Each is changed at its source, never here. A file that differs from its template, whether it leads, trails or is held, shows as DIFFERS in the CoalTipple rows of `node <.github repo>/scripts/skeleton-check.mjs`, and a file the git-spawn census exempts is named with its reason in `CENSUS_PINS` in `scripts/lib/git-env-pins.mjs` (the census itself, `scripts/lib/git-env-census.mjs`, is the canon's and is never edited here). Commit with `git add <paths>` then `git commit -F <file>`, never `git commit -a` or a pathspec commit.
+
+### Development Rules
+* **`keywords.mjs` is the Single Source of Truth:** Edit keywords there, run `node scripts/build-plugin.mjs` to re-sync the conductor, then `node scripts/build-dist.mjs` to compile the distribution. Do not hand-edit hooks directly.
+* **Synchronize `plugin/`:** Rebuild the plugin distribution after modifying the core skill, hooks, or manifest.
+* **Add Unit Tests:** Every shared helper should have a corresponding `*.test.mjs` test file.
+* **Keep Hooks Phoenix-Pure:** Hooks must have zero dependencies, fail-silent execution (wrap in try/catch, never exit non-zero), and run 100% locally; hooks ship a hermetic spawn test (hooks-safety.md §7).
+* **Language & Tone:** Shipped source files and documentations must stay in English.
+
+---
+
+## 🖥️ Supported Platforms
+
+CoalTipple is **Claude Code only**. Routing actuates only where an agent can pick a spawned worker's model and effort—Claude Code's `Agent`/`Task` `model` parameter. Antigravity's `invoke_subagent` DOES take a per-spawn `Model` field (proven live 2026-08-04), but it selects a GOOGLE model regardless of the Claude parent's vendor and carries no effort knob—CT's never-down gate, qualityBar staircase, and Claude alias floor don't map onto that shape, so it is not supported. Cursor, Codex, Gemini CLI, Cline, and Windsurf are unverified and under monthly review.
+
+| Platform | Support Status |
+|---|---|
+| **Claude Code** | **Validated across the 2.1.x line** - Hardened across every model tier (Haiku, Sonnet, Opus); routing degrades safe on any CC version. |
+
+*Note: `skills/coaltipple/SKILL.md` is the highest-risk file. Prompts cannot be validated via unit tests; changes must be verified through actual live agent dogfooding.*
+
+---
+
+## 🗂️ Project Layout
+
+| Path | Purpose |
+|---|---|
+| `skills/coaltipple/SKILL.md` | The core routing contract (the load-bearing prompt). |
+| `scripts/lib/` | Core logic modules: `grade`, `classify` (Lock ranking), `keywords` (SSoT), `config-schema`. |
+| `scripts/` | Tool scripts: `install.mjs`, `configure.mjs`, `verify.mjs`, `test.mjs`. |
+| `hooks/coaltipple-conductor.js` | Phoenix-pure conductor hook (SessionStart + UserPromptSubmit). Auto-synced by build scripts. |
+| `plugin/` | Generated Claude Code plugin distribution. |
+| `platform-configs/.coaltipple.json` | Commented factory default configuration. |
+
+---
+
+## 🚀 Releasing (Maintainers)
+
+Bump version in `.claude-plugin/plugin.json` ➡️ Add a changelog entry in `CHANGELOG.md` (`## [X.Y.Z] - date`, then ONE summary sentence, then the `### ` sections; the release workflow refuses an entry with no summary sentence) ➡️ Ensure `verify.mjs` and `test.mjs` pass ➡️ Commit ➡️ Create a signed git tag (`vX.Y.Z`) ➡️ Push `--follow-tags`. The `create-release` workflow then posts the GitHub Release (stable tags only) from that tag's own changelog entry and re-reads it byte for byte; nobody posts a Release by hand.
+
+---
+
+## 📄 License & Conduct
+
+Contributions are licensed under the [Apache License 2.0](LICENSE). Please assume good faith and be respectful. Report security issues according to [SECURITY.md](SECURITY.md).

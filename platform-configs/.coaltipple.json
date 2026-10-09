@@ -1,0 +1,199 @@
+{
+  // CoalTipple — routing config. Every value is tunable. // and /* */ comments are allowed.
+  // Every key is validated against scripts/lib/config-schema.mjs. verify.mjs fails loud on this SHIPPED template
+  // at repo build/CI time — but YOUR own edited copy is not re-validated at runtime: a typo'd/unrecognized key
+  // here is silently ignored by the conductor and CLI (config-schema.mjs's own comment on that behavior).
+
+  // ─── master ───
+
+  // ## The language for conductor prompts, agent interactions, and routing nudges.
+  // # Setting type: String (auto, th, en, ja, zh, es)
+  // # Default value: auto (heuristic detection from the environment + project docs)
+  "language": "auto",
+
+  // ## Master on/off switch for all model/effort routing.
+  // # Setting type: Boolean
+  // # Default value: true
+  "enableRouting": true,
+
+  // ## Routing direction: delegation = push work DOWN to save tokens; escalation = push UP for quality; auto = both.
+  // # Setting type: String (auto, delegation, escalation, off)
+  // # Default value: auto
+  "mode": "auto",
+
+  // ## Acceptable-quality bar: a result must clear it, or routing climbs the model ladder. Grade picks the
+  // ## start tier -> attempt -> verify against the contract done-criteria (domain-appropriate) -> clear = done;
+  // ## below = climb one rung; far below, or out of attempts = jump to the top tier.
+  // # Setting type: Integer 0-100 (0 = anything passes, cheapest tier always; 100 = climb to the best every time)
+  // # Default value: 60 (adequate-to-delegate — low enough that cheap models clear it on ordinary work, so
+  // #   delegate-down actually saves tokens; main integrates/escalates up to final quality when it matters)
+  // # Tune by RISK, not by field: raise toward ~85 for quality-critical / costly-to-rework work,
+  // #   lower toward ~45 for thrifty draft-grade output. Per-TASK difficulty (incl. domain-hard
+  // #   work like proofs or crypto) is handled by the grade, NOT this bar — so a trivial edit in
+  // #   any field (even a 1-line math fix) still starts cheap and saves tokens.
+  "qualityBar": 60,
+
+  // ─── delegate-down economics ───
+
+  // ## Min task size (lines for code, words/chars for text) below which delegate-down is skipped (spawn-overhead floor).
+  // # Setting type: Integer (range 1-100000)
+  // # Default value: 120
+  "delegateMinLines": 120,
+
+  // ─── safety / limits ───
+
+  // ## Escalation STAIRCASE budget — how many rungs the quality-climb may try before jump-to-top / hand-back.
+  // ## Pairs with qualityBar: the bar = WHEN to climb, this = HOW FAR. (Ladder: low < mid < heavy < reasoning = 4 rungs.)
+  // # Setting type: Integer 1-5 (schema hard-caps the range so neither extreme can be set)
+  // # Default value: 2 (balanced — one attempt + one escalation, then jump-to-top or hand back)
+  // # Double-edged, tune with care: TOO LOW (1) = jump to the top tier too fast = over-provision (skips a cheaper
+  // #   rung that might have cleared the bar); TOO HIGH (4-5) = climb rung-by-rung through the whole ladder =
+  // #   death by a thousand cuts (slow, burns tokens on attempts always destined to escalate). 2-3 = sweet spot.
+  "maxTotalAttempts": 2,
+
+  // ## Seconds before a stalled background sub-worker is marked failed.
+  // # Setting type: Integer (range 5-3600)
+  // # Default value: 150
+  "subagentTimeoutSeconds": 150,
+
+  // ## Cap on concurrent sub-workers in a fan-out (they share one rate limit).
+  // # Setting type: Integer (range 1-16, the platform concurrency ceiling)
+  // # Default value: 4
+  "maxConcurrentSubagents": 4,
+
+  // ## Require a compact task contract (goal + constraints + interface + done-criteria) on every delegation.
+  // # Setting type: Boolean
+  // # Default value: true
+  "requireTaskContract": true,
+
+  // ## Verify a sub-worker's output before accepting it on merge (the "looks right but is wrong" guard).
+  // # Setting type: String (strict, standard, off)
+  // # Default value: standard
+  "qaOnMerge": "standard",
+
+  // ## Never delegate the final user-facing answer/prose to a cheaper model.
+  // # Setting type: Boolean
+  // # Default value: true
+  "preserveVoiceForUserFacing": true,
+
+  // ─── levers ───
+
+  // ## Allow attaching fast-mode only on an explicit human latency request — never as a routing rung.
+  // # Setting type: Boolean
+  // # Default value: true
+  "fastModeOnLatencyRequest": true,
+
+  // ─── model ranking ───
+
+  // ## The ranking is the alias floor (haiku<sonnet<opus<fable -> low/mid/heavy/reasoning; reasoning = fable,
+  // ## the TOP rung, consent-gated before spawn — see fableConsent) overlaid with the pins below — a constant
+  // ## the platform resolves to its current best model, so it never goes stale.
+  // ## Routing rides the tier STRUCTURE + the unknown->heavy rule + the spawn-fail-fall, never an exact list.
+  // ## Optional pins are the one human override — name a model introspection cannot see (released after a
+  // ## model's training cutoff) or correct a tier. A pin front-loads its model(s) into the named tier.
+  // ## (Fable is now a built-in top rung, no longer a pin — pins are for OTHER models the agent cannot see.)
+  // ## An unavailable pin spawn-fails and falls down the ladder (existing behavior), so a stale pin costs nothing.
+  // # Setting type: Object { low | mid | heavy | reasoning : "model" | ["priority", "chain"] }  (cheapest tier is `low`, not `cheap`)
+  // # Default value: unset (the alias floor applies; pins overlay it when set)
+  // # Worked example — pin ONLY the extra alias; the floor model falls in behind it automatically
+  // # (also listing the floor model would de-dup it OUT of its own tier — pin the newcomer alone):
+  // "modelTiers": { "reasoning": ["future-top-model"] },
+
+  // ## Standing consent to route to the fable rung (the top rung above opus) WITHOUT asking each time. Fable is a
+  // ## real-money spawn, so unless this is true the agent asks ONCE per fable escalation (once / always-this-
+  // ## project / no); "no" drops to the top non-fable tier (opus). "always-this-project" writes true HERE (in
+  // ## the project override: `node scripts/configure.mjs --project --fableConsent true`). No cost math, no
+  // ## money-gate — one worker, one ask. Sensitive work keeps its never-down floor (a "no" stops at opus).
+  // # Setting type: Boolean
+  // # Default value: false (ask each time)
+  "fableConsent": false,
+
+  // ─── grading scope ───
+
+  // ## Path fragments that force the High/Reasoning tier even at a single file. Shipped POPULATED
+  // ## (edit/add/delete directly) — UNIONS with the code's built-in list, NEVER replaces it (grade.mjs); [] here
+  // ## still leaves the built-ins in effect. Generated from keywords.mjs SENSITIVE.
+  // # Setting type: String[] (array of fragments)
+// <coaltipple-shared: sensitivePaths>
+  "sensitivePaths": ["auth", "crypto", "payment", "billing", "migration", "secret", "token", "password", "session", "security"],
+// </coaltipple-shared: sensitivePaths>
+
+  // ## Dirs skipped when grading breadth. Shipped POPULATED (edit directly); [] = the built-ins. Generated from keywords.mjs EXCLUDE.
+  // # Setting type: String[]
+// <coaltipple-shared: excludePaths>
+  "excludePaths": ["node_modules", ".git", "dist", "vendor", "build", ".next", "coverage"],
+// </coaltipple-shared: excludePaths>
+
+  // ## LEGACY flat keyword list (prefer the structured `keywords` groups below). Still honored — merges as a grade-4 sensitive group.
+  // # Setting type: String[]
+  // # Default value: []
+  "hotKeywords": [],
+
+  // ## "Be careful" keyword GROUPS by task type. Each match floors the task grade (and may flag the task
+  // ## `sensitive` = NEVER delegate-down, or `preserveVoice` = keep the deliverable on a strong model). The
+  // ## deterministic grader scans the prompt for these; difficulty always overrides size. This is the heart of
+  // ## topic-aware routing — add/remove a word or change a grade to tune how cautious CoalTipple is per domain.
+  // ## Ships POPULATED below (edit directly); set `keywords`: {} instead to fall back to the built-ins — which then track skill updates).
+  // ## Groups: concurrency · crypto · security · coding · audit · math · knowledge · domain · creative.
+  // ## To OVERRIDE one: your entry replaces that group's grade/words; omit a group to keep its shipped default.
+  // ## KEEP `crypto` at grade 5 + sensitive: that is the never-down safety gate.
+  // ##   e.g.  "keywords": { "crypto": { "grade": 5, "sensitive": true, "words": ["crypto", "nonce", "kdf"] } }
+  // # Setting type: Object { "<group>": { "grade": 1-5, "sensitive"?: bool, "preserveVoice"?: bool, "words": string[] } }
+  // # The value below is GENERATED from keywords.mjs (the SSoT) by build-plugin.mjs; verify.mjs fails on drift.
+// <coaltipple-shared: keywords>
+  "keywords": {
+    "concurrency": { "grade": 5, "words": ["concurrency", "mutex", "mutexes", "race condition", "deadlock", "deadlocks", "thread-saf*", "atomic"] },
+    "crypto": { "grade": 5, "sensitive": true, "words": ["crypto", "cryptograph*", "timing attack", "timing-attack", "constant-time", "constant time", "timing-safe", "side-channel", "encrypt*", "decrypt*"] },
+    "security": { "grade": 4, "sensitive": true, "words": ["oauth", "authenticat*", "authoriz*", "auth bypass", "sql injection", "access control", "permission*", "secret", "secrets", "token", "tokens", "password", "passwords", "session", "sessions"] },
+    "coding": { "grade": 4, "sensitive": true, "words": ["migrat*", "schema change", "payment", "payments", "billing", "rate limit", "optimize query"] },
+    "audit": { "grade": 4, "words": ["bug scan", "scan for bugs", "find bugs", "find all bugs", "security audit", "security review", "vulnerability scan", "audit the codebase", "code audit"] },
+    "math": { "grade": 5, "words": ["mathematical proof", "formal proof", "derive equation", "complexity bound"] },
+    "knowledge": { "grade": 3, "words": ["systematic review", "literature review", "citation", "claim verification"] },
+    "domain": { "grade": 4, "sensitive": true, "words": ["legal contract", "compliance", "license terms", "financial audit", "tax filing", "valuation", "medical diagnosis", "clinical diagnosis", "dosage", "clinical trial", "gdpr", "hipaa", "pii"] },
+    "creative": { "grade": 2, "preserveVoice": true, "words": ["brand voice", "tone of voice", "style guide"] }
+  },
+// </coaltipple-shared: keywords>
+
+  // ## Task domains never routed (always done in-session), or "all" to disable routing entirely.
+  // # Setting type: String[] (coding, text, math, research, all)
+  // # Default value: []
+  "disableRouting": [],
+
+  // ─── memory / context handoff (CoalHearth) ───
+
+  // ## Memory-anchor file(s) a fresh worker reads for project context + conventions (beyond the bare task contract) —
+  // ## any filename(s). Empty = rely on the platform's own memory (CLAUDE.md / AGENTS.md auto-loaded).
+  // # Setting type: String[] (comma-separated paths)
+  // # Default value: [] (follow the platform memory)
+  "contextFiles": [],
+
+  // ## When no memory anchor exists, whether to lazily offer (once, on a context-dependent delegation) to set one up.
+  // # Setting type: String (auto, off)
+  // # Default value: auto  (off = disabled/skipped; re-enable via /coaltipple memory)
+  "memoryOffer": "auto",
+
+  // ─── self-update (orthogonal to routing — its own off-switch) ───
+
+  // ## How CoalTipple keeps itself current. Silent by default until a check is due (every updateCheckDays).
+  // ## ask = on the first due session, ask ONCE how to handle updates (then save auto/remind/off); auto = the
+  // ## agent web-checks the latest CT tag vs the installed version and offers `claude plugin update` (standing
+  // ## consent — the only token spend, ~1-2K/check); remind = a free periodic reminder, you run the update;
+  // ## off = silent (no checks, no reminders). The HOOK never networks/spends — the version check lives only in
+  // ## the /coaltipple:update agent procedure. Independent of routing (enableRouting/mode); off here = the off-switch.
+  // # Setting type: String (ask, auto, remind, off)
+  // # Default value: ask
+  "updateMode": "ask",
+
+  // ## Days between self-update checks/reminders — the throttle window (a persistent stamp fires the nudge at
+  // ## most once per window, no re-nag). Pairs with updateMode (off = no checks regardless of this value).
+  // # Setting type: Integer (range 1-365)
+  // # Default value: 14
+  "updateCheckDays": 14,
+
+  // ─── recovery ───
+
+  // ## Use a git commit as an extra recovery boundary when inside a git repo.
+  // # Setting type: String (auto, on, off)
+  // # Default value: auto
+  "gitRecoveryBoundary": "auto"
+}

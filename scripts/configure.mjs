@@ -1,0 +1,351 @@
+#!/usr/bin/env node
+// CoalTipple configurator — edit .coaltipple.json from the command line.
+// Flags, parsing, validation, and help all come from one table
+// (scripts/lib/config-schema.mjs, shared with verify.mjs): a key added there is
+// automatically settable, validated, and documented here. Fail-loud CLI (not a
+// hook): a bad value exits non-zero and writes nothing.
+//
+// Unlike CoalMine's configurator (which writes plain JSON), this one PRESERVES
+// the factory comments: it rewrites only the changed value lines in place, so the
+// `## desc / # type / # default` docs survive. If the file is absent, it seeds
+// from platform-configs/.coaltipple.json first, then applies the edits.
+//
+// TWO-LEVEL CASCADE: by default it writes the GLOBAL config (~/.claude/.coaltipple.json)
+// = your defaults for ALL projects. Pass --project to write the per-project override
+// instead — that file is created ONLY when you use --project (no-clutter; a global
+// install never auto-creates it), at whichever agent-dir candidate config-load.mjs's
+// projectWriteTarget resolves to (own dir if nothing exists yet; the existing new-shape
+// location otherwise — see the move-on-write note below for what happens to a LEGACY
+// <gitroot>/.claude/.coaltipple.json or <gitroot>/.coaltipple.json that is found). Effective
+// precedence is project > global > schema default; `--list` shows that merged config.
+//   node scripts/configure.mjs --qualityBar 85 --mode delegation   # edits GLOBAL
+//   node scripts/configure.mjs --project --qualityBar 90            # edits THIS project
+//   node scripts/configure.mjs --sensitive auth,crypto,payments
+//   node scripts/configure.mjs --list      # show the merged effective config
+//   node scripts/configure.mjs --help
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { CONFIG_SCHEMA, validateValue } from './lib/config-schema.mjs';
+import { loadMergedConfig, globalConfigPath, projectConfigPath, projectWriteTarget, moveLegacyAside, writeConfigAtomic } from './lib/config-load.mjs';
+import { stripJsonc } from './lib/jsonc.mjs';
+import { escapeRegExp } from './lib/regex-escape.mjs';
+
+const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const factoryCfg = path.join(repo, 'platform-configs', '.coaltipple.json');
+
+// Namespace campaign (#69+#39): write-new-then-drop-old. Unlike CoalWash (no
+// project-config writer at all, read-only migration), CT DOES write per-project
+// config here -- so this is the room's real move-on-write implementation. Target
+// = the first candidate that already EXISTS among the new-shape dirs, else
+// own-dir. legacyToRemove fires WHENEVER the legacy file exists at write time --
+// not only in the legacy-only case: a shadowed legacy (new-shape AND legacy both
+// present, e.g. an interrupted prior migration) is just as much a leftover the
+// no-old-version-leftover rule bans (INSPECT Finding 5, 2026-08-08). One flag,
+// independent of which candidate is the actual write target.
+//
+// UMB-133: there are now TWO legacy shapes, and the target rule lives in ONE shared helper
+// (config-load.mjs projectWriteTarget, also used by install.mjs --reset). The old local copy
+// found "the" legacy as the LAST candidate by position, which a second trailing entry broke.
+// A legacy this run READ as the migration seed is removed (its contents now live in the
+// target); every other existing legacy was never opened, so it is MOVED ASIDE to
+// <path>.superseded, never deleted -- and every path removed or moved is named on stdout
+// (UMB-133 bounce 1, MEDIUM-1: the old code deleted an unread user file in silence).
+
+function printHelp() {
+  const lines = [
+    'CoalTipple Configurator Utility',
+    'Usage: node scripts/configure.mjs [--project] [options]',
+    '',
+    'Target (default = GLOBAL):',
+    '  (none)                                   Write the GLOBAL config ~/.claude/.coaltipple.json (your defaults for ALL projects)',
+    `  ${'--project, -p'.padEnd(40)} Write the per-project override instead (created only when used) -- <gitroot>/.claude/coal/coaltipple.json, or wherever the config already exists (see README Configure)`,
+    '',
+    'Options:',
+  ];
+  for (const spec of CONFIG_SCHEMA) {
+    const flags = [`--${spec.key}`, ...(spec.flags || [])].join(', ');
+    lines.push(`  ${flags.padEnd(40)} ${spec.help}`);
+  }
+  lines.push(`  ${'--list'.padEnd(40)} Show the merged effective config (project > global > default)`);
+  lines.push(`  ${'--help, -h'.padEnd(40)} Show this help message`);
+  lines.push('');
+  lines.push('Examples:');
+  lines.push('  node scripts/configure.mjs --qualityBar 85 --mode delegation   # edits the GLOBAL defaults');
+  lines.push('  node scripts/configure.mjs --project --qualityBar 90           # edits THIS project only');
+  lines.push('  node scripts/configure.mjs --sensitive auth,crypto,payments');
+  console.log(lines.join('\n'));
+}
+
+// CWK-120 ride-along (a) -- `JSON.parse(x) || {}` only substitutes {} for a FALSY
+// parse result (null/0/false/''); a truthy non-object (`[1,2]`, `"str"`, a bare
+// number) passed straight through as the "config", the same class config-load.mjs's
+// readJsonc already guards (isPlainObj). Reject it here too, at the CLI's own
+// fail-loud boundary, rather than letting a malformed-but-truthy file silently
+// become the effective config.
+function parseConfig(content) {
+  let c = content;
+  if (c.charCodeAt(0) === 0xFEFF) c = c.slice(1); // BOM-safe
+  const parsed = JSON.parse(stripJsonc(c));
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('config is valid JSON but not a JSON object');
+  }
+  return parsed;
+}
+
+// Parse one raw CLI value against a spec. Returns { value } or { error }.
+// `int` and `enum` reuse validateValue so the schema's own range/enum message is
+// the single source of truth for what is rejected.
+function parseValue(spec, raw) {
+  switch (spec.type) {
+    case 'bool': {
+      if (raw !== 'true' && raw !== 'false') return { error: `${spec.key} needs true or false` };
+      return { value: raw === 'true' };
+    }
+    case 'int': {
+      if (raw === undefined || raw.trim() === '' || !/^-?\d+$/.test(raw.trim())) {
+        return { error: `${spec.key} must be an integer` };
+      }
+      const n = parseInt(raw, 10);
+      const err = validateValue(spec, n);
+      return err ? { error: `${spec.key} ${err}` } : { value: n };
+    }
+    case 'enum': {
+      const v = (raw || '').toLowerCase();
+      const err = validateValue(spec, v);
+      return err ? { error: `${spec.key} ${err}` } : { value: v };
+    }
+    case 'strArr': {
+      if (raw === undefined) return { error: `${spec.key} needs a comma-separated value (pass "" to clear the list)` };
+      if (raw === '' || raw === '""') return { value: [] };
+      let items = raw.split(',').map((s) => s.trim()).filter(Boolean);
+      if (spec.lower) items = items.map((s) => s.toLowerCase());
+      return { value: items };
+    }
+    case 'obj':
+      return { error: `${spec.key} is not CLI-settable — edit .coaltipple.json directly` };
+    default:
+      return { error: `internal: unknown spec type '${spec.type}'` };
+  }
+}
+
+// Rewrite a single top-level "key": value line in the JSONC text, preserving the
+// leading indentation, the trailing comma, any trailing // comment, and every
+// comment around it. Returns the new text, or null if the key line is not present
+// (caller appends instead). Validates the result parses before returning so a
+// corrupt rewrite is caught before the caller writes to disk.
+function setKeyInText(text, key, jsonValue) {
+  // Match an active (non-commented) "key": ... line. The lazy suffix group captures
+  // everything after the colon-space up to the optional trailing whitespace at EOL.
+  // We then dissect the suffix ourselves to separate value / comma / comment so that:
+  //   - the trailing comma is PRESERVED AS-IS (never synthesised) — H1 fix
+  //   - any trailing // comment is preserved verbatim — M6 fix
+  const re = new RegExp(`^(\\s*"${escapeRegExp(key)}"\\s*:\\s*)([^\\n]*?)(\\s*)$`, 'm')
+  if (!re.test(text)) return null
+  const result = text.replace(re, (_m, head, suffix, tail) => {
+    // Walk the suffix char-by-char to find the first '//' outside a quoted string.
+    let commentPart = ''
+    let rest = suffix
+    let inStr = false
+    for (let ci = 0; ci < rest.length - 1; ci++) {
+      const ch = rest[ci]
+      if (inStr) {
+        if (ch === '\\') { ci++; continue } // skip escaped char
+        if (ch === '"') inStr = false
+      } else {
+        if (ch === '"') { inStr = true; continue }
+        if (ch === '/' && rest[ci + 1] === '/') {
+          commentPart = rest.slice(ci) // "// ..." to end of suffix
+          rest = rest.slice(0, ci)     // value[,][spaces]
+          break
+        }
+      }
+    }
+    // Extract the trailing comma and any spaces between the value/comma and the comment.
+    // `rest` at this point is everything before the '//' (e.g. '"auto", ' or '"on"').
+    // Trim trailing whitespace to isolate the structural content, then separate the comma.
+    const restTrimmed = rest.trimEnd()       // e.g. '"auto",' or '"on"'
+    const trailingSpaces = rest.slice(restTrimmed.length) // spaces before comment (e.g. ' ')
+    const trailingComma = restTrimmed.endsWith(',') ? ',' : '' // H1: preserve, never synthesise
+    return `${head}${jsonValue}${trailingComma}${trailingSpaces}${commentPart}${tail}`
+  })
+  // Validate the rewrite parses before the caller writes it to disk.
+  let check = result
+  if (check.charCodeAt(0) === 0xFEFF) check = check.slice(1)
+  JSON.parse(stripJsonc(check)) // throws if the rewrite corrupted the JSON
+  return result
+}
+
+// PR24 #2 -- locate the LAST '}' that is OUTSIDE any quoted string or JSONC comment: the
+// root object's own closing brace. A naive text.lastIndexOf('}') (the previous shape) can
+// select a brace inside a trailing line/block comment or inside a string value; the
+// append-new-key path below then inserts content into that comment/string and writes
+// malformed JSONC before parseConfig ever sees it again. Single left-to-right scan, the
+// same string/comment state machine setKeyInText's own suffix walker already uses,
+// generalized to the whole file. Because a JSONC config is one top-level object, the
+// LAST real '}' in the byte stream IS the root's own closer regardless of how many
+// nested objects it contains -- their own closers always come earlier in the stream.
+function findRootClose(text) {
+  let inStr = false, inLineComment = false, inBlockComment = false;
+  let lastClose = -1;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inLineComment) { if (ch === '\n') inLineComment = false; continue; }
+    if (inBlockComment) { if (ch === '*' && text[i + 1] === '/') { inBlockComment = false; i++; } continue; }
+    if (inStr) {
+      if (ch === '\\') { i++; continue; } // skip the escaped char
+      if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') { inStr = true; continue; }
+    if (ch === '/' && text[i + 1] === '/') { inLineComment = true; i++; continue; }
+    if (ch === '/' && text[i + 1] === '*') { inBlockComment = true; i++; continue; }
+    if (ch === '}') lastClose = i;
+  }
+  return lastClose;
+}
+
+function main() {
+  const args = process.argv.slice(2);
+  if (args.includes('--help') || args.includes('-h')) { printHelp(); return; }
+
+  // Target selection: GLOBAL by default; --project/-p writes the per-project override.
+  const toProject = args.includes('--project') || args.includes('-p');
+  const globalPath = globalConfigPath();
+  const projectReadPath = projectConfigPath(process.cwd()); // display/read target -- whichever candidate a READ would resolve
+  const writeTarget = projectWriteTarget(process.cwd());
+  const configPath = toProject ? writeTarget.target : globalPath;
+
+  // Pure --list (no setting flags): show the MERGED effective config and stop.
+  // --project may accompany --list (it has no effect on a read; both files merge).
+  const nonTargetArgs = args.filter((a) => a !== '--project' && a !== '-p');
+  if (nonTargetArgs.length === 0 || (nonTargetArgs.length === 1 && nonTargetArgs[0] === '--list')) {
+    let merged;
+    try { merged = loadMergedConfig(); } catch (e) {
+      console.error(`Error: cannot read config cascade: ${e.message}`); process.exitCode = 1; return;
+    }
+    const hasGlobal = fs.existsSync(globalPath), hasProject = fs.existsSync(projectReadPath);
+    if (!hasGlobal && !hasProject) {
+      console.log('No .coaltipple.json yet (global or project) — showing factory defaults:');
+      try { merged = parseConfig(fs.readFileSync(factoryCfg, 'utf8')); } catch {}
+    } else {
+      const sources = [hasGlobal ? `global ${globalPath}` : null, hasProject ? `project ${projectReadPath}` : null].filter(Boolean);
+      console.log(`Effective config (project > global; from ${sources.join(' + ')}):`);
+    }
+    console.log(JSON.stringify(merged, null, 2));
+    return;
+  }
+
+  // Flag lookup: --<key> plus every alias in the table.
+  const flagMap = new Map();
+  for (const spec of CONFIG_SCHEMA) {
+    flagMap.set(`--${spec.key}`, spec);
+    for (const f of spec.flags || []) flagMap.set(f, spec);
+  }
+
+  // Parse + validate EVERYTHING before writing — a single bad value writes nothing.
+  const edits = [];
+  let listAfter = false;
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--list') { listAfter = true; continue; }
+    if (args[i] === '--project' || args[i] === '-p') continue; // target flag, handled above
+    const spec = flagMap.get(args[i])
+    if (!spec) { console.error(`Error: Unrecognized option '${args[i]}'`); printHelp(); process.exitCode = 1; return; }
+    // Peek at the next token: consume it as the value only if it exists AND does not
+    // look like a flag (does not start with '-'). A flag-shaped next token means the
+    // user forgot the value — pass undefined so parseValue emits the "needs a value" error
+    // rather than silently swallowing the next flag as data (M7a fix).
+    const nextToken = args[i + 1]
+    const rawValue = (nextToken !== undefined && !nextToken.startsWith('-')) ? args[++i] : undefined
+    const parsed = parseValue(spec, rawValue)
+    if (parsed.error) { console.error(`Error: ${parsed.error}`); process.exitCode = 1; return; }
+    edits.push([spec.key, parsed.value]);
+  }
+  if (!edits.length) { console.error('Error: no settings given. Try --help.'); process.exitCode = 1; return; }
+
+  // Load the existing JSONC text, or seed it. Three cases: the target already
+  // exists (normal edit) -> read it. The target is absent but the LEGACY file
+  // holds the user's real config (move-on-write) -> seed from THAT, never from
+  // the factory template -- seeding from factory here silently replaced every
+  // customization with defaults, then deleted the only copy (Finding 1,
+  // INSPECT 2026-08-08: mode:"off" came back "auto", fableConsent's
+  // always-this-project record was destroyed). Neither exists (genuinely fresh
+  // project) -> seed from factory, unchanged from before.
+  let text;
+  let seededFrom = null; // the legacy file whose contents this run actually read into the target
+  try {
+    try {
+      text = fs.readFileSync(configPath, 'utf8');
+      parseConfig(text); // validate it parses before we touch it
+    } catch (readErr) {
+      if (readErr.code !== 'ENOENT') throw readErr; // real read/parse failure -> fail loud below
+      if (toProject && writeTarget.legacyToRemove) {
+        text = fs.readFileSync(writeTarget.legacyToRemove, 'utf8');
+        parseConfig(text); // same parse-before-touch guarantee as the normal path
+        seededFrom = writeTarget.legacyToRemove;
+        console.log(`Migrating ${writeTarget.legacyToRemove} -> ${configPath}, applying your edits.`);
+      } else {
+        text = fs.readFileSync(factoryCfg, 'utf8');
+        console.log(`No ${toProject ? 'project' : 'global'} config at ${configPath} — seeding from factory then applying your edits.`);
+      }
+    }
+  } catch (e) {
+    console.error(`Error: cannot read/parse config: ${e.message}`); process.exitCode = 1; return;
+  }
+  if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+
+  // Apply each edit in place (comment-preserving); append before the closing brace
+  // if a key is missing (e.g. an optional key the user never had).
+  for (const [key, value] of edits) {
+    const json = JSON.stringify(value);
+    const replaced = setKeyInText(text, key, json);
+    if (replaced !== null) { text = replaced; continue; }
+    const close = findRootClose(text);
+    if (close === -1) { console.error('Error: config has no closing brace.'); process.exitCode = 1; return; }
+    const before = text.slice(0, close).replace(/\s*$/, '');
+    const lastChar = before.slice(-1);
+    const needsComma = lastChar !== ',' && lastChar !== '{'; // a value precedes -> comma; empty object -> none
+    text = `${before}${needsComma ? ',' : ''}\n  "${key}": ${json}\n${text.slice(close)}`;
+  }
+
+  // PR24 #2 -- validate the COMPLETE edited text before writing anything. setKeyInText
+  // already validates its own rewrite in isolation; the append path above had no
+  // equivalent check of its own output, so a bug in findRootClose (or a future one)
+  // could still write corrupt JSONC to disk undetected.
+  try {
+    parseConfig(text);
+  } catch (e) {
+    console.error(`Error: the edited config would not parse: ${e.message}`); process.exitCode = 1; return;
+  }
+
+  try {
+    fs.mkdirSync(path.dirname(configPath), { recursive: true }); // global target: ensure ~/.claude exists
+    writeConfigAtomic(configPath, text);
+    // Move-on-write (namespace campaign #69+#39): the new file is written FIRST;
+    // only after that succeeds do we best-effort drop the legacy one -- a failed
+    // delete never undoes a successful write (CoalWash's writeUpdateStamp idiom).
+    if (toProject) {
+      for (const legacy of [writeTarget.legacyToRemove, ...writeTarget.legacyAlso]) {
+        if (!legacy) continue;
+        try {
+          if (legacy === seededFrom) {
+            fs.rmSync(legacy, { force: true }); // read + carried into the target -> genuinely superseded
+            console.log(`Removed ${legacy} (its contents were migrated into ${configPath}).`);
+          } else {
+            const to = moveLegacyAside(legacy); // never opened -> keep it, just stop it being a config path
+            console.log(`Moved ${legacy} -> ${to} (not read this run; it is no longer a config path and its contents are kept).`);
+          }
+        } catch (e) { console.warn(`  [warn] could not retire legacy ${legacy}: ${e.message}`); }
+      }
+    }
+    // Echo back the parsed effective config so the user sees the result.
+    const eff = parseConfig(text);
+    console.log(`Updated ${toProject ? 'project' : 'global'} config ${configPath}:`);
+    for (const [key] of edits) console.log(`  ${key} = ${JSON.stringify(eff[key])}`);
+    if (listAfter) console.log(JSON.stringify(loadMergedConfig(), null, 2));
+  } catch (e) {
+    console.error(`Error: failed to write config: ${e.message}`); process.exitCode = 1; return;
+  }
+}
+
+main();

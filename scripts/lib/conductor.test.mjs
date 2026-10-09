@@ -1,0 +1,763 @@
+// Hermetic spawn test for the conductor hook (hooks-safety section 7).
+// Spawns the REAL hook with fixture stdin in a sandbox cwd; asserts exit 0,
+// silence except sanctioned stdout, and the right state. Run: node --test conductor.test.mjs
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { projectConfigCandidates, projectConfigPath } from './config-load.mjs';
+const SPAWN_TIMEOUT_MS = 30000; // every test spawn is bounded (testing.md: a finite clock); icacls on a temp file (Windows only), normally well under 5 s
+
+const HOOK =path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'hooks', 'coaltipple-conductor.js');
+
+// `home` sandboxes the GLOBAL config layer: point USERPROFILE/HOME at a throwaway
+// dir so os.homedir() inside the hook resolves there, never the real machine.
+function run(input, cwd, home) {
+  const stdin = typeof input === 'string' ? input : JSON.stringify(input);
+  const env = { ...process.env };
+  if (home) { env.USERPROFILE = home; env.HOME = home; }
+  delete env.CLAUDE_CONFIG_DIR;
+  return spawnSync(process.execPath, [HOOK], { input: stdin, cwd, env, encoding: 'utf8', timeout: 20000 });
+}
+const mk = () => fs.mkdtempSync(path.join(os.tmpdir(), 'ct-hook-'));
+const mkHomeGlobal = (cfg) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-home-'));
+  fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+  fs.writeFileSync(path.join(home, '.claude', '.coaltipple.json'), JSON.stringify(cfg));
+  return home;
+};
+
+test('SessionStart -> injects the routing contract, exit 0, no stderr', () => {
+  const tmp = mk();
+  try {
+    // home := tmp (no .claude/.coaltipple.json there) -> isolates the GLOBAL layer.
+    const r = run({ hook_event_name: 'SessionStart' }, tmp, tmp);
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /\[CoalTipple\].*routing active/);
+    assert.equal(r.stderr, '');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
+test('SessionStart contract carries the deterministic multilingual sensitive-gate aid (covers Latin-script non-English too)', () => {
+  const tmp = mk();
+  try {
+    // H9: a Latin-script non-English (Spanish/French/German/…) sensitive prompt trips NEITHER
+    // an English keyword flag NOR the per-turn non-Latin-script nudge (its script is Latin, so
+    // hasNonLatinScript is false). The ONLY deterministic layer that can cover it is the always-
+    // emitted SessionStart contract, which must state the keyword hints are English-only and tell
+    // the model to grade sensitivity by MEANING in any language.
+    const r = run({ hook_event_name: 'SessionStart' }, tmp, tmp);
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /English-only fast-path/, 'contract states the keyword hints are English-only');
+    assert.match(r.stdout, /by MEANING in ANY language/, 'contract tells the model to grade sensitivity by meaning');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
+test('SessionStart honors cfg.language -> directive names the language + keeps the jargon rule', () => {
+  const tmp = mk();
+  try {
+    fs.mkdirSync(path.join(tmp, '.git'));
+    fs.mkdirSync(path.join(tmp, '.claude'), { recursive: true });
+    fs.writeFileSync(path.join(tmp, '.claude', '.coaltipple.json'), JSON.stringify({ language: 'th' }));
+    const r = run({ hook_event_name: 'SessionStart' }, tmp, tmp); // empty home -> no global layer
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /Respond to the user in Thai/);
+    assert.match(r.stdout, /NEVER translate technical terms/);
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
+test('config cascade: global-only language directive applies when no project file', () => {
+  const tmp = mk();
+  const home = mkHomeGlobal({ language: 'ja' });
+  try {
+    const r = run({ hook_event_name: 'SessionStart' }, tmp, home);
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /Respond to the user in Japanese/);
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); }
+});
+
+test('config cascade: project overrides global (project language wins the merge)', () => {
+  const tmp = mk();
+  const home = mkHomeGlobal({ language: 'ja' });
+  try {
+    fs.mkdirSync(path.join(tmp, '.git'));
+    fs.mkdirSync(path.join(tmp, '.claude'), { recursive: true });
+    fs.writeFileSync(path.join(tmp, '.claude', '.coaltipple.json'), JSON.stringify({ language: 'th' }));
+    const r = run({ hook_event_name: 'SessionStart' }, tmp, home);
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /Respond to the user in Thai/);
+    assert.doesNotMatch(r.stdout, /Japanese/);
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); }
+});
+
+test('config cascade: a backslash value + a //-containing string still parse (conductor #12 inline stripper)', () => {
+  const tmp = mk();
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-home-'));
+  fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+  // The CM #12 case in the conductor's INLINE stripper: a value ending in a literal
+  // backslash, plus a later string containing //. A non-string-aware stripper miscounts
+  // the string boundary, JSON.parse throws, the catch returns null, and the language
+  // directive silently reverts. The inline string-aware stripper must survive both.
+  const fileContent = [
+    '{',
+    '  "winPath": "C:\\\\",',
+    '  "url": "http://example.com",',
+    '  "language": "th"',
+    '}',
+  ].join('\n');
+  fs.writeFileSync(path.join(home, '.claude', '.coaltipple.json'), fileContent);
+  try {
+    const r = run({ hook_event_name: 'SessionStart' }, tmp, home);
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /Respond to the user in Thai/, 'config parsed despite the backslash + // (no silent revert)');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); }
+});
+
+test('config cascade: global enableRouting:false silences even with no project file', () => {
+  const tmp = mk();
+  const home = mkHomeGlobal({ enableRouting: false });
+  try {
+    const r = run({ hook_event_name: 'SessionStart' }, tmp, home);
+    assert.equal(r.status, 0);
+    assert.equal(r.stdout, '');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); }
+});
+
+test('UserPromptSubmit with a hot keyword -> grade-5 hint that feeds grade + qualityBar, cue appended (signal turn)', () => {
+  const tmp = mk();
+  try {
+    const r = run({ hook_event_name: 'UserPromptSubmit', prompt: 'fix the race condition in the mutex' }, tmp);
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /grade 5/);
+    assert.match(r.stdout, /qualityBar/);
+    assert.match(r.stdout, /ARBITRATE/, 'a hot-keyword hint is a signal turn -> the arbitration cue must be appended');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
+test('r35a R9: the arbitration cue HALTS unconditionally and names no absent plugin as leader', () => {
+  const tmp = mk();
+  try {
+    const r = run({ hook_event_name: 'UserPromptSubmit', prompt: 'fix the auth token check' }, tmp);
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /HALT and ask the user before acting, always/, 'stakes work must always halt, sibling present or not');
+    assert.match(r.stdout, /a plugin that is not present leads nothing/, 'a CoalTipple-only user must never be told an absent plugin leads');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
+test('r35a R9: the OLD unconditional "CoalBoard leads" / "-> CoalBoard" wording is gone', () => {
+  const tmp = mk();
+  try {
+    const r = run({ hook_event_name: 'UserPromptSubmit', prompt: 'fix the auth token check' }, tmp);
+    assert.equal(r.status, 0);
+    assert.doesNotMatch(r.stdout, /Stakes -> CoalBoard leads/, 'the unconditional leader clause must not survive the wording fix');
+    assert.doesNotMatch(r.stdout, /undecidable -> CoalBoard\./, 'undecidable now maps to stakes, not to naming CoalBoard directly');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
+test('r35a R9: the emitted cue matches the head-authored sentence BYTE FOR BYTE (pinned reference for CoalBoard\'s own conformance)', () => {
+  const tmp = mk();
+  try {
+    const r = run({ hook_event_name: 'UserPromptSubmit', prompt: 'fix the auth token check' }, tmp);
+    assert.equal(r.status, 0);
+    const marker = ' Triage (binds even when only ONE hook fired):';
+    const idx = r.stdout.indexOf(marker);
+    assert.notEqual(idx, -1, 'the cue must be present on this signal turn');
+    const cue = r.stdout.slice(idx);
+    const expected = ' Triage (binds even when only ONE hook fired): STAKES = your Layer-2 verdict that the TASK is stakes-domain work (security · crypto · migration · money); fired keywords of any vocabulary are Layer-1 evidence only, never the verdict, and a Layer-2 acquittal STANDS -- no keyword re-arms it. Stakes -> HALT and ask the user before acting, always; if CoalBoard is present this session (its hook fired or its skill is listed) it leads and CoalTipple, if present, is its tier-lever -- a plugin that is not present leads nothing. No stakes: CoalTipple, if present, leads only if the WORK\'s OWN size/complexity calls for delegate-down or escalate-up -- a fired grade is evidence, never the verdict -- else neither. Layer 2 genuinely undecidable -> treat it as stakes. Both conductors fired -> ARBITRATE silently by this same rule: act on one, never surface it.';
+    assert.equal(cue, expected, 'the emitted cue must match the head-authored sentence byte for byte -- CoalBoard conforms to this exact text second');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
+test('UserPromptSubmit on a signal-free turn -> the lean one-liner, no complexity hint, no arbitration cue (HOOK-LEAN)', () => {
+  const tmp = mk();
+  try {
+    const r = run({ hook_event_name: 'UserPromptSubmit', prompt: 'list the readme files' }, tmp, tmp);
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /^\[CoalTipple\] Route this turn per the resident routing contract\.$/);
+    assert.doesNotMatch(r.stdout, /Complexity hint/);
+    assert.doesNotMatch(r.stdout, /ARBITRATE/, 'no hint and no non-Latin signal -> nothing for CoalBoard to arbitrate, cue stays out');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
+test('UserPromptSubmit honors enableRouting:false -> fully silent (the always-on forcer respects the off switch)', () => {
+  const tmp = mk();
+  try {
+    fs.mkdirSync(path.join(tmp, '.git'));
+    fs.mkdirSync(path.join(tmp, '.claude'), { recursive: true });
+    fs.writeFileSync(path.join(tmp, '.claude', '.coaltipple.json'), JSON.stringify({ enableRouting: false }));
+    const r = run({ hook_event_name: 'UserPromptSubmit', prompt: 'fix the race condition in the mutex' }, tmp, tmp);
+    assert.equal(r.status, 0);
+    assert.equal(r.stdout, '');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
+test('UserPromptSubmit: a non-English (Thai) prompt injects the generic non-English nudge + the arbitration cue (signal turn)', () => {
+  const tmp = mk();
+  try {
+    // Thai for "scan for bugs in this code" — matches NO English keyword, so the
+    // deterministic sensitive-gate backstop would vanish without this nudge.
+    const r = run({ hook_event_name: 'UserPromptSubmit', prompt: 'สแกนหาบั๊กในโค้ดนี้' }, tmp, tmp);
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /Route this turn per the resident routing contract/); // the lean one-liner still fires
+    assert.match(r.stdout, /Non-English prompt/);            // + the generic non-English nudge
+    assert.match(r.stdout, /grade by MEANING/);
+    assert.match(r.stdout, /ARBITRATE/, 'non-Latin script is a signal turn -> the arbitration cue must be appended');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
+test('UserPromptSubmit: a plain English prompt does NOT get the non-English nudge or the arbitration cue (no false trigger on typographic punctuation)', () => {
+  const tmp = mk();
+  try {
+    // Em-dash + smart quotes are English typography (General Punctuation block) -> excluded.
+    const r = run({ hook_event_name: 'UserPromptSubmit', prompt: 'refactor the parser — keep it “clean”' }, tmp, tmp);
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /Route this turn per the resident routing contract/);
+    assert.doesNotMatch(r.stdout, /Non-English prompt/);
+    assert.doesNotMatch(r.stdout, /ARBITRATE/, 'no hint and no non-Latin signal -> cue stays out');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
+test('mode:"off" short-circuits the forcer (UserPromptSubmit fully silent — routing is off)', () => {
+  const tmp = mk();
+  try {
+    fs.mkdirSync(path.join(tmp, '.git'));
+    fs.mkdirSync(path.join(tmp, '.claude'), { recursive: true });
+    fs.writeFileSync(path.join(tmp, '.claude', '.coaltipple.json'), JSON.stringify({ mode: 'off' }));
+    const r = run({ hook_event_name: 'UserPromptSubmit', prompt: 'fix the race condition in the mutex' }, tmp, tmp);
+    assert.equal(r.status, 0);
+    assert.equal(r.stdout, '', 'mode:"off" silences the forcer like enableRouting:false');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
+test('mode:"off" also silences the SessionStart contract', () => {
+  const tmp = mk();
+  try {
+    fs.mkdirSync(path.join(tmp, '.git'));
+    fs.mkdirSync(path.join(tmp, '.claude'), { recursive: true });
+    fs.writeFileSync(path.join(tmp, '.claude', '.coaltipple.json'), JSON.stringify({ mode: 'off' }));
+    const r = run({ hook_event_name: 'SessionStart' }, tmp, tmp);
+    assert.equal(r.status, 0);
+    assert.equal(r.stdout, '');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
+test('mode:"auto" (default direction) still injects the forcer — only "off" silences', () => {
+  const tmp = mk();
+  try {
+    fs.mkdirSync(path.join(tmp, '.git'));
+    fs.mkdirSync(path.join(tmp, '.claude'), { recursive: true });
+    fs.writeFileSync(path.join(tmp, '.claude', '.coaltipple.json'), JSON.stringify({ mode: 'auto' }));
+    const r = run({ hook_event_name: 'UserPromptSubmit', prompt: 'list files' }, tmp, tmp);
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /Route this turn per the resident routing contract/);
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
+test('enableRouting:false (project) -> fully silent', () => {
+  const tmp = mk();
+  try {
+    fs.mkdirSync(path.join(tmp, '.git'));
+    fs.mkdirSync(path.join(tmp, '.claude'), { recursive: true });
+    fs.writeFileSync(path.join(tmp, '.claude', '.coaltipple.json'), JSON.stringify({ enableRouting: false }));
+    const r = run({ hook_event_name: 'SessionStart' }, tmp, tmp); // empty home -> no global layer
+    assert.equal(r.status, 0);
+    assert.equal(r.stdout, '');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
+test('safer-value-wins (hooks-safety.md §9): a project cannot escalate mode from a global off to auto -- routing stays OFF', () => {
+  const tmp = mk();
+  const home = mkHomeGlobal({ mode: 'off' });
+  try {
+    fs.mkdirSync(path.join(tmp, '.git'));
+    fs.mkdirSync(path.join(tmp, '.claude'), { recursive: true });
+    fs.writeFileSync(path.join(tmp, '.claude', '.coaltipple.json'), JSON.stringify({ mode: 'auto' }));
+    const r = run({ hook_event_name: 'SessionStart' }, tmp, home);
+    assert.equal(r.status, 0);
+    assert.equal(r.stdout, '', 'a cloned-repo project config cannot silently re-enable routing the user turned off globally');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); }
+});
+
+test('safer-value-wins: a project MAY quieten mode from a global auto to off (the allowed direction, still fully silent)', () => {
+  const tmp = mk();
+  const home = mkHomeGlobal({ mode: 'auto' });
+  try {
+    fs.mkdirSync(path.join(tmp, '.git'));
+    fs.mkdirSync(path.join(tmp, '.claude'), { recursive: true });
+    fs.writeFileSync(path.join(tmp, '.claude', '.coaltipple.json'), JSON.stringify({ mode: 'off' }));
+    const r = run({ hook_event_name: 'SessionStart' }, tmp, home);
+    assert.equal(r.status, 0);
+    assert.equal(r.stdout, '', 'a project-level quieten is honored');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); }
+});
+
+test('a poisoned project config (__proto__/constructor/prototype) does not crash the hook and the real key alongside it still merges', () => {
+  const tmp = mk();
+  const home = mkHomeGlobal({ language: 'ja' });
+  try {
+    fs.mkdirSync(path.join(tmp, '.git'));
+    fs.mkdirSync(path.join(tmp, '.claude'), { recursive: true });
+    fs.writeFileSync(path.join(tmp, '.claude', '.coaltipple.json'), '{"__proto__":{"polluted":true},"constructor":{"x":1},"prototype":{"y":2},"language":"th"}');
+    const r = run({ hook_event_name: 'SessionStart' }, tmp, home);
+    assert.equal(r.status, 0);
+    assert.equal(r.stderr, '');
+    assert.match(r.stdout, /Respond to the user in Thai/, 'the real project language key still merges despite the poisoned keys alongside it');
+    assert.doesNotMatch(r.stdout, /Japanese/);
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); }
+});
+
+test('garbage stdin -> exit 0, no crash, no stderr (fail-silent)', () => {
+  const tmp = mk();
+  try {
+    const r = run('not json at all', tmp);
+    assert.equal(r.status, 0);
+    assert.equal(r.stderr, '');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
+test('valid-but-non-object stdin (null / number / array) -> exit 0, no crash, defaults to the contract (C6 guard)', () => {
+  const tmp = mk();
+  try {
+    // Valid JSON that is NOT a plain object. Before the C6 guard, `input` became
+    // null/42/[] and `input.hook_event_name` was a null-deref (Phoenix-caught, but the
+    // contract was then silently skipped). After the guard, input falls back to {} ->
+    // event '' -> the non-prompt SessionStart branch injects the contract. No crash.
+    for (const payload of ['null', '42', '[1,2,3]']) {
+      const r = run(payload, tmp, tmp); // home := tmp -> no global config layer
+      assert.equal(r.status, 0, `exit 0 for stdin ${payload}`);
+      assert.equal(r.stderr, '', `no stderr for stdin ${payload}`);
+      assert.match(r.stdout, /\[CoalTipple\]/, `contract injected (input fell back to {}) for stdin ${payload}`);
+    }
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
+// ---------------------------------------------------------------------------
+// UMB-133 -- the config-path unification (holes 1 + 2). The hook is the SHIPPED walk copy
+// (Phoenix #9: inlined, never imports scripts/), so everything here spawns the REAL hook.
+// Cleanup is registered the line after allocation (scripts-quality.md section 2).
+// ---------------------------------------------------------------------------
+const CANON = '.claude/coal/coaltipple.json';
+// A git-anchored project holding exactly `files` ({ relPosixPath: object|string }) + a sandboxed HOME
+// (optionally holding a GLOBAL config). Both registered for cleanup immediately.
+function proj(t, files, globalCfg) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-umb133-'));
+  const home = globalCfg ? mkHomeGlobal(globalCfg) : fs.mkdtempSync(path.join(os.tmpdir(), 'ct-umb133-home-'));
+  t.after(() => { fs.rmSync(dir, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); });
+  fs.mkdirSync(path.join(dir, '.git'));
+  for (const [rel, body] of Object.entries(files)) {
+    const abs = path.join(dir, ...rel.split('/'));
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.writeFileSync(abs, typeof body === 'string' ? body : JSON.stringify(body), 'utf8');
+  }
+  return { dir, home };
+}
+const session = ({ dir, home }, cwd = dir) => run({ hook_event_name: 'SessionStart' }, cwd, home);
+const lines = (stdout, tag) => stdout.split('\n').filter((l) => l.startsWith(`[CoalTipple] ${tag}:`));
+
+test('UMB-133 legacy hit: <gitroot>/.coaltipple.json (LEGACY-2) is READ and emits ONE migration line naming what was read and the canonical path', (t) => {
+  const p = proj(t, { '.coaltipple.json': { language: 'th' } });
+  const r = session(p);
+  assert.equal(r.status, 0); assert.equal(r.stderr, '');
+  assert.match(r.stdout, /Respond to the user in Thai/, 'the root file is actually READ (the incident: it never was)');
+  const notice = lines(r.stdout, 'LEGACY');
+  assert.equal(notice.length, 1, `exactly one LEGACY line, got: ${JSON.stringify(notice)}`);
+  assert.match(notice[0], /\.coaltipple\.json/, 'names the path that was read');
+  assert.ok(notice[0].includes(CANON), 'names the canonical path to move it to');
+  assert.equal(lines(r.stdout, 'IGNORED').length, 0, 'a candidate is never reported as IGNORED');
+});
+
+test('UMB-133 legacy hit: .claude/.coaltipple.json (LEGACY-1) also emits the migration line', (t) => {
+  const p = proj(t, { '.claude/.coaltipple.json': { language: 'ja' } });
+  const r = session(p);
+  assert.equal(r.status, 0); assert.equal(r.stderr, '');
+  assert.match(r.stdout, /Respond to the user in Japanese/);
+  const notice = lines(r.stdout, 'LEGACY');
+  assert.equal(notice.length, 1);
+  assert.ok(notice[0].includes('.claude/.coaltipple.json') && notice[0].includes(CANON));
+});
+
+test('UMB-133 canonical hit emits NO notice of any kind', (t) => {
+  const p = proj(t, { [CANON]: { language: 'zh' } });
+  const r = session(p);
+  assert.equal(r.status, 0); assert.equal(r.stderr, '');
+  assert.match(r.stdout, /Respond to the user in Chinese/, 'positive state effect: the canonical config was read');
+  assert.equal(lines(r.stdout, 'LEGACY').length + lines(r.stdout, 'IGNORED').length, 0);
+});
+
+test('UMB-133 no project config at all emits NO notice (nothing to migrate, nothing ignored)', (t) => {
+  const p = proj(t, {});
+  const r = session(p);
+  assert.equal(r.status, 0);
+  assert.match(r.stdout, /\[CoalTipple\] Model\/effort routing active/);
+  assert.equal(lines(r.stdout, 'LEGACY').length + lines(r.stdout, 'IGNORED').length, 0);
+});
+
+// The fixed probe list, spelled out LITERALLY here (never derived from the hook) so a probe
+// silently dropped from the hook goes red. Each is a plausible near-miss of the canonical path.
+// <gitroot>/.coaltipple.json is deliberately ABSENT: after hole (2) it is a candidate.
+const NON_CANDIDATES = [
+  'coaltipple.json',
+  'coal/coaltipple.json',
+  '.claude/coaltipple.json',
+  '.claude/coal/.coaltipple.json',
+  '.agents/coaltipple.json',
+  '.agents/.coaltipple.json',
+  '.agents/coal/.coaltipple.json',
+  '.gemini/coaltipple.json',
+  '.gemini/.coaltipple.json',
+  '.gemini/coal/.coaltipple.json',
+];
+for (const rel of NON_CANDIDATES) {
+  test(`UMB-133 IGNORED: a config at the non-candidate path ${rel} is REPORTED, never silently walked past (and never applied)`, (t) => {
+    const p = proj(t, { [rel]: { language: 'th' } });
+    const r = session(p);
+    assert.equal(r.status, 0); assert.equal(r.stderr, '');
+    assert.ok(r.stdout.includes(`[CoalTipple] IGNORED: ${rel} is not a config path; canonical = ${CANON}`), `IGNORED line for ${rel} missing:\n${r.stdout}`);
+    assert.doesNotMatch(r.stdout, /Respond to the user in Thai/, 'a non-candidate file is reported, NOT read');
+  });
+}
+
+test('UMB-133 IGNORED reports EVERY non-candidate hit, not just the first', (t) => {
+  const p = proj(t, { 'coaltipple.json': {}, '.claude/coaltipple.json': {}, '.gemini/.coaltipple.json': {} });
+  const r = session(p);
+  const ignored = lines(r.stdout, 'IGNORED');
+  assert.equal(ignored.length, 3, `expected 3 IGNORED lines, got ${JSON.stringify(ignored)}`);
+});
+
+test('UMB-133 IGNORED co-exists with a real canonical config: the real one is read, the stray one is named', (t) => {
+  const p = proj(t, { [CANON]: { language: 'zh' }, '.claude/coaltipple.json': { language: 'th' } });
+  const r = session(p);
+  assert.match(r.stdout, /Respond to the user in Chinese/);
+  assert.doesNotMatch(r.stdout, /Respond to the user in Thai/);
+  assert.equal(lines(r.stdout, 'IGNORED').length, 1);
+  assert.equal(lines(r.stdout, 'LEGACY').length, 0);
+});
+
+test('UMB-133 the probe is anchored at the GIT ROOT, not the cwd: a subdir session still sees the root legacy and the root near-miss', (t) => {
+  const p = proj(t, { '.coaltipple.json': { language: 'th' }, 'coal/coaltipple.json': {} });
+  const sub = path.join(p.dir, 'src', 'deep');
+  fs.mkdirSync(sub, { recursive: true });
+  const r = session(p, sub);
+  assert.equal(r.status, 0);
+  assert.match(r.stdout, /Respond to the user in Thai/);
+  assert.equal(lines(r.stdout, 'LEGACY').length, 1);
+  assert.equal(lines(r.stdout, 'IGNORED').length, 1);
+});
+
+test('UMB-133 channel: the notice is SessionStart-only -- the per-prompt UserPromptSubmit forcer never carries it', (t) => {
+  const p = proj(t, { '.coaltipple.json': { language: 'th' }, 'coaltipple.json': {} });
+  const r = run({ hook_event_name: 'UserPromptSubmit', prompt: 'hello' }, p.dir, p.home);
+  assert.equal(r.status, 0); assert.equal(r.stderr, '');
+  assert.match(r.stdout, /^\[CoalTipple\] Route this turn per the resident routing contract\./, 'the forcer still fires (positive effect)');
+  assert.doesNotMatch(r.stdout, /LEGACY:|IGNORED:/);
+});
+
+test('UMB-133 the off-switch stays ABSOLUTE: routing off -> silence, even with a legacy hit and a stray non-candidate (named residual, not a regression)', (t) => {
+  const p = proj(t, { '.coaltipple.json': { mode: 'off' }, 'coaltipple.json': {} });
+  const r = session(p);
+  assert.equal(r.status, 0); assert.equal(r.stderr, '');
+  assert.equal(r.stdout, '', 'a user who silenced the conductor is not re-armed by this unit');
+  // control: same project WITHOUT mode:off DOES speak, so the silence above is the switch and not a broken probe
+  const c = proj(t, { '.coaltipple.json': { language: 'th' }, 'coaltipple.json': {} });
+  assert.match(session(c).stdout, /LEGACY:/);
+});
+
+test('UMB-133 clamp-unchanged (hooks-safety section 9): a root-legacy updateMode:auto cannot escalate past a global updateMode:off', (t) => {
+  const p = proj(t, { '.coaltipple.json': { updateMode: 'auto', language: 'th' } }, { updateMode: 'off' });
+  const r = session(p);
+  assert.equal(r.status, 0); assert.equal(r.stderr, '');
+  assert.match(r.stdout, /Respond to the user in Thai/, 'proves the root legacy WAS read (a non-clamped key from the same file lands)');
+  assert.doesNotMatch(r.stdout, /self-update/, 'the escalation to auto was clamped to the global off -> no self-update directive');
+  assert.equal(lines(r.stdout, 'LEGACY').length, 1);
+});
+
+// The two walk copies (this hook, config-load.mjs) must agree on WHICH FILE WINS -- not just on the
+// presence of two path segments. Each candidate carries a DISTINCT language; for every pair the
+// hook must read the earlier candidate's language, and config-load must resolve the same file.
+const LANG_OF = ['th', 'ja', 'zh', 'es', 'en'];
+const LANG_NAME_OF = { th: 'Thai', ja: 'Japanese', zh: 'Chinese', es: 'Spanish', en: 'English' };
+test('UMB-133 walk equivalence: for EVERY candidate alone and EVERY pair of the five, the hook reads the SAME winner config-load resolves', (t) => {
+  const p = proj(t, {});
+  const cands = projectConfigCandidates(p.dir);
+  assert.equal(cands.length, 5, 'canonical x3 + LEGACY-1 + LEGACY-2');
+  // Singles FIRST: a pair never exposes a candidate MISSING from the hook's walk when it is the
+  // LATER of the two (the earlier one just wins) -- only "this file alone" does.
+  for (let k = 0; k < cands.length; k++) {
+    fs.mkdirSync(path.dirname(cands[k]), { recursive: true });
+    fs.writeFileSync(cands[k], JSON.stringify({ language: LANG_OF[k] }), 'utf8');
+    assert.equal(projectConfigPath(p.dir), cands[k], `config-load resolves candidate ${k} alone`);
+    assert.match(session(p).stdout, new RegExp(`Respond to the user in ${LANG_NAME_OF[LANG_OF[k]]}`), `hook must read candidate ${k} (${path.relative(p.dir, cands[k])}) alone`);
+    fs.rmSync(cands[k], { force: true });
+  }
+  for (let i = 0; i < cands.length; i++) {
+    for (let j = i + 1; j < cands.length; j++) {
+      for (const k of [i, j]) { fs.mkdirSync(path.dirname(cands[k]), { recursive: true }); fs.writeFileSync(cands[k], JSON.stringify({ language: LANG_OF[k] }), 'utf8'); }
+      assert.equal(projectConfigPath(p.dir), cands[i], `config-load: candidate ${i} beats ${j}`);
+      const r = session(p);
+      assert.match(r.stdout, new RegExp(`Respond to the user in ${LANG_NAME_OF[LANG_OF[i]]}`), `hook: candidate ${i} (${path.relative(p.dir, cands[i])}) must beat ${j}`);
+      for (const k of [i, j]) fs.rmSync(cands[k], { force: true });
+    }
+  }
+});
+
+// ---------------------------------------------------------------------------
+// BOUNCE 1-3 / UMB-174(b) -- an EXISTING config that could not be turned into a
+// config (malformed JSON / a directory / unreadable / not a JSON object) is now
+// NAMED with its reason, never silently treated the same as an absent file. Each
+// test targets the CANONICAL path (CANON) so the UNREADABLE branch fires rather
+// than the LEGACY one -- the precedence between them is covered separately below.
+// ---------------------------------------------------------------------------
+// BOUNCE 2 (B2-1) -- ONE FLOCK ONE COLOR: the UNREADABLE string is byte-exact across every
+// room (source of truth: scratchpad/dispatch/umb174-room.md "The string -- ONE wording,
+// every room verbatim"; exemplar already shipped: CoalFace hooks/coalface-conductor.js).
+// This asserts the FULL line, not a substring match, so a stray hyphen-vs-em-dash or a
+// reworded canonical clause fails loud instead of passing on a loose .includes() check.
+test('UMB-174(b) UNREADABLE: malformed JSON at the winning candidate matches the flock string BYTE-EXACT (em dash included)', (t) => {
+  const p = proj(t, { [CANON]: '{ this is not json' });
+  const r = session(p);
+  assert.equal(r.status, 0); assert.equal(r.stderr, '');
+  const notice = lines(r.stdout, 'UNREADABLE');
+  assert.equal(notice.length, 1, `expected one UNREADABLE line, got: ${JSON.stringify(notice)}`);
+  assert.equal(notice[0], `[CoalTipple] UNREADABLE: ${CANON} exists but is not a readable config (malformed JSON); it was skipped — canonical = ${CANON}`);
+});
+
+test('UMB-174(b) UNREADABLE: the winning candidate path is a DIRECTORY (EISDIR), never crashes the hook', (t) => {
+  const p = proj(t, {});
+  const target = path.join(p.dir, ...CANON.split('/'));
+  fs.mkdirSync(target, { recursive: true });
+  const r = session(p);
+  assert.equal(r.status, 0); assert.equal(r.stderr, '');
+  const notice = lines(r.stdout, 'UNREADABLE');
+  assert.equal(notice.length, 1);
+  assert.ok(notice[0].includes('a directory'), notice[0]);
+});
+
+test('UMB-174(b) UNREADABLE: a valid JSON value that is NOT an object (an array) is named, never silently adopted', (t) => {
+  const p = proj(t, { [CANON]: '[1,2,3]' });
+  const r = session(p);
+  assert.equal(r.status, 0); assert.equal(r.stderr, '');
+  const notice = lines(r.stdout, 'UNREADABLE');
+  assert.equal(notice.length, 1);
+  assert.ok(notice[0].includes('not a JSON object'), notice[0]);
+});
+
+// EACCES/EPERM: capability-probed, visible skip when this box/user cannot produce a
+// genuinely unreadable file (Windows chmod does not gate reads the way POSIX mode bits
+// do -- confirmed by probing rather than assumed, per this room's own symlink-testing
+// convention for a platform capability that a `process.platform` guess would get wrong
+// in both directions).
+test('UMB-174(b) UNREADABLE: an existing file this process cannot read (EACCES/EPERM) is named, never silently treated as absent', (t) => {
+  const p = proj(t, { [CANON]: { mode: 'auto' } });
+  const target = path.join(p.dir, ...CANON.split('/'));
+  let capable;
+  try {
+    fs.chmodSync(target, 0o000);
+    try { fs.readFileSync(target, 'utf8'); capable = false; }
+    catch (e) { capable = e.code === 'EACCES' || e.code === 'EPERM'; }
+  } catch { capable = false; }
+  if (!capable) {
+    try { fs.chmodSync(target, 0o644); } catch {}
+    t.skip('cannot simulate an unreadable file on this box/user (chmod does not gate reads here) -- capability-gated, not asserting a false pass');
+    return;
+  }
+  try {
+    const r = session(p);
+    assert.equal(r.status, 0); assert.equal(r.stderr, '');
+    const notice = lines(r.stdout, 'UNREADABLE');
+    assert.equal(notice.length, 1);
+    assert.ok(notice[0].includes('unreadable'), notice[0]);
+  } finally {
+    try { fs.chmodSync(target, 0o644); } catch {} // restore so proj()'s cleanup can remove it
+  }
+});
+
+// LOW-4 findings-back (INSPECT) -- the EACCES/EPERM test above proves only the POSIX
+// chmod-0o000 half (this box's own probe skips visibly on Windows, since chmod does not
+// gate reads the way POSIX mode bits do). The Windows ACL form -- `icacls <path> /deny
+// <user>:(R)`, which the reviewer proved by hand produces EPERM -- had no automated
+// coverage at all. Capability-probed with a visible skip, same convention as the test
+// above: an elevated/owner/TrustedInstaller context can bypass a deny ACE entirely, so this
+// never assumes the deny succeeded -- it PROVES readFileSync actually throws EPERM before
+// trusting the rest of the test.
+test('UMB-174(b) UNREADABLE: a file whose Windows ACL denies Read to this user (EPERM) is named, never silently treated as absent', (t) => {
+  if (process.platform !== 'win32') { t.skip('the Windows ACL (EPERM) form only applies on win32 -- covered by the chmod/EACCES test above on POSIX'); return; }
+  const p = proj(t, { [CANON]: { mode: 'auto' } });
+  const target = path.join(p.dir, ...CANON.split('/'));
+  const user = process.env.USERNAME || process.env.USER;
+  let capable = false;
+  if (user) {
+    const deny = spawnSync('icacls', [target, '/deny', `${user}:(R)`], { encoding: 'utf8', timeout: SPAWN_TIMEOUT_MS });
+    if (deny.status === 0) {
+      try { fs.readFileSync(target, 'utf8'); capable = false; }
+      catch (e) { capable = e.code === 'EPERM'; }
+    }
+  }
+  if (!capable) {
+    if (user) spawnSync('icacls', [target, '/reset'], { encoding: 'utf8', timeout: SPAWN_TIMEOUT_MS });
+    t.skip('cannot simulate an EPERM-denied file via icacls on this box/user (no icacls, or the deny ACE was bypassed -- an elevated/owner context can do this) -- capability-gated, not asserting a false pass');
+    return;
+  }
+  try {
+    const r = session(p);
+    assert.equal(r.status, 0); assert.equal(r.stderr, '');
+    const notice = lines(r.stdout, 'UNREADABLE');
+    assert.equal(notice.length, 1);
+    assert.ok(notice[0].includes('unreadable'), notice[0]);
+  } finally {
+    spawnSync('icacls', [target, '/reset'], { encoding: 'utf8', timeout: SPAWN_TIMEOUT_MS });
+  }
+});
+
+test('UMB-174(b) a BOM-prefixed VALID config is READ and applied, never reported as unreadable -- U+FEFF is stripped before classification', (t) => {
+  const p = proj(t, { [CANON]: '﻿' + JSON.stringify({ language: 'th' }) });
+  const r = session(p);
+  assert.equal(r.status, 0); assert.equal(r.stderr, '');
+  assert.match(r.stdout, /Respond to the user in Thai/, 'the BOM-prefixed file must actually be READ and applied, not merely tolerated');
+  assert.equal(lines(r.stdout, 'UNREADABLE').length, 0, 'a valid BOM-prefixed object is never reported as unreadable');
+});
+
+test('UMB-174(b) UNREADABLE takes precedence over LEGACY: a broken LEGACY-shape file is named as unreadable, never claimed to have been "read"', (t) => {
+  const p = proj(t, { '.coaltipple.json': '{ this is not json' }); // LEGACY-2, deliberately malformed
+  const r = session(p);
+  assert.equal(r.status, 0); assert.equal(r.stderr, '');
+  const unreadable = lines(r.stdout, 'UNREADABLE');
+  assert.equal(unreadable.length, 1, `expected one UNREADABLE line, got: ${JSON.stringify(unreadable)}`);
+  assert.ok(unreadable[0].includes('.coaltipple.json') && unreadable[0].includes('malformed JSON'), unreadable[0]);
+  assert.equal(lines(r.stdout, 'LEGACY').length, 0, 'a file that failed to parse was never actually "read" -- the LEGACY line must not also claim it was');
+});
+
+// BOUNCE 2 (B2-1) shipped the project-relative canonical = ${CANON} for the global line too and
+// returned the tension (a global config has no project location to move to) to main as an open
+// flock question. CWK-135 (a), R14: main ruled it -- the line names the path of the TIER that
+// failed. The PROJECT tier keeps the verbatim flock string; the GLOBAL tier names the global
+// file's OWN path (CLAUDE_CONFIG_DIR-aware), because a global config has no project location
+// to move to and a user-facing failure states what to do next.
+test('CWK-135(a) the GLOBAL config is reported too, independently of the project side, and its line names the GLOBAL file\'s own path (not the project-relative canonical)', (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-umb174-globalbad-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-umb174-proj-'));
+  t.after(() => { fs.rmSync(home, { recursive: true, force: true }); fs.rmSync(dir, { recursive: true, force: true }); });
+  fs.mkdirSync(path.join(dir, '.git'));
+  fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+  const globalPath = path.join(home, '.claude', '.coaltipple.json');
+  fs.writeFileSync(globalPath, '[1,2,3]', 'utf8'); // not a JSON object
+  const r = run({ hook_event_name: 'SessionStart' }, dir, home);
+  assert.equal(r.status, 0); assert.equal(r.stderr, '');
+  const notice = lines(r.stdout, 'UNREADABLE');
+  assert.equal(notice.length, 1, `expected one UNREADABLE line for the global config, got: ${JSON.stringify(notice)}`);
+  assert.equal(notice[0], `[CoalTipple] UNREADABLE: ${globalPath} exists but is not a readable config (not a JSON object); it was skipped — canonical = ${globalPath}`);
+  assert.ok(!notice[0].includes(CANON), 'the global tier must not point the user at the PROJECT-relative path');
+});
+
+test('CWK-135(a) with CLAUDE_CONFIG_DIR set, the global line names THAT dir\'s file (the path the hook really read), and the project line is unchanged', (t) => {
+  const cfgDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-cwk135-cfgdir-'));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-cwk135-home-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-cwk135-proj-'));
+  t.after(() => { for (const d of [cfgDir, home, dir]) fs.rmSync(d, { recursive: true, force: true }); });
+  fs.mkdirSync(path.join(dir, '.git'));
+  const globalPath = path.join(cfgDir, '.coaltipple.json');
+  fs.writeFileSync(globalPath, '{ bad', 'utf8');
+  const canonAbs = path.join(dir, ...CANON.split('/'));
+  fs.mkdirSync(path.dirname(canonAbs), { recursive: true });
+  fs.writeFileSync(canonAbs, '[1,2,3]', 'utf8');
+  const env = { ...process.env, USERPROFILE: home, HOME: home, CLAUDE_CONFIG_DIR: cfgDir };
+  const r = spawnSync(process.execPath, [HOOK], { input: JSON.stringify({ hook_event_name: 'SessionStart' }), cwd: dir, env, encoding: 'utf8', timeout: 20000 });
+  assert.equal(r.status, 0); assert.equal(r.stderr, '');
+  const notice = lines(r.stdout, 'UNREADABLE');
+  assert.equal(notice.length, 2, `expected two UNREADABLE lines, got: ${JSON.stringify(notice)}`);
+  assert.ok(notice.includes(`[CoalTipple] UNREADABLE: ${globalPath} exists but is not a readable config (malformed JSON); it was skipped — canonical = ${globalPath}`), `global line: ${JSON.stringify(notice)}`);
+  assert.ok(notice.includes(`[CoalTipple] UNREADABLE: ${CANON} exists but is not a readable config (not a JSON object); it was skipped — canonical = ${CANON}`), `project line keeps the verbatim flock string: ${JSON.stringify(notice)}`);
+});
+
+test('UMB-174(b) global and project UNREADABLE co-exist: both files broken at once are BOTH named, neither masks the other', (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-umb174-both-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-umb174-both-proj-'));
+  t.after(() => { fs.rmSync(home, { recursive: true, force: true }); fs.rmSync(dir, { recursive: true, force: true }); });
+  fs.mkdirSync(path.join(dir, '.git'));
+  fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+  fs.writeFileSync(path.join(home, '.claude', '.coaltipple.json'), '{ bad', 'utf8');
+  const canonAbs = path.join(dir, ...CANON.split('/'));
+  fs.mkdirSync(path.dirname(canonAbs), { recursive: true });
+  fs.writeFileSync(canonAbs, '[1,2,3]', 'utf8');
+  const r = run({ hook_event_name: 'SessionStart' }, dir, home);
+  assert.equal(r.status, 0); assert.equal(r.stderr, '');
+  const notice = lines(r.stdout, 'UNREADABLE');
+  assert.equal(notice.length, 2, `expected two UNREADABLE lines, got: ${JSON.stringify(notice)}`);
+});
+
+// ---------------------------------------------------------------------------
+// R14 -- the CB-R1 class check (CWK-141 (1) shape; CoalBoard 0a4163b is the exemplar). Inside the
+// safety clamp an UNKNOWN project value (not in the key's enum, or not even a string) must read as
+// ABSENT -- the effective global wins -- never win through the shallow merge, and nothing but the
+// enum literal is ever printed. The old `if (gi === -1 || pi === -1) continue` left the raw junk as
+// the merged value, so a cloned repo's junk beat a global off. Fixtures: a sandboxed HOME (the
+// global tier) + a git-anchored project under os.tmpdir(), never the real config.
+// ---------------------------------------------------------------------------
+const SELF_UPDATE = /CoalTipple self-update/;
+const stampOf = (home) => path.join(home, '.claude', 'coal', 'coaltipple', 'update-check');
+const JUNK = ['junk', 'definitely-not-a-mode', 5, null, ['off'], {}, ''];
+
+test('CB-R1 class: a JUNK project updateMode under a global off reads as ABSENT -- the global off wins, no self-update line, no stamp, no junk echoed', (t) => {
+  for (const junk of JUNK) {
+    const p = proj(t, { [CANON]: { updateMode: junk } }, { updateMode: 'off' });
+    const r = session(p);
+    assert.equal(r.status, 0); assert.equal(r.stderr, '');
+    assert.ok(!SELF_UPDATE.test(r.stdout), `project updateMode ${JSON.stringify(junk)} beat the global off: ${JSON.stringify(r.stdout.slice(-300))}`);
+    assert.equal(fs.existsSync(stampOf(p.home)), false, `no throttle stamp is written when the effective mode is off (junk ${JSON.stringify(junk)})`);
+    if (typeof junk === 'string' && junk) assert.ok(!r.stdout.includes(junk), 'attacker text is never echoed');
+  }
+});
+
+test('CB-R1 class: a JUNK project mode under a global off reads as ABSENT -- routing stays OFF (the hook is silent)', (t) => {
+  for (const junk of JUNK) {
+    const p = proj(t, { [CANON]: { mode: junk } }, { mode: 'off' });
+    const r = session(p);
+    assert.equal(r.status, 0); assert.equal(r.stderr, '');
+    assert.equal(r.stdout, '', `project mode ${JSON.stringify(junk)} re-armed routing under a global off`);
+  }
+});
+
+test('CB-R1 class: a JUNK GLOBAL updateMode reads as the SCHEMA DEFAULT (ask) -- a project auto may not escalate past it', (t) => {
+  const p = proj(t, { [CANON]: { updateMode: 'auto' } }, { updateMode: 'of' }); // a typo'd global
+  const r = session(p);
+  assert.equal(r.status, 0); assert.equal(r.stderr, '');
+  assert.match(r.stdout, /ask the user ONCE/, 'the effective mode is the factory ask');
+  assert.ok(!/standing consent/.test(r.stdout), 'a typo in the global file must not hand a cloned repo standing auto consent');
+});
+
+test('CB-R1 class: quietening still works through the unknown-value handling (case-folded remind under a global ask; off under a global ask)', (t) => {
+  const a = proj(t, { [CANON]: { updateMode: 'REMIND' } }, { updateMode: 'ask' });
+  const ra = session(a);
+  assert.match(ra.stdout, /CoalTipple self-update reminder/, 'a project REMIND (case-folded) is the allowed quieter direction');
+  const b = proj(t, { [CANON]: { updateMode: 'off' } }, { updateMode: 'ask' });
+  assert.ok(!SELF_UPDATE.test(session(b).stdout), 'a project off is always allowed');
+});
+
+// CWK-135 (b), R14 -- measured: the shipped strings that name a sibling plugin are (1) the CWK-022
+// authority sentence, which stays BYTE-FOR-BYTE; (2) the Consent line's fan-out pointer, which now
+// carries CWK-111 R9's conditional wording (a plugin that is not present decides nothing); (3) the
+// double-hook cue (already conditional since v1.5.6, pinned by the cue tests above).
+test('CWK-135(b) the CWK-022 authority sentence is byte-for-byte; the fan-out pointer is conditional on CoalFace being present', () => {
+  const tmp = mk();
+  try {
+    const r = run({ hook_event_name: 'SessionStart' }, tmp, tmp);
+    assert.equal(r.status, 0);
+    assert.ok(r.stdout.includes("Spawn/fan-out discipline is CoalFace's authority, not this contract's."), 'CWK-022 authority sentence, byte-for-byte');
+    assert.ok(r.stdout.includes("Whether/how to fan out costly work is not this contract's: if CoalFace is present this session (its hook fired or its skill is listed) it is CoalFace's call; a plugin that is not present decides nothing."), 'the fan-out pointer carries the conditional wording');
+    assert.ok(!r.stdout.includes("is CoalFace's call, not this contract's."), 'the old unconditional pointer is gone');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
+// MARK 5 (CWK-143 = CWK-181 (b); UMB-316's rule: the bare alias, no version pin): the SessionStart contract
+// names no retired or versioned model id -- a version in emitted text rots at the next generation.
+test('MARK 5: the emitted routing contract names no versioned model id (bare aliases only)', () => {
+  const tmp = mk();
+  try {
+    const r = run({ hook_event_name: 'SessionStart' }, tmp, tmp);
+    assert.equal(r.status, 0);
+    const hit = r.stdout.match(/(opus|sonnet|haiku|fable)[ -]?\d+(?:[.-]\d+)*|claude-[a-z]+-\d[\w-]*/i);
+    assert.equal(hit, null, `a versioned model id leaked into the emitted contract: ${hit && hit[0]}`);
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
