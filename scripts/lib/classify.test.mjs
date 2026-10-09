@@ -327,15 +327,16 @@ test('fable consent: a reasoning route lands on fable -> ASK; on `no`, the cap i
 
 // MARK 5 (Event 5 run 2, CWK-143 = CWK-181 (b)) -- product hygiene, NO re-grade. The ranking is the UNIVERSAL
 // config (the alias floor haiku<sonnet<opus<fable plus the user's own pins, degrade-safe on unknown ids). This
-// pins that the CURRENT generation's exact ids (model landscape 2026-10-02, models-overview.md: Fable 5.1, Opus 5.5,
-// Sonnet 5.5, Haiku 4.5) classify safely when a user pins them behind the aliases: a family token is found by
+// pins that the CURRENT generation's exact ids (model landscape 2026-10-08, models-overview.md: Fable 5.1, Opus 5.5,
+// Sonnet 5.5, Haiku 5.5; the `haiku` alias is Haiku 5.5 on the Anthropic API and still Haiku 4.5 on Bedrock, Google
+// Cloud, Foundry and the Claude Platform on AWS, so BOTH Haiku generations are covered) classify safely when a user pins them behind the aliases: a family token is found by
 // substring, so a dated or versioned id lands on the same rung its alias holds, a known-weaker id never satisfies a
 // sensitive floor, fable stays the consent-ask trigger, and an id of a family not yet known stays trusted.
-const GEN = { fable: 'claude-fable-5-1', opus: 'claude-opus-5-5', sonnet: 'claude-sonnet-5-5', haiku: 'claude-haiku-4-5-20251001' };
+const GEN = { fable: 'claude-fable-5-1', opus: 'claude-opus-5-5', sonnet: 'claude-sonnet-5-5', haiku: 'claude-haiku-5-5', haiku45: 'claude-haiku-4-5-20251001' };
 
 test('MARK 5: the current generation\'s exact ids classify behind the aliases -- fable is the consent trigger, none of the others is', () => {
   assert.equal(isFableModel(GEN.fable), true);
-  for (const m of [GEN.opus, GEN.sonnet, GEN.haiku, 'claude-haiku-4-5']) assert.equal(isFableModel(m), false, m);
+  for (const m of [GEN.opus, GEN.sonnet, GEN.haiku, GEN.haiku45, 'claude-haiku-4-5']) assert.equal(isFableModel(m), false, m);
 });
 
 test('MARK 5: pinned current ids behind each alias -- a sensitive route accepts opus-5-5 at a heavy floor and fable-5-1 at the top, and SKIPS a known-weaker id slotted above its rung', () => {
@@ -345,10 +346,23 @@ test('MARK 5: pinned current ids behind each alias -- a sensitive route accepts 
   // opus-5-5 pinned as the ONLY reasoning model is a known-weaker family for the reasoning floor -> never-down: hand back, never downgrade
   const opusAtTop = { tiers: { low: [GEN.haiku], mid: [GEN.sonnet], heavy: [GEN.opus], reasoning: [GEN.opus] } };
   assert.equal(resolveWorker(opusAtTop, 'reasoning', { sensitive: true, floorTier: 'reasoning' }), null, 'opus-5-5 does not satisfy the reasoning floor');
-  // sonnet-5-5 / haiku-4-5 slotted into heavy do not satisfy a heavy floor
-  for (const weak of [GEN.sonnet, GEN.haiku]) {
+  // sonnet-5-5 / haiku-5-5 / haiku-4-5 slotted into heavy do not satisfy a heavy floor
+  for (const weak of [GEN.sonnet, GEN.haiku, GEN.haiku45]) {
     const poisoned = { tiers: { low: [GEN.haiku], mid: [GEN.sonnet], heavy: [weak], reasoning: [GEN.fable] } };
     assert.equal(resolveWorker(poisoned, 'heavy', { sensitive: true, floorTier: 'heavy' }), null, `${weak} in heavy`);
+  }
+});
+
+test('MARK 5: a haiku id (5.5 or 4.5) pinned in low resolves there, and a known-weaker id (either haiku, or sonnet) pinned above its rung never satisfies a sensitive floor', () => {
+  for (const h of [GEN.haiku, GEN.haiku45]) {
+    const r = buildFloorRanking([], { low: [h] });
+    assert.deepEqual(r.tiers.low, [h, 'haiku'], `${h} pinned in low sits before the alias floor`);
+    assert.deepEqual(resolveWorker(r, 'low'), { tier: 'low', model: h }, `${h} resolves at the low rung`);
+  }
+  // only these legs are family-sensitive (a pin is prepended whatever its name): a known-weaker id in reasoning is skipped
+  for (const weak of [GEN.haiku, GEN.haiku45, GEN.sonnet]) {
+    const above = buildFloorRanking([], { reasoning: [weak] });
+    assert.deepEqual(resolveWorker(above, 'reasoning', { sensitive: true }), { tier: 'reasoning', model: 'fable' }, `${weak} in reasoning is skipped for a sensitive route`);
   }
 });
 

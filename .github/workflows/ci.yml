@@ -139,7 +139,7 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
         node: [22, 24]  # supported LTS only (24 Active, 22 Maintenance); 18/20 are EOL — bump as the Node LTS schedule moves
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 10 # basis (CWK-154, 2026-10-02, REST, last 8 successful runs per leg): slowest leg windows 0.8 min, macos 0.3, ubuntu 0.2; ~12x the max
+    timeout-minutes: 10 # basis (re-measured 2026-10-09, REST, run 37928363807 at 02b8c20, the first run with every file in the wave runner): slowest leg macos node 22 1.63 min (test step 86 s), windows node 22 1.48, ubuntu node 22 1.23, macos node 24 1.27, windows node 24 1.12, ubuntu node 24 0.92; 10 min is ~6.1x the max and the runner is gone by 8 min at its own backstop (scripts/lib/test-suite.mjs); the serial plan read 1.15 min and ~8.7x on 2026-10-08
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

@@ -9,6 +9,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { projectConfigCandidates, projectConfigPath } from './config-load.mjs';
+const SPAWN_TIMEOUT_MS = 30000; // every test spawn is bounded (testing.md: a finite clock); icacls on a temp file (Windows only), normally well under 5 s
 
 const HOOK =path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'hooks', 'coaltipple-conductor.js');
 
@@ -588,14 +589,14 @@ test('UMB-174(b) UNREADABLE: a file whose Windows ACL denies Read to this user (
   const user = process.env.USERNAME || process.env.USER;
   let capable = false;
   if (user) {
-    const deny = spawnSync('icacls', [target, '/deny', `${user}:(R)`], { encoding: 'utf8' });
+    const deny = spawnSync('icacls', [target, '/deny', `${user}:(R)`], { encoding: 'utf8', timeout: SPAWN_TIMEOUT_MS });
     if (deny.status === 0) {
       try { fs.readFileSync(target, 'utf8'); capable = false; }
       catch (e) { capable = e.code === 'EPERM'; }
     }
   }
   if (!capable) {
-    if (user) spawnSync('icacls', [target, '/reset'], { encoding: 'utf8' });
+    if (user) spawnSync('icacls', [target, '/reset'], { encoding: 'utf8', timeout: SPAWN_TIMEOUT_MS });
     t.skip('cannot simulate an EPERM-denied file via icacls on this box/user (no icacls, or the deny ACE was bypassed -- an elevated/owner context can do this) -- capability-gated, not asserting a false pass');
     return;
   }
@@ -606,7 +607,7 @@ test('UMB-174(b) UNREADABLE: a file whose Windows ACL denies Read to this user (
     assert.equal(notice.length, 1);
     assert.ok(notice[0].includes('unreadable'), notice[0]);
   } finally {
-    spawnSync('icacls', [target, '/reset'], { encoding: 'utf8' });
+    spawnSync('icacls', [target, '/reset'], { encoding: 'utf8', timeout: SPAWN_TIMEOUT_MS });
   }
 });
 

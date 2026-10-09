@@ -23,11 +23,11 @@ Keep the verification gates green before and after making edits:
 node scripts/build-plugin.mjs   # re-sync the conductor from keywords.mjs (the SSoT)
 node scripts/build-dist.mjs     # compile plugin/ from source
 node scripts/verify.mjs         # validates config schemas, plugins, and SSoT sync
-node scripts/test.mjs           # runs the zero-dependency test runner (node --test)
+node scripts/test.mjs           # runs the zero-dependency test suite: the canon wave runner over node --test, each file judged by its TAP
 node scripts/secret-gate.mjs    # the house secret scan of the tracked tree (the git hooks run it first)
 ```
 
-The pre-commit and pre-push hooks run the secret scan, then `verify.mjs`, then `test.mjs`. The secret-scan, secret-gate, release-notes and release-shape scripts (and their tests) are kept byte-identical to the canon in `TheColliery/.github`, so change them there, not here. Commit with `git add <paths>` then `git commit -F <file>`, never `git commit -a` or a pathspec commit.
+The pre-commit and pre-push hooks run the secret scan, then `verify.mjs`, then `test.mjs`. The secret scanner and its test (`scripts/lib/secret-scan.mjs`, `scripts/secret-scan.test.mjs`) are copied byte for byte from the org's scan source, which the org tooling's `scanner-parity.mjs` measures; the secret gate, the hooks, the release-notes and release-shape scripts (and their tests), the wave runner that `scripts/test.mjs` drives through `scripts/lib/test-suite.mjs` (`scripts/lib/wave-run.mjs`, its test, `stdout-sync.mjs` and `machine-reading.mjs`), the git-spawn census (`scripts/lib/git-env-census.mjs`, its test and its vectors) and the `create-release` workflow come from the canon in `TheColliery/.github`. Each is changed at its source, never here. A file that differs from its template, whether it leads, trails or is held, shows as DIFFERS in the CoalTipple rows of `node <.github repo>/scripts/skeleton-check.mjs`, and a file the git-spawn census exempts is named with its reason in `CENSUS_PINS` in `scripts/lib/git-env-pins.mjs` (the census itself, `scripts/lib/git-env-census.mjs`, is the canon's and is never edited here). Commit with `git add <paths>` then `git commit -F <file>`, never `git commit -a` or a pathspec commit.
 
 ### Development Rules
 * **`keywords.mjs` is the Single Source of Truth:** Edit keywords there, run `node scripts/build-plugin.mjs` to re-sync the conductor, then `node scripts/build-dist.mjs` to compile the distribution. Do not hand-edit hooks directly.

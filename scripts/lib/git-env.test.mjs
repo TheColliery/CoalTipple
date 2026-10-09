@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { gitEnv } from './git-env.mjs';
+const SPAWN_TIMEOUT_MS = 30000; // every test spawn is bounded (testing.md: a finite clock); local git on a fixture repo, normally well under 5 s
 
 test('gitEnv: strips every GIT_-prefixed key, whatever the name', () => {
   const saved = { ...process.env };
@@ -80,9 +81,9 @@ function mkIncident(t) {
   // spawns included, not only the deliberately-poisoned one -- routes through gitEnv(),
   // never bare process.env. Run from a real linked worktree's pre-commit hook (which already
   // exports a poisoned GIT_DIR), an unguarded spawn here would hit the REAL enclosing repo.
-  const init = spawnSync('git', ['init', '-q', '.'], { cwd: poisonedRepo, encoding: 'utf8', env: gitEnv(root) });
+  const init = spawnSync('git', ['init', '-q', '.'], { cwd: poisonedRepo, encoding: 'utf8', timeout: SPAWN_TIMEOUT_MS, env: gitEnv(root) });
   assert.equal(init.status, 0, `setup: poisonedRepo must init cleanly -- ${init.stderr}`);
-  const bareOf = () => spawnSync('git', ['config', '--get', 'core.bare'], { cwd: poisonedRepo, encoding: 'utf8', env: gitEnv(root) }).stdout.trim();
+  const bareOf = () => spawnSync('git', ['config', '--get', 'core.bare'], { cwd: poisonedRepo, encoding: 'utf8', timeout: SPAWN_TIMEOUT_MS, env: gitEnv(root) }).stdout.trim();
   assert.equal(bareOf(), 'false', 'setup: an ordinary git init starts non-bare');
   // Built from gitEnv() plus the ONE planted GIT_DIR, never a raw `{...process.env}` spread
   // (INSPECT HIGH-1): an ambient GIT_* leftover from a real wrapping hook must not compound
@@ -93,17 +94,17 @@ function mkIncident(t) {
 
 test('gitEnv: an unguarded git init under an ambient poisoned GIT_DIR is REDIRECTED away from its own directory (holds on every platform)', (t) => {
   const { fixtureDir, poisonedEnv } = mkIncident(t);
-  const badInit = spawnSync('git', ['init', '-q', '.'], { cwd: fixtureDir, encoding: 'utf8', env: poisonedEnv });
+  const badInit = spawnSync('git', ['init', '-q', '.'], { cwd: fixtureDir, encoding: 'utf8', timeout: SPAWN_TIMEOUT_MS, env: poisonedEnv });
   assert.equal(badInit.status, 0, `the poisoned init itself must succeed for this to be the real hazard -- ${badInit.stderr}`);
   assert.equal(fs.existsSync(path.join(fixtureDir, '.git')), false, 'the poisoned run never created the FIXTURE its caller asked for');
 });
 
 test('gitEnv: the CoalFace signature -- an unguarded poisoned git init flips the unrelated repo to bare -- reproduces where this git/platform does it', (t) => {
   const { fixtureDir, poisonedEnv, bareOf } = mkIncident(t);
-  spawnSync('git', ['init', '-q', '.'], { cwd: fixtureDir, encoding: 'utf8', env: poisonedEnv });
+  spawnSync('git', ['init', '-q', '.'], { cwd: fixtureDir, encoding: 'utf8', timeout: SPAWN_TIMEOUT_MS, env: poisonedEnv });
   const bareAfterPoison = bareOf();
   if (bareAfterPoison !== 'true') {
-    const ver = spawnSync('git', ['--version'], { encoding: 'utf8', env: gitEnv(fixtureDir) }).stdout.trim();
+    const ver = spawnSync('git', ['--version'], { encoding: 'utf8', timeout: SPAWN_TIMEOUT_MS, env: gitEnv(fixtureDir) }).stdout.trim();
     t.skip(`the bare-flip does not occur on ${process.platform} with ${ver} (GIT_DIR=${poisonedEnv.GIT_DIR}); measured: it needs a native backslash GIT_DIR under Git for Windows -- capability-gated, the redirect and containment legs still run`);
     return;
   }
@@ -119,7 +120,7 @@ test('gitEnv: with gitEnv() applied the SAME ambient poisoning is contained -- t
     process.env.GIT_DIR = path.join(poisonedRepo, '.git');
     const guardedEnv = gitEnv(path.dirname(fixtureDir));
     assert.equal(guardedEnv.GIT_DIR, undefined, 'gitEnv() must have stripped the poisoned GIT_DIR before this assertion even runs');
-    const goodInit = spawnSync('git', ['init', '-q', '.'], { cwd: fixtureDir, encoding: 'utf8', env: guardedEnv });
+    const goodInit = spawnSync('git', ['init', '-q', '.'], { cwd: fixtureDir, encoding: 'utf8', timeout: SPAWN_TIMEOUT_MS, env: guardedEnv });
     assert.equal(goodInit.status, 0, `the guarded init must succeed -- ${goodInit.stderr}`);
     assert.equal(fs.existsSync(path.join(fixtureDir, '.git')), true, 'the guarded run creates the FIXTURE its caller actually asked for');
     assert.equal(bareOf(), 'false', 'the poisoned repo is left exactly as it was -- non-bare');

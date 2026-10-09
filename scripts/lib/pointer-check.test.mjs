@@ -21,6 +21,7 @@ import {
   collectSurfaces,
 } from './pointer-check.mjs';
 import { gitEnv } from './git-env.mjs';
+const SPAWN_TIMEOUT_MS = 30000; // every test spawn is bounded (testing.md: a finite clock); local git check-ignore, normally well under 5 s
 
 // CWK-133/C-4 -- the three REAL-git-process tests below query THIS repo's own tracked
 // .gitignore via process.cwd() (no fixture dir; MEMORY.md/scripts/verify.mjs are the real
@@ -477,7 +478,7 @@ test('checkPointers: FIX 2 fallback also binds the gitignored-root branch (a rel
 // re-derive rather than trust a number carried in from elsewhere, per this room's own rail).
 
 test('classifyCheckIgnoreResult: a REAL git check-ignore --stdin exit 0 (something matched) is ok, stdout carries the match', () => {
-  const ci = spawnSync('git', ['check-ignore', '--stdin'], { encoding: 'utf8', input: 'MEMORY.md\n', env: PC_TEST_GIT_ENV });
+  const ci = spawnSync('git', ['check-ignore', '--stdin'], { encoding: 'utf8', timeout: SPAWN_TIMEOUT_MS, input: 'MEMORY.md\n', env: PC_TEST_GIT_ENV });
   assert.equal(ci.status, 0, `fixture assumption broken -- MEMORY.md must be gitignored here, got status ${ci.status}`);
   const verdict = classifyCheckIgnoreResult(ci);
   assert.equal(verdict.ok, true);
@@ -485,7 +486,7 @@ test('classifyCheckIgnoreResult: a REAL git check-ignore --stdin exit 0 (somethi
 });
 
 test('classifyCheckIgnoreResult: a REAL git check-ignore --stdin exit 1 (nothing matched) is ALSO ok, per the exit-code semantics comment', () => {
-  const ci = spawnSync('git', ['check-ignore', '--stdin'], { encoding: 'utf8', input: 'scripts/verify.mjs\n', env: PC_TEST_GIT_ENV });
+  const ci = spawnSync('git', ['check-ignore', '--stdin'], { encoding: 'utf8', timeout: SPAWN_TIMEOUT_MS, input: 'scripts/verify.mjs\n', env: PC_TEST_GIT_ENV });
   assert.equal(ci.status, 1, `fixture assumption broken -- scripts/verify.mjs must NOT be gitignored here, got status ${ci.status}`);
   const verdict = classifyCheckIgnoreResult(ci);
   assert.equal(verdict.ok, true);
@@ -503,7 +504,7 @@ test('classifyCheckIgnoreResult: a REAL git check-ignore --stdin exit other than
   // once on ubuntu node 22 (the other 7 legs passed). Stdin is irrelevant to this branch, so
   // it is not supplied and the exit is deterministic. The two tests above KEEP `input`: git
   // reads it there.
-  const ci = spawnSync('git', ['check-ignore', '--stdin', '--bogus-flag-xyz'], { encoding: 'utf8', env: { ...PC_TEST_GIT_ENV, LC_ALL: 'C' } });
+  const ci = spawnSync('git', ['check-ignore', '--stdin', '--bogus-flag-xyz'], { encoding: 'utf8', timeout: SPAWN_TIMEOUT_MS, env: { ...PC_TEST_GIT_ENV, LC_ALL: 'C' } });
   assert.notEqual(ci.status, 0, `fixture assumption broken -- expected a non-0/1 exit, got ${ci.status}`);
   assert.notEqual(ci.status, 1, `fixture assumption broken -- expected a non-0/1 exit, got ${ci.status}`);
   const verdict = classifyCheckIgnoreResult(ci);
