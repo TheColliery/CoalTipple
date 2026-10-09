@@ -5,9 +5,13 @@
 //     the directory form is unreliable on Node 24 (MODULE_NOT_FOUND);
 //   on-disk-but-unlisted — an orphan *.test.mjs would silently never run.
 // Run by pre-commit / pre-push alongside verify.mjs. Fail-loud CLI (not a hook).
+//
+// 09a: the files run through the canon wave runner (scripts/lib/wave-run.mjs, adopted by blob id; the glue and the numbers are scripts/lib/test-suite.mjs), one
+// `node --test --test-force-exit` child per file under the heap cap, the clock per test/file, the wall clock per file and the whole-run deadline that kills the child TREE.
+// A hung run therefore ends, and ends with a named line: `FAIL <file>: ...` from the runner, `FAIL test runner: ...` when the runner itself fails. The suite is judged by
+// what the TAP says: a file that exits 0 before its tests registered is VACUOUS and the run is red (testing.md, the TAP-names MUST).
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -41,27 +45,46 @@ const TESTS = [
   'scripts/verify-release-shape.test.mjs',
   'scripts/lib/release-shape.test.mjs',
   'scripts/lib/regex-escape.test.mjs',
-  'scripts/lib/test-spawn.test.mjs',
+  'scripts/lib/wave-run.test.mjs',
+  'scripts/lib/test-suite.test.mjs',
 ];
 
-const missing = TESTS.filter((t) => !fs.existsSync(path.join(repo, t)));
-if (missing.length) {
-  console.error(`test runner: ${missing.length} listed test file(s) MISSING — ${missing.join(', ')}`);
-  process.exit(1);
+// The one file that runs ALONE, after the wave, with the runner's preload stripped (scripts/lib/test-suite.mjs, runSolo: a courier finding against the canon test).
+const SOLO = ['scripts/lib/wave-run.test.mjs'];
+
+async function main() {
+  const missing = TESTS.filter((t) => !fs.existsSync(path.join(repo, t)));
+  if (missing.length) {
+    console.error(`test runner: ${missing.length} listed test file(s) MISSING — ${missing.join(', ')}`);
+    process.exitCode = 1;
+    return;
+  }
+
+  const onDisk = [];
+  for (const dir of ['scripts', 'scripts/lib']) {
+    for (const f of fs.readdirSync(path.join(repo, dir))) if (f.endsWith('.test.mjs')) onDisk.push(`${dir}/${f}`);
+  }
+  const orphans = onDisk.filter((f) => !TESTS.includes(f));
+  if (orphans.length) {
+    console.error(`test runner: ${orphans.length} on-disk test(s) NOT in the suite — ${orphans.join(', ')}. Add to scripts/test.mjs.`);
+    process.exitCode = 1;
+    return;
+  }
+
+  // node/runtime.md section 1: the room's own lib is imported inside main, so a missing file is a clean named line and a red exit, never a link-time stack.
+  let suite;
+  try {
+    suite = await import(pathToFileURL(path.join(repo, 'scripts', 'lib', 'test-suite.mjs')).href);
+  } catch (e) {
+    console.log(`FAIL test runner: cannot load scripts/lib/test-suite.mjs (${e && e.code ? e.code : e.message}) -- restore it from git; the suite is not run without it`);
+    process.exitCode = 1;
+    return;
+  }
+  const { code } = await suite.runSuite({ repo, tests: TESTS.filter((f) => !SOLO.includes(f)), solo: SOLO });
+  process.exitCode = code;
 }
 
-const onDisk = [];
-for (const dir of ['scripts', 'scripts/lib']) {
-  for (const f of fs.readdirSync(path.join(repo, dir))) if (f.endsWith('.test.mjs')) onDisk.push(`${dir}/${f}`);
-}
-const orphans = onDisk.filter((f) => !TESTS.includes(f));
-if (orphans.length) {
-  console.error(`test runner: ${orphans.length} on-disk test(s) NOT in the suite — ${orphans.join(', ')}. Add to scripts/test.mjs.`);
-  process.exit(1);
-}
-
-// Heap cap in the child ENV + serial files (CWK-199's class): the plan lives in a lib so a test can read it.
-const { testSpawnPlan } = await import(pathToFileURL(path.join(repo, 'scripts', 'lib', 'test-spawn.mjs')).href);
-const plan = testSpawnPlan(TESTS, process.env);
-const r = spawnSync(process.execPath, plan.args, { cwd: repo, stdio: 'inherit', env: plan.env });
-process.exit(r.status ?? 1);
+main().catch((e) => {
+  console.log(`FAIL test runner: crashed (${e && e.message ? e.message : 'error'})`);
+  process.exitCode = 1;
+});
