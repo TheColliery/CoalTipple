@@ -23,6 +23,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { parseJsonc } from './jsonc.mjs';
+import { containedPath } from './contain.mjs';
 
 // Read one JSONC file into an object. Returns {} for any failure mode
 // (missing file, unreadable, malformed JSON, non-object top-level) — never throws.
@@ -110,10 +111,28 @@ export function projectConfigCandidates(cwd = process.cwd()) {
   const candidates = AGENT_DIR_ORDER.map((d) => path.join(root, d, 'coal', 'coaltipple.json'));
   return candidates.concat(projectLegacyPaths(cwd)); // LEGACY, always last
 }
+// E2-4 class (14a, hooks-safety.md section 10): the project's tool-owned paths arrive with a CLONED repo, so a link anywhere between the project root
+// and a candidate can point OUTSIDE the project. A candidate is used only when containedPath proves no link redirects it; a refused candidate is read as
+// ABSENT (the walk moves on, nothing is read) and is listed in `refused` so a CLI can say so. `path` is the LEXICAL candidate (callers and tests compare it).
+export function containedProjectPath(cwd, target) {
+  return containedPath(findGitRoot(cwd), target);
+}
+export function resolveProjectConfig(cwd = process.cwd()) {
+  const root = findGitRoot(cwd);
+  const refused = [];
+  for (const c of projectConfigCandidates(cwd)) {
+    if (containedPath(root, c) === null) { refused.push(c); continue; }
+    if (fs.existsSync(c)) return { path: c, refused };
+  }
+  return { path: null, refused };
+}
+// The path a READ resolves, else the own-dir default (the read AND write target) when nothing exists. null = nothing readable AND the default itself is
+// refused (a link redirects it): there is no safe path to hand back, and no caller may invent one.
 export function projectConfigPath(cwd = process.cwd()) {
-  const candidates = projectConfigCandidates(cwd);
-  for (const c of candidates) if (fs.existsSync(c)) return c;
-  return candidates[0]; // nothing found anywhere -- own-dir is both the read and write target
+  const found = resolveProjectConfig(cwd).path;
+  if (found) return found;
+  const own = projectConfigCandidates(cwd)[0];
+  return containedProjectPath(cwd, own) === null ? null : own;
 }
 // WHERE A PROJECT CONFIG IS WRITTEN (UMB-133 bounce 1). A READ walks every candidate, so
 // projectConfigPath may legitimately return a LEGACY file; a WRITE must never go there -- it
@@ -127,8 +146,10 @@ export function projectConfigPath(cwd = process.cwd()) {
 export function projectWriteTarget(cwd = process.cwd()) {
   const legacy = projectLegacyPaths(cwd);
   const newCandidates = projectConfigCandidates(cwd).filter((c) => !legacy.includes(c));
-  const existingLegacy = legacy.filter((l) => fs.existsSync(l));
-  const target = newCandidates.find((c) => fs.existsSync(c)) || newCandidates[0];
+  // lstat, not existsSync: a dangling link IS an entry a write would follow, so it counts as existing here and the writer then REFUSES it (containedProjectPath)
+  const lexists = (p) => { try { fs.lstatSync(p); return true; } catch { return false; } };
+  const existingLegacy = legacy.filter(lexists);
+  const target = newCandidates.find(lexists) || newCandidates[0];
   return { target, legacyToRemove: existingLegacy[0] || null, legacyAlso: existingLegacy.slice(1) };
 }
 // Retire a legacy config the tool did NOT read this run: rename it to <path>.superseded
@@ -341,7 +362,8 @@ function applySaferValueWins(merged, global, project) {
 // customization concern that is not this finding; left as-is deliberately.
 export function loadMergedConfig({ cwd = process.cwd(), home = os.homedir() } = {}) {
   const global = readJsonc(globalConfigPath(home));
-  const project = readJsonc(projectConfigPath(cwd));
+  const projectFile = resolveProjectConfig(cwd).path;
+  const project = projectFile ? readJsonc(projectFile) : {};
   const merged = { ...global, ...project };
   if (isPlainObj(global.modelTiers) || isPlainObj(project.modelTiers)) {
     merged.modelTiers = {

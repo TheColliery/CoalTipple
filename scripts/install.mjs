@@ -17,7 +17,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { TARGETS, detectPresentAgents } from './lib/targets.mjs';
 import { buildFloorRanking, writeRankingAtomic, loadRanking } from './lib/classify.mjs';
-import { globalConfigPath, projectConfigPath, projectWriteTarget, moveLegacyAside, globalStateDir, oldGlobalStateDir, projectStateDir, findGitRoot } from './lib/config-load.mjs';
+import { globalConfigPath, projectConfigPath, projectWriteTarget, moveLegacyAside, writeConfigAtomic, containedProjectPath, globalStateDir, oldGlobalStateDir, projectStateDir, findGitRoot } from './lib/config-load.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const skillSrc = path.join(repo, 'skills', 'coaltipple');
@@ -107,7 +107,7 @@ function writeFactoryConfig(dest) {
     .split('\n')
     .filter((l) => !l.includes('coaltipple-shared:') && !l.includes('GENERATED from keywords.mjs'))
     .join('\n');
-  fs.writeFileSync(dest, cleaned);
+  writeConfigAtomic(dest, cleaned); // temp sibling + rename (node/runtime.md section 5): a link AT dest is replaced, never written through
 }
 
 // GLOBAL config seeding — ~/.claude/.coaltipple.json (the user's defaults for ALL
@@ -172,6 +172,13 @@ function seedGlobalRanking(force = false) {
   } catch (e) { console.warn(`  [warn] ranking seed: ${e.message}`); process.exitCode = 1; }
 }
 
+// E2-4 class (14a, hooks-safety.md section 10): the project's own folders arrive with a CLONED repo, so a link (junction/symlink) anywhere between the
+// project root and a path below could send a write OUTSIDE the project. Every project-side path is checked by containedProjectPath BEFORE anything is created,
+// renamed or written; a refused path writes nothing, is named on stderr, and the run exits non-zero.
+function refuseLinked(what, p) {
+  console.error(`  [refused] ${what} ${p}: it, or a folder above it inside the project, is a link/junction (or cannot be resolved), so a write there could land outside the project. Nothing was written to it. Replace the link with a real folder to proceed.`);
+  process.exitCode = 1;
+}
 // PROJECT files (a non-global install) — all under <cwd>/.claude:
 //   .claude/coal/coaltipple.json    per-project config override (create-if-absent; a config
 //                                   already found anywhere on the read walk is kept)
@@ -190,7 +197,11 @@ function seedProjectFiles(force = false, projectRoot = process.cwd()) {
     // --reset resolves to the canonical target (the same rule configure --project migrates to).
     const wt = force ? projectWriteTarget(projectRoot) : null;
     const dest = force ? wt.target : projectConfigPath(projectRoot);
+    const touched = force ? [wt.target, wt.legacyToRemove, ...wt.legacyAlso].filter(Boolean) : [];
+    const refused = dest === null ? [projectWriteTarget(projectRoot).target] : touched.filter((p) => containedProjectPath(projectRoot, p) === null);
+    if (refused.length) { for (const p of refused) refuseLinked('settings', p); return seedConductorCopy(projectRoot); }
     fs.mkdirSync(path.dirname(dest), { recursive: true }); // ensure <root>/.claude exists
+    if (containedProjectPath(projectRoot, dest) === null) { refuseLinked('settings', dest); return seedConductorCopy(projectRoot); } // re-check after the mkdir: nothing swapped in under us
     if (force || !fs.existsSync(dest)) {
       writeFactoryConfig(dest);
       console.log(`  ${force ? 'RESET settings to factory' : 'created default settings'} -> ${dest}`);
@@ -205,12 +216,19 @@ function seedProjectFiles(force = false, projectRoot = process.cwd()) {
       }
     }
   } catch (e) { console.warn(`  [warn] settings: ${e.message}`); process.exitCode = 1; }
-  // conductor hook = CODE -> always refreshed so an update ships the new hook.
+  seedConductorCopy(projectRoot);
+}
+// conductor hook = CODE -> always refreshed so an update ships the new hook. The destination is inside the project's state folder
+// (<root>/.claude/.coaltipple/hooks), so it is checked BEFORE the mkdir and again after it, and written temp + rename (a link at the file is replaced, not followed).
+function seedConductorCopy(projectRoot) {
   try {
     const hookDir = path.join(projectStateDir(projectRoot), 'hooks');
+    const hookFile = path.join(hookDir, 'coaltipple-conductor.js');
+    if (containedProjectPath(projectRoot, hookFile) === null) { refuseLinked('conductor copy', hookFile); return; }
     fs.mkdirSync(hookDir, { recursive: true });
-    fs.copyFileSync(conductorSrc, path.join(hookDir, 'coaltipple-conductor.js'));
-    console.log(`  refreshed conductor -> ${path.join(hookDir, 'coaltipple-conductor.js')}`);
+    if (containedProjectPath(projectRoot, hookFile) === null) { refuseLinked('conductor copy', hookFile); return; }
+    writeConfigAtomic(hookFile, fs.readFileSync(conductorSrc));
+    console.log(`  refreshed conductor -> ${hookFile}`);
   } catch (e) { console.warn(`  [warn] conductor: ${e.message}`); process.exitCode = 1; }
 }
 
@@ -259,7 +277,7 @@ if (isReset) {
     console.log(`  OVERWRITES ${projectWriteTarget(process.cwd()).target}. (The shared ranking is global — reset it with --reset --global. Skill files untouched.)`);
     seedProjectFiles(true);
   }
-  console.log('\nReset done.');
+  console.log(process.exitCode ? '\nReset NOT completed (see the lines above).' : '\nReset done.');
   process.exit(process.exitCode || 0);
 }
 

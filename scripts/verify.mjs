@@ -266,6 +266,30 @@ try {
   }
 } catch (e) { fail(`config-path sync: ${e.message}`); }
 
+// E2-4 class (14a, hooks-safety.md section 10): the conductor INLINES scripts/lib/contain.mjs's containment block (Phoenix #9: the hook cannot import), and both
+// project writers must route their paths through containedProjectPath. A drifted copy or a writer that stops importing the helper reads green everywhere else.
+console.log('containment sync (conductor inline vs contain.mjs; the writers import the helper):');
+try {
+  const OPEN = '// <contain-shared: physical+containedPath>';
+  const CLOSE = '// </contain-shared: physical+containedPath>';
+  const region = (text) => {
+    const a = text.indexOf(OPEN);
+    const b = text.indexOf(CLOSE);
+    return a === -1 || b === -1 || b < a ? null : text.slice(a, b + CLOSE.length).replace(/\r\n/g, '\n');
+  };
+  const lib = region(fs.readFileSync(path.join(repo, 'scripts', 'lib', 'contain.mjs'), 'utf8'));
+  const inlined = region(fs.readFileSync(path.join(repo, 'hooks', 'coaltipple-conductor.js'), 'utf8'));
+  if (lib === null) fail('scripts/lib/contain.mjs lost its <contain-shared> markers');
+  else if (inlined === null) fail('hooks/coaltipple-conductor.js lost its <contain-shared> markers -- the containment block is gone from the hook');
+  else if (lib !== inlined) fail('hooks/coaltipple-conductor.js containment block DRIFTED from scripts/lib/contain.mjs (edit the lib, then mirror it verbatim)');
+  else ok(`conductor containment block == contain.mjs (${lib.split('\n').length} lines)`);
+  for (const file of ['configure.mjs', 'install.mjs']) {
+    const src = fs.readFileSync(path.join(repo, 'scripts', file), 'utf8');
+    if (/import\s*\{[^}]*\bcontainedProjectPath\b[^}]*\}\s*from\s*['"]\.\/lib\/config-load\.mjs['"]/.test(src)) ok(`${file} imports containedProjectPath from config-load.mjs`);
+    else fail(`${file} no longer imports containedProjectPath from config-load.mjs -- its project-side writes are no longer link-checked`);
+  }
+} catch (e) { fail(`containment sync: ${e.message}`); }
+
 // config-key drift (CWK-060, ported from CoalMine 0019e09): every config key NAMED on
 // a user-facing surface must RESOLVE in config-schema.mjs, or be declared in
 // PENDING_KEYS / NOT_CONFIG / RETIRED_KEYS / BLIND_KEYS (config-keys.mjs). PRINTS

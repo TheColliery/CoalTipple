@@ -27,7 +27,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CONFIG_SCHEMA, validateValue } from './lib/config-schema.mjs';
-import { loadMergedConfig, globalConfigPath, projectConfigPath, projectWriteTarget, moveLegacyAside, writeConfigAtomic } from './lib/config-load.mjs';
+import { loadMergedConfig, globalConfigPath, projectConfigPath, projectWriteTarget, moveLegacyAside, writeConfigAtomic, containedProjectPath } from './lib/config-load.mjs';
 import { stripJsonc } from './lib/jsonc.mjs';
 import { escapeRegExp } from './lib/regex-escape.mjs';
 
@@ -224,7 +224,7 @@ function main() {
     try { merged = loadMergedConfig(); } catch (e) {
       console.error(`Error: cannot read config cascade: ${e.message}`); process.exitCode = 1; return;
     }
-    const hasGlobal = fs.existsSync(globalPath), hasProject = fs.existsSync(projectReadPath);
+    const hasGlobal = fs.existsSync(globalPath), hasProject = projectReadPath !== null && fs.existsSync(projectReadPath);
     if (!hasGlobal && !hasProject) {
       console.log('No .coaltipple.json yet (global or project) — showing factory defaults:');
       try { merged = parseConfig(fs.readFileSync(factoryCfg, 'utf8')); } catch {}
@@ -262,6 +262,17 @@ function main() {
     edits.push([spec.key, parsed.value]);
   }
   if (!edits.length) { console.error('Error: no settings given. Try --help.'); process.exitCode = 1; return; }
+
+  // E2-4 class (14a, hooks-safety.md section 10): the project's own folders arrive with a CLONED repo, so a link (junction/symlink) anywhere between the project
+  // root and the config (or a legacy file this run would read, rename or delete) could send a read or a write OUTSIDE the project. Check every project-side path
+  // BEFORE anything is read or created; a refused path stops the whole run with nothing written (a CLI fails loud: stderr + exit 1).
+  if (toProject) {
+    const refused = [writeTarget.target, writeTarget.legacyToRemove, ...writeTarget.legacyAlso].filter(Boolean).filter((q) => containedProjectPath(process.cwd(), q) === null);
+    if (refused.length) {
+      for (const q of refused) console.error(`Error: refused to touch ${q}: it, or a folder above it inside the project, is a link/junction (or cannot be resolved), so a read or write there could reach outside the project. Nothing was read or written. Replace the link with a real folder to proceed.`);
+      process.exitCode = 1; return;
+    }
+  }
 
   // Load the existing JSONC text, or seed it. Three cases: the target already
   // exists (normal edit) -> read it. The target is absent but the LEGACY file

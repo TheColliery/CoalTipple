@@ -372,3 +372,37 @@ for (const file of ['configure.mjs', 'install.mjs']) {
     }
   });
 }
+
+// E2-4 class (14a): the conductor's INLINED containment block must equal scripts/lib/contain.mjs, and both project writers must import containedProjectPath.
+test('verify.mjs containment sync (14a): a drifted conductor copy of the containment block FAILs the gate by name', () => {
+  const tmp = mkSandbox();
+  try {
+    const target = path.join(tmp, 'hooks', 'coaltipple-conductor.js');
+    const src = fs.readFileSync(target, 'utf8');
+    const mutated = src.replace("if (parent === cur) return null;", "if (parent === cur) return cur;"); // a weaker fail-closed branch in the hook's copy only
+    assert.notEqual(mutated, src, "the patch target is no longer in the conductor's containment block -- update this test");
+    fs.writeFileSync(target, mutated, 'utf8');
+    const r = runVerify(tmp);
+    assert.equal(r.status, 1, 'a conductor containment block that differs from contain.mjs must FAIL the gate');
+    assert.match(r.stdout, /FAIL hooks\/coaltipple-conductor\.js containment block DRIFTED from scripts\/lib\/contain\.mjs/, `the FAIL line names the hook:\n${r.stdout}`);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+for (const file of ['configure.mjs', 'install.mjs']) {
+  test(`verify.mjs containment sync (14a): ${file} no longer importing containedProjectPath FAILs the gate by name`, () => {
+    const tmp = mkSandbox();
+    try {
+      const target = path.join(tmp, 'scripts', file);
+      const src = fs.readFileSync(target, 'utf8');
+      const mutated = src.replace(/(import\s*\{[^}]*)\bcontainedProjectPath\b/, '$1containedProjectPathX');
+      assert.notEqual(mutated, src, `the containedProjectPath import is no longer in ${file} -- update this test's patch target`);
+      fs.writeFileSync(target, mutated, 'utf8');
+      const r = runVerify(tmp);
+      assert.equal(r.status, 1, 'a writer that stopped importing the containment helper must FAIL the gate');
+      assert.match(r.stdout, new RegExp(`FAIL ${escapeRegExp(file)} no longer imports containedProjectPath`), `the FAIL line names ${file}:\n${r.stdout}`);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+}

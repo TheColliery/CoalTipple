@@ -35,6 +35,42 @@ function findGitRoot(startDir) {
     dir = parent;
   }
 }
+// E2-4 class (14a, hooks-safety.md section 10): the project's tool-owned paths arrive with a CLONED repo, so a link (junction/symlink) anywhere between the
+// project root and a candidate could make this hook READ a stranger's file from outside the project. containedPath proves no link redirects a candidate (both
+// sides through fs.realpathSync.native, the physical path must EQUAL the literal expected one); a refused candidate is read as ABSENT, silently (Phoenix #4/#13).
+// This block is an inlined VERBATIM copy of scripts/lib/contain.mjs (Phoenix #9: the hook cannot import); verify.mjs fails if the two drift.
+// <contain-shared: physical+containedPath> -- the conductor inlines this block verbatim; edit it here, then mirror it there
+function physical(p) {
+  let cur = path.resolve(p);
+  const tail = [];
+  for (;;) {
+    try {
+      const real = fs.realpathSync.native(cur);
+      return tail.length ? path.join(real, ...tail.reverse()) : real;
+    } catch (e) {
+      if (e.code === 'EACCES' || e.code === 'EPERM') { // realpath could not open the entry (an ACL that denies read): a plain entry still resolves as its parent + its own name, a link does not
+        try { if (fs.lstatSync(cur).isSymbolicLink()) return null; } catch { return null; }
+      } else {
+        if (e.code !== 'ENOENT' && e.code !== 'ENOTDIR') return null; // ELOOP, ...: fail closed
+        try { fs.lstatSync(cur); return null; } catch (e2) { if (e2.code !== 'ENOENT') return null; } // it exists but did not resolve: a dangling link
+      }
+    }
+    const parent = path.dirname(cur);
+    if (parent === cur) return null;
+    tail.push(path.basename(cur));
+    cur = parent;
+  }
+}
+function containedPath(projectRoot, target) {
+  const lexRoot = path.resolve(projectRoot);
+  const rel = path.relative(lexRoot, path.resolve(target));
+  if (!rel || rel === '..' || rel.startsWith('..' + path.sep) || path.isAbsolute(rel)) return null;
+  const realRoot = physical(lexRoot);
+  if (realRoot === null) return null;
+  const actual = physical(target);
+  return actual !== null && actual === path.join(realRoot, rel) ? actual : null;
+}
+// </contain-shared: physical+containedPath>
 // Namespace campaign (#69+#39): first-found-wins over the SAME order as
 // config-load.mjs's projectConfigCandidates -- own agent dir (always .claude for
 // this room) -> .agents -> .gemini -> LEGACY-1 <gitroot>/.claude/.coaltipple.json
@@ -124,9 +160,10 @@ function loadCfg() {
   // a lower-priority candidate's real content.
   const root = findGitRoot(process.cwd()); // idempotent: projectConfigCandidates(root) resolves the same root
   const candidates = projectConfigCandidates(root);
-  const hitIdx = candidates.findIndex((c) => fs.existsSync(c));
-  const projectPath = hitIdx === -1 ? candidates[0] : candidates[hitIdx];
-  const { cfg: project, reason: projectReason } = readCfgFile(projectPath);
+  // A candidate whose chain holds a link is skipped as if it did not exist (never read); the first contained, EXISTING candidate wins.
+  const hitIdx = candidates.findIndex((c) => containedPath(root, c) !== null && fs.existsSync(c));
+  const projectPath = hitIdx === -1 ? null : candidates[hitIdx];
+  const { cfg: project, reason: projectReason } = projectPath === null ? { cfg: null, reason: null } : readCfgFile(projectPath);
   _walk = { root, candidates, hitIdx, globalPath, globalReason, projectReason };
   // Merge only when something loaded; keep null (= "no config") if neither did, so
   // the existing `if (cfg && ...)` guards in main() behave exactly as before.

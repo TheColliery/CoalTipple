@@ -46,6 +46,8 @@ const TESTS = [
   'scripts/verify-release-shape.test.mjs',
   'scripts/lib/release-shape.test.mjs',
   'scripts/lib/regex-escape.test.mjs',
+  'scripts/lib/contain.test.mjs',
+  'scripts/lib/project-links.test.mjs',
   'scripts/lib/wave-run.test.mjs',
   'scripts/lib/test-suite.test.mjs',
 ];
