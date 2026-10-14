@@ -69,7 +69,10 @@ function snap(dir) {
       const p = path.join(d, e.name);
       const rel = path.relative(dir, p).split(path.sep).join('/');
       if (e.isDirectory()) { out.push(`${rel}/`); walk(p); }
-      else out.push(`${rel}:${fs.statSync(p).size}:${crypto.createHash('sha1').update(fs.readFileSync(p)).digest('hex')}`);
+      else {
+        const bytes = fs.readFileSync(p); // read ONCE: the size comes from the same buffer the hash does (no stat-then-read race, CodeQL js/file-system-race)
+        out.push(`${rel}:${bytes.length}:${crypto.createHash('sha1').update(bytes).digest('hex')}`);
+      }
     }
   })(dir);
   return out.sort();
