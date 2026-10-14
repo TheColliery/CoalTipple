@@ -12,7 +12,7 @@ import { spawn, spawnSync } from 'node:child_process';
 // WHAT IS THIS ROOM'S: the numbers below, a named `FAIL test runner` line for every way the runner itself can fail (it never starts, it crashes, it outlives its own
 // deadline, the suite is red), and a backstop that kills the runner's whole tree if the runner itself hangs.
 //
-// SIZING (this room's own variables, never the canon's), re-measured 2026-10-09 on this box, Node 24.19, all 28 files, each ALONE and serial (scratchpad/r09a/measure-files.mjs),
+// SIZING (this room's own variables, never the canon's), re-measured 2026-10-09 on this box, Node 24.19, all 28 files, each ALONE and serial (method, re-runnable from a clone: for every roster file in turn, time one `node --test --test-timeout=120000 <file>` child with NODE_OPTIONS=--max-old-space-size=2048 in its environment, wall clock around the spawn, sum the file times for the serial total),
 // with another seat's wave running beside (CPU 64-87% busy): slowest file scripts/verify.test.mjs 57.4 s (49.9 s earlier the same day, 57.4 s on 2026-10-08), then secret-scan.test.mjs 44.3 s,
 // wave-run.test.mjs 39.8 s, secret-gate.test.mjs 38.9 s, test-suite.test.mjs 19.8 s; the 28-file serial total 262.9 s (the 27-file figure of 166.9 s was taken without wave-run.test.mjs and
 // on a quieter box). Through this runner, in waves, node scripts/test.mjs took 227.6 s on the busy box and 61.0 s straight after it; every file, wave-run.test.mjs included, runs in the wave.
