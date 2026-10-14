@@ -4,12 +4,14 @@ All notable changes to CoalTipple are documented here. Format follows [Keep a Ch
 
 ## [1.7.2] - 2026-10-15
 
+Project config folders that are links are now refused
+
 A project config folder that is a link can no longer make CoalTipple read from, or write to, a place outside the project.
 
 ### Security
 - **Before:** a cloned repository could ship its project config folder (`.claude`, `.claude/coal`, `.agents/coal`, `.gemini/coal`), the legacy config files, or `.claude/.coaltipple/` as a symlink or junction pointing outside the project. The conductor then read a config from that outside place, and `install.mjs` and `configure.mjs` created, overwrote, renamed or deleted files there (the factory config, the conductor copy under `.claude/.coaltipple/hooks/`, and the legacy-file move-aside).
-- **Now:** every project-config path is resolved on both sides (the project root and the path) and must lead to the folder itself, or it is refused. In the shipped conductor a refused path is read as absent (the walk moves on to the next candidate), with no notice. In `install.mjs` and `configure.mjs` a refused path writes nothing, names the path on stderr, and exits non-zero (`install.mjs --reset` ends with `Reset NOT completed`). A hard link at the config file is replaced rather than written through. — test: `scripts/lib/project-links.test.mjs`, `scripts/lib/contain.test.mjs`
-- **Behaviour change:** a user who keeps `.claude`, `.claude/coal` or `.claude/.coaltipple` as a symlink or junction (a dotfile manager, for instance) now has project-config writes refused and the config behind the link read as absent. Keep those as real directories inside the project. The global config under `~/.claude` is not affected.
+- **Now:** every project-config path is resolved on both sides (the project root and the path) and must lead to the folder itself, or it is refused. In the shipped conductor a refused path is read as absent (the walk moves on to the next candidate), with no notice. In `install.mjs` and `configure.mjs` a refused path writes nothing, names the path on stderr, and exits non-zero (`install.mjs --reset` ends with `Reset NOT completed`). A hard link at the config file is replaced by a rename; where Windows refuses the rename (EPERM or EBUSY) the write falls back to writing in place. — test: `scripts/lib/project-links.test.mjs`, `scripts/lib/contain.test.mjs`
+- **Behaviour change:** a user who keeps `.claude`, `.claude/coal`, `.agents/coal`, `.gemini/coal` or `.claude/.coaltipple` as a symlink or junction (a dotfile manager, for instance) now has project-config writes refused and the config behind the link read as absent. Keep those as real directories inside the project. A real folder spelled with a different case (`.Claude`) on a case-insensitive volume is refused too, which is the safe direction. The global config under `~/.claude` is not affected.
 - **Where:** the conductor's read is the shipped plugin (`hooks/coaltipple-conductor.js`); the write guards are in the user-run scripts `install.mjs` and `configure.mjs`.
 - **Not covered:** writes the model performs from `SKILL.md` instructions (the `fableConsent` edit, `.claude/.coaltipple/proposed/`, `state.json`) are prose the model follows, and no code guards them.
 
