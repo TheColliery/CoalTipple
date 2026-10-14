@@ -18,7 +18,16 @@ import { escapeRegExp } from './lib/regex-escape.mjs';
 const SPAWN_TIMEOUT_MS = 30000; // every test spawn is bounded (testing.md: a finite clock); local git on a fixture repo, normally well under 5 s
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const VERIFY_ITEMS = ['skills', 'hooks', 'commands', 'platform-configs', '.claude-plugin', 'plugin', 'scripts', 'CHANGELOG.md'];
+// T-G (14a): the roots verify.mjs's NO-GIT fallback treats as tracked (PC_OUR_ROOTS_FALLBACK). The fixture below has no .git, so verify.mjs resolves a citation
+// against THAT set; a copy that omits one of them makes a true citation FAIL here while it passes on the real repo (a fact held in two places). The copy list is
+// therefore built from the same literal, read from verify.mjs itself; an unreadable or empty literal fails the file loudly instead of narrowing the copy.
+const FALLBACK_ROOTS = (() => {
+  const m = /PC_OUR_ROOTS_FALLBACK = new Set\(\[([^\]]*)\]\)/.exec(fs.readFileSync(path.join(repo, 'scripts', 'verify.mjs'), 'utf8'));
+  const roots = m ? [...m[1].matchAll(/'([^']+)'/g)].map((x) => x[1]) : [];
+  if (!roots.length) throw new Error('verify.test.mjs: cannot read PC_OUR_ROOTS_FALLBACK from verify.mjs -- update this extraction');
+  return roots;
+})();
+const VERIFY_ITEMS = [...new Set(['skills', 'hooks', 'commands', 'platform-configs', '.claude-plugin', 'plugin', 'scripts', 'CHANGELOG.md', ...FALLBACK_ROOTS])];
 // The four root docs config-keys.mjs declares as mandatory mdFiles/keyTables/
 // pointer-check surfaces (README/SECURITY/CONTRIBUTING/PRIVACY) -- board #64's own
 // VERIFY_ITEMS list omits them (that check never reads them), but PR24 #13 turned an
@@ -406,3 +415,18 @@ for (const file of ['configure.mjs', 'install.mjs']) {
     }
   });
 }
+
+// T-G (14a, INSPECT M-1 of the 09b round): the no-git fallback ourRoots in verify.mjs names `.github` and `.githooks`, so a TRUE tracked citation under either
+// resolves against the tree. The fixture copy used to omit both, which made such a citation FAIL in the sandbox while it passes on the real repo (a fact held in
+// two places: a doc-writer had to drop a real path). The copy is now built from the SAME fallback set, read from verify.mjs itself.
+test('verify.mjs pointer-check (T-G): a backticked citation of a tracked .github/ file and a .githooks/ file PASSES in the no-git fixture', () => {
+  const tmp = mkSandbox();
+  try {
+    const f = path.join(tmp, 'CONTRIBUTING.md');
+    fs.appendFileSync(f, '\nCanon files: `.github/workflows/create-release.yml` and `.githooks/pre-commit`.\n');
+    const r = runVerify(tmp);
+    assert.equal(r.status, 0, `a true tracked citation under .github/ or .githooks/ must PASS in the fixture, got:\n${r.stdout}${r.stderr}`);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
