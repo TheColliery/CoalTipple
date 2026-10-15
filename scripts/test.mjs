@@ -48,6 +48,7 @@ const TESTS = [
   'scripts/lib/regex-escape.test.mjs',
   'scripts/lib/contain.test.mjs',
   'scripts/lib/project-links.test.mjs',
+  'scripts/lib/hooks-exec-form.test.mjs',
   'scripts/lib/wave-run.test.mjs',
   'scripts/lib/test-suite.test.mjs',
 ];
