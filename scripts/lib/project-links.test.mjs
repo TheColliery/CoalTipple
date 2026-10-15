@@ -307,3 +307,51 @@ test('CONTROL state: with no link, a PATH install copies the conductor under the
   assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
   assert.ok(fs.existsSync(path.join(sb.proj, '.claude', '.coaltipple', 'hooks', 'coaltipple-conductor.js')));
 });
+
+// ---------- 15b item 2: the SessionStart REFUSED: notice (a refused candidate is NAMED, never silently walked past) ----------
+const prompt = (sb) => node([HOOK], sb, JSON.stringify({ hook_event_name: 'UserPromptSubmit', prompt: 'refactor this' }));
+const refusedLines = (out) => out.split(/\r?\n/).filter((l) => l.startsWith('[CoalTipple] REFUSED:'));
+test('NOTICE control: with no link anywhere the SessionStart report carries no REFUSED line', (t) => {
+  const sb = sandbox(t);
+  write(path.join(sb.proj, '.claude', 'coal', 'coaltipple.json'), '{ "qualityBar": 5 }');
+  const r = hook(sb);
+  assert.equal(r.status, 0); assert.equal(r.stderr, '');
+  assert.deepEqual(refusedLines(r.stdout), []);
+});
+test('NOTICE: a link AT the coal directory is named on SessionStart (path relative to the root, plain reason), exit 0, stderr silent', (t) => {
+  const sb = sandbox(t);
+  write(path.join(sb.victim, 'coaltipple.json'), OFF_CONFIG);
+  if (!linkOrSkip(t, sb, sb.victim, path.join(sb.proj, '.claude', 'coal'), 'dir')) return;
+  const r = hook(sb);
+  assert.equal(r.status, 0); assert.equal(r.stderr, '');
+  const lines = refusedLines(r.stdout);
+  assert.equal(lines.length, 1, r.stdout);
+  assert.match(lines[0], /REFUSED: \.claude\/coal\/coaltipple\.json /);
+  assert.match(lines[0], /link, a junction or a differently cased name/);
+  assert.ok(!lines[0].includes(sb.root), 'the line names the path relative to the project root, never an absolute path');
+});
+test('NOTICE: a link at a PARENT (.claude) names every refused candidate that exists through it, one line each', (t) => {
+  const sb = sandbox(t);
+  write(path.join(sb.victim, 'coal', 'coaltipple.json'), OFF_CONFIG);
+  write(path.join(sb.victim, '.coaltipple.json'), OFF_CONFIG);
+  if (!linkOrSkip(t, sb, sb.victim, path.join(sb.proj, '.claude'), 'dir')) return;
+  const lines = refusedLines(hook(sb).stdout);
+  assert.deepEqual(lines.map((l) => l.split(' ')[2]), ['.claude/coal/coaltipple.json', '.claude/.coaltipple.json']);
+});
+test('NOTICE: a file symlink AT the LEGACY-2 root dotfile is named', (t) => {
+  const sb = sandbox(t);
+  write(path.join(sb.victim, 'outside.json'), OFF_CONFIG);
+  if (!linkOrSkip(t, sb, path.join(sb.victim, 'outside.json'), path.join(sb.proj, '.coaltipple.json'), 'file')) return;
+  const lines = refusedLines(hook(sb).stdout);
+  assert.equal(lines.length, 1);
+  assert.match(lines[0], /REFUSED: \.coaltipple\.json /);
+});
+test('NOTICE: UserPromptSubmit never carries the REFUSED line (session state, not turn state)', (t) => {
+  const sb = sandbox(t);
+  write(path.join(sb.victim, 'coaltipple.json'), OFF_CONFIG);
+  if (!linkOrSkip(t, sb, sb.victim, path.join(sb.proj, '.claude', 'coal'), 'dir')) return;
+  const r = prompt(sb);
+  assert.equal(r.status, 0); assert.equal(r.stderr, '');
+  assert.ok(r.stdout.length > 0, 'the per-prompt forcer still speaks');
+  assert.deepEqual(refusedLines(r.stdout), []);
+});

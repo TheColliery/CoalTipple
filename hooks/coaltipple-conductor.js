@@ -390,6 +390,14 @@ function projectConfigNotices() {
     if (globalReason) {
       lines.push(`[CoalTipple] UNREADABLE: ${globalPath} exists but is not a readable config (${globalReason}); it was skipped — canonical = ${globalPath}`);
     }
+    // 15b: a candidate the containment check REFUSED (the walk skipped it as if absent) is named, so a link
+    // planted in a cloned repo is never silently walked past. Only a candidate that exists as an entry counts:
+    // a path through a link with nothing behind it is the same as no file and stays silent.
+    for (const c of candidates) {
+      let present = false;
+      try { fs.lstatSync(c); present = true; } catch {} // cheap test first: most candidates are absent, and an absent one needs no realpath walk
+      if (present && containedPath(root, c) === null) lines.push(`[CoalTipple] REFUSED: ${rel(c)} resolves outside this project's own folder (a link, a junction or a differently cased name); it was not read -- replace it with a regular file at ${CANON_REL}.`);
+    }
     const candSet = new Set(candidates.map(rel));
     const near = ['coaltipple.json', 'coal/coaltipple.json'];
     for (const d of AGENT_DIR_ORDER) {
