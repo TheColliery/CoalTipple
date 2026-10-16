@@ -263,3 +263,42 @@ test('migration-write: an OLD-location stamp past due fires the ask, then the wr
     assert.ok(!oldStampExists(home), 'the OLD-location file is dropped on write (moved, not duplicated)');
   } finally { fs.rmSync(home, { recursive: true, force: true }); }
 });
+
+// 16e row 15 (reviewer): an installed plugin carries only commands/, hooks/ and skills/, so a self-update directive must not send the agent to
+// scripts/configure.mjs as THE way to save the choice. The global config file is the path every install has; configure.mjs is the source-checkout convenience.
+const directiveLine = (stdout, head) => stdout.split(/\r?\n/).find((l) => l.includes(head)) || '';
+function assertNoScriptsDependency(line, what) {
+  assert.ok(line, `${what}: the directive line is present`);
+  assert.match(line, /\.coaltipple\.json/, `${what}: names the global config file`);
+  assert.match(line, /updateMode/, `${what}: names the key`);
+  const at = line.indexOf('configure.mjs');
+  if (at >= 0) assert.match(line.slice(Math.max(0, at - 160), at), /source checkout|has no scripts/, `${what}: configure.mjs is named only as the source-checkout convenience`);
+}
+
+test('16e row 15: the ask directive saves the choice in the global config file, naming configure.mjs only as the source-checkout convenience', () => {
+  const home = mkHome();
+  try {
+    const r = run(SESSION, home);
+    assert.equal(r.status, 0);
+    assertNoScriptsDependency(directiveLine(r.stdout, 'CoalTipple self-update (ask'), 'ask');
+  } finally { fs.rmSync(home, { recursive: true, force: true }); }
+});
+
+test('16e row 15: the remind line offers the switch to auto through the global config file, not through scripts/', () => {
+  const home = mkHome({ updateMode: 'remind', updateCheckDays: 30 });
+  try {
+    const r = run(SESSION, home);
+    assert.equal(r.status, 0);
+    assertNoScriptsDependency(directiveLine(r.stdout, 'self-update reminder'), 'remind');
+  } finally { fs.rmSync(home, { recursive: true, force: true }); }
+});
+
+test('16e row 15: commands/update.md tells the agent to set updateMode in the global config file, with configure.mjs as the source-checkout convenience', () => {
+  const text = fs.readFileSync(path.join(path.dirname(HOOK), '..', 'commands', 'update.md'), 'utf8');
+  const at = text.indexOf('Save the pick');
+  assert.ok(at >= 0, 'the Save-the-pick step exists');
+  const step = text.slice(at, at + 700);
+  assert.match(step, /\.coaltipple\.json/);
+  assert.match(step, /updateMode/);
+  assert.match(step, /source checkout/);
+});

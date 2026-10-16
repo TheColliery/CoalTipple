@@ -10,7 +10,7 @@ CoalTipple keeps itself current through the conductor (session start), gated by 
 - **off** — no reminders.
 
 Save the pick (no forced check — the chosen mode drives future sessions):
-`node scripts/configure.mjs --updateMode <auto|remind|off>` (run from the CoalTipple repo, or wherever `.coaltipple.json` lives).
+set `updateMode` (`auto`, `remind` or `off`) directly in the GLOBAL config file `~/.claude/.coaltipple.json` (the one under `CLAUDE_CONFIG_DIR` if that is set) with your edit tool; an installed plugin has no `scripts/`. In a source checkout of CoalTipple, `node scripts/configure.mjs --updateMode <auto|remind|off>` does the same.
 
 **auto** (the version CHECK — the only token spend, standing-consented):
 1. Get the latest published tag (graceful — never assume git/network is present):
