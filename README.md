@@ -68,7 +68,7 @@ CoalTipple is **Claude-Code-only, by product judgement, not oversight**—the de
 
 * **Claude Code (validated)**—the surface this room is built and dogfooded on; see the line above.
 * **Cowork** runs a plugin's hooks and sub-agents, but this room has **not verified** it here: whether Cowork's own agent-spawn surface accepts a worker `model` parameter—the one thing routing needs—is unknown from this repo. Not claimed to work; not claimed to fail. Unverified, stated plainly rather than left silent.
-* **claude.ai (chat)** loads only the skill's prose—there is no Agent/Task tool at all on that surface, so CoalTipple's routing has nothing to actuate through. See [Other platforms](#other-platforms--no-install-routing-cannot-actuate) below for the full reasoning.
+* **claude.ai (chat)** loads only the skill's prose—there is no Agent/Task tool at all on that surface, so CoalTipple's routing has nothing to actuate through. See [Other platforms](#other-platforms--no-supported-install-routing-cannot-actuate) below for the full reasoning.
 
 ---
 
@@ -86,7 +86,7 @@ claude plugin install coaltipple@coaltipple
 
 Optional per-project config override, first-found wins: `<project>/.claude/coal/coaltipple.json` → `.agents/coal/coaltipple.json` → `.gemini/coal/coaltipple.json` → two deprecated legacy paths (`.claude/.coaltipple.json`, then `.coaltipple.json` at the git root; see Configure below).
 
-### Other platforms — no install (routing cannot actuate)
+### Other platforms — no supported install (routing cannot actuate)
 
 No other agent is a supported install. `scripts/install.mjs <agent>` can copy the skill into another agent's skills folder (the `TARGETS` map in `scripts/lib/targets.mjs`), but routing cannot actuate there: most have no worker model-pick at all, and the one exception (Antigravity) picks a cross-vendor tier with no effort knob (see [Compatibility](#-compatibility)). A copy installed there will not route, and a weak model may claim a delegation it cannot perform.
 
