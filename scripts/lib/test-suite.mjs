@@ -12,18 +12,17 @@ import { spawn, spawnSync } from 'node:child_process';
 // WHAT IS THIS ROOM'S: the numbers below, a named `FAIL test runner` line for every way the runner itself can fail (it never starts, it crashes, it outlives its own
 // deadline, the suite is red), and a backstop that kills the runner's whole tree if the runner itself hangs.
 //
-// SIZING (this room's own variables, never the canon's), re-measured 2026-10-09 on this box, Node 24.19, all 28 files, each ALONE and serial (method, re-runnable from a clone: for every roster file in turn, time one `node --test --test-timeout=120000 <file>` child with NODE_OPTIONS=--max-old-space-size=2048 in its environment, wall clock around the spawn, sum the file times for the serial total),
-// with another seat's wave running beside (CPU 64-87% busy): slowest file scripts/verify.test.mjs 57.4 s (49.9 s earlier the same day, 57.4 s on 2026-10-08), then secret-scan.test.mjs 44.3 s,
-// wave-run.test.mjs 39.8 s, secret-gate.test.mjs 38.9 s, test-suite.test.mjs 19.8 s; the 28-file serial total 262.9 s (the 27-file figure of 166.9 s was taken without wave-run.test.mjs and
-// on a quieter box). Through this runner, in waves, node scripts/test.mjs took 227.6 s on the busy box and 61.0 s straight after it; every file, wave-run.test.mjs included, runs in the wave.
+// SIZING (this room's own variables, never the canon's), re-measured 2026-10-16 on this box, Node 24.19, all 32 files of the roster (scripts/test.mjs TESTS; re-derive the count there, never from this line), each ALONE and serial (method, re-runnable from a clone: for every roster file in turn, wait for BREATHE, then time one `node --test --test-timeout=120000 <file>` child with --max-old-space-size=2048, wall clock around the spawn, sum the file times for the serial total):
+// slowest file scripts/verify.test.mjs 66.4 s, then wave-run.test.mjs 27.3 s, secret-scan.test.mjs 26.0 s, secret-gate.test.mjs 25.3 s, test-suite.test.mjs 15.6 s; the serial total 223.0 s, every file exit 0.
+// (The 2026-10-09 measurement on 28 files read 262.9 s with another seat's wave running beside, slowest file 57.4 s; a box that is busy stretches every figure, which is why the multiples below are taken against this newer, quieter reading and the old one is only history.)
 // The worst case a wave can reach is the serial total, because a box that never breathes admits one file at a time.
 //  - fileTimeoutMs 120000: on Node 22 the clock of --test-timeout is per FILE (nodejs/node PR #57672 landed in v24, where it is per test), so it must hold the slowest FILE
-//    with headroom: 120 s is 2.1x the 57.4 s slowest, the value CoalHearth and CoalWash use.
-//  - fileClockMs 240000: the wall clock of one file in a wave that shares the box, 4.2x the slowest serial file; it ends a hang before the first test, which
+//    with headroom: 120 s is 1.8x the 66.4 s slowest, the value CoalHearth and CoalWash use.
+//  - fileClockMs 240000: the wall clock of one file in a wave that shares the box, 3.6x the slowest serial file; it ends a hang before the first test, which
 //    --test-timeout never reaches, without waiting for the whole-run deadline.
-//  - deadlineMs 420000: 1.6x the 262.9 s serial total (the worst case) and 1.85x the 227.6 s the wave actually took on the busy box (the waves wait for BREATHE, so a busy box stretches the run);
+//  - deadlineMs 420000: 1.9x the 223.0 s serial total (the worst case; the waves wait for BREATHE, so a busy box stretches the run);
 //    with the 60 s backstop margin the runner is gone by 8 minutes, under the CI gate job's timeout-minutes (10, ci.yml) with the job's checkout, setup and verify around it. The CI legs
-//    (run 37928363807 at 02b8c20) ran the suite in 49 to 86 s, 4.9x under the deadline at the slowest; a CI runner is a quieter box than this one.
+//    (run 37928363807 at 02b8c20, a 28-file roster) ran the suite in 49 to 86 s, 4.9x under the deadline at the slowest; a CI runner is a quieter box than this one.
 export const LIMITS = Object.freeze({ heapMb: 2048, fileTimeoutMs: 120000, fileClockMs: 240000, deadlineMs: 420000, backstopMarginMs: 60000 });
 
 export function waveRunArgs(tests, limits = LIMITS) {
