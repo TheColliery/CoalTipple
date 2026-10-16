@@ -2,6 +2,18 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.7.5] - 2026-10-16
+
+Remind prompt names the global config; install all narrowed
+
+The self-update `remind` line now says which global config file to edit, and `scripts/install.mjs all` no longer copies the skill into agents where routing cannot run.
+
+### Fixed
+- **The self-update `remind` line names the global config file in full.** The `ask` line already said to set `updateMode` in `~/.claude/.coaltipple.json` (the one under `CLAUDE_CONFIG_DIR` if that is set); the `remind` line named only `~/.claude/.coaltipple.json`, so a user who had moved their config directory was pointed at the wrong file. It now carries the same qualification and says that an installed plugin has no `scripts/`, while in a source checkout `node scripts/configure.mjs --updateMode auto` does the same. — test: `scripts/lib/conductor-update.test.mjs`
+
+### Repo tooling (user-run scripts; not in the plugin)
+- **`scripts/install.mjs all` installs only into agents where routing can actuate.** That set is Claude Code alone, whose install is the plugin, so `all` now installs nothing and prints one line saying so and how to install for Claude Code (`claude plugin install coaltipple@coaltipple`, or `node scripts/install.mjs claude` from a source checkout); it exits 0. Before, `all` copied the skill into every other agent it found configured in the project, none of which can run CoalTipple's routing. Naming an agent explicitly (`node scripts/install.mjs cursor`) still installs, and now prints one warning on stderr that routing cannot actuate there; `--uninstall` and `claude` print none. This is a behaviour change for anyone who used `all` for those copies. — test: `scripts/lib/install.test.mjs`
+
 ## [1.7.4] - 2026-10-16
 
 Update choice saves without scripts; hot keywords stop over-matching
