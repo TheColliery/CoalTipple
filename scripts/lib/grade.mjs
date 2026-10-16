@@ -72,7 +72,7 @@ const isExcluded = (path, exclude) => {
 //   - `sensitive` / `preserveVoice` FLAGS inherit from the factory group unless the config
 //     sets them explicitly (omitting `sensitive` can no longer strip a built-in gate);
 //   - `words` are the UNION of factory + config (a config ADDS keywords; it can't silently
-//     DROP a built-in sensitive word like 'payment'). `grade` stays overridable.
+//     DROP a built-in sensitive word like 'payment'). A built-in group's `grade` can be RAISED but never lowered below the factory value (see the loop below).
 // The legacy flat `hotKeywords` maps onto a grade-4 sensitive group (backward-compat).
 function mergeKeywordGroups(config) {
   const groups = { ...DEFAULT_KEYWORD_GROUPS };

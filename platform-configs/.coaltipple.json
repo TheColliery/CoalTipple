@@ -132,10 +132,10 @@
   // ## "Be careful" keyword GROUPS by task type. Each match floors the task grade (and may flag the task
   // ## `sensitive` = NEVER delegate-down, or `preserveVoice` = keep the deliverable on a strong model). The
   // ## deterministic grader scans the prompt for these; difficulty always overrides size. This is the heart of
-  // ## topic-aware routing — add/remove a word or change a grade to tune how cautious CoalTipple is per domain.
+  // ## topic-aware routing — add words or raise a grade to tune how cautious CoalTipple is per domain. A config can only ADD to a built-in group (see below).
   // ## Ships POPULATED below (edit directly); set `keywords`: {} instead to fall back to the built-ins — which then track skill updates).
   // ## Groups: concurrency · crypto · security · coding · audit · math · knowledge · domain · creative.
-  // ## To OVERRIDE one: your entry replaces that group's grade/words; omit a group to keep its shipped default.
+  // ## To EXTEND one: your entry's words are UNIONED with the built-in list (deleting a built-in word here changes nothing: it is merged back in), a built-in grade can be raised but never lowered below its factory value, and the built-in sensitive/preserveVoice flags cannot be cleared. Omit a group to keep its shipped default.
   // ## KEEP `crypto` at grade 5 + sensitive: that is the never-down safety gate.
   // ##   e.g.  "keywords": { "crypto": { "grade": 5, "sensitive": true, "words": ["crypto", "nonce", "kdf"] } }
   // # Setting type: Object { "<group>": { "grade": 1-5, "sensitive"?: bool, "preserveVoice"?: bool, "words": string[] } }

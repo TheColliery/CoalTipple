@@ -1,7 +1,7 @@
 // Single source of truth for routing keyword GROUPS, organized by major task type.
 // grade.mjs reads KEYWORD_GROUPS directly (each group floors the task grade and may
-// flag sensitive / preserveVoice); the .coaltipple.json `keywords` key overrides or
-// extends these PER GROUP (add/remove a word, change a grade); the conductor's
+// flag sensitive / preserveVoice); the .coaltipple.json `keywords` key EXTENDS
+// these PER GROUP (its words are unioned with the factory list, a built-in grade can be raised but never lowered, and the built-in sensitive/preserveVoice flags cannot be cleared: mergeKeywordGroups in grade.mjs); the conductor's
 // hot-keyword region is SYNCED from the derived HOT5/HOT4 flats below by
 // build-plugin.mjs (edit HERE, never the conductor block — verify.mjs fails on drift).
 // ⚠ The GRADE FLOORS (and sensitive/preserveVoice flags) are RESTATED in prose in
