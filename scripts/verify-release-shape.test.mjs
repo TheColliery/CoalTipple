@@ -99,6 +99,45 @@ test('verify-release-shape.mjs: malformed JSON on stdin fails loud, names it, ne
   assert.match(res.stderr, /not valid JSON/);
 });
 
+// 14h (item 14, courier 5; CoalMine PR #36 oZt-9): JSON that parses but is not a Release object ('null', a list, a bare string or number) and a name or body that is not a string
+// used to crash on a property read or to compare as an empty string; each is a named failure now, exit 1, with no stack frame.
+test('verify-release-shape.mjs: stdin that is JSON but not an object fails loud and names it -- RED before 14h (5)', () => {
+  const dir = scratch();
+  fs.writeFileSync(path.join(dir, 'release-title.txt'), 'v1.0.0 - a fix\n');
+  fs.writeFileSync(path.join(dir, 'release-body.md'), 'A fix.\n');
+  for (const stdin of ['null', '[]', '[{"name":"v1.0.0 - a fix","body":"A fix."}]', '"text"', '5', 'true']) {
+    const res = run(dir, stdin);
+    assert.equal(res.status, 1, `${stdin}: ${res.stdout}${res.stderr}`);
+    assert.match(res.stderr, /verify-release-shape: the published Release JSON is not an object/, stdin);
+    assert.doesNotMatch(res.stderr, /TypeError|\n\s+at /, stdin);
+  }
+});
+
+test('verify-release-shape.mjs: a name or a body that is not a string fails loud and names the field, never compared as an empty string -- RED before 14h (5)', () => {
+  const dir = scratch();
+  fs.writeFileSync(path.join(dir, 'release-title.txt'), 'v1.0.0 - a fix\n');
+  fs.writeFileSync(path.join(dir, 'release-body.md'), 'A fix.\n');
+  const rows = [
+    [{ name: 5, body: 'A fix.' }, 'name'],
+    [{ name: null, body: 'A fix.' }, 'name'],
+    [{ body: 'A fix.' }, 'name'],
+    [{ name: 'v1.0.0 - a fix', body: {} }, 'body'],
+    [{ name: 'v1.0.0 - a fix', body: null }, 'body'],
+    [{ name: 'v1.0.0 - a fix' }, 'body'],
+    [{ name: ['v1.0.0 - a fix'], body: ['A fix.'] }, 'name'],
+  ];
+  for (const [obj, field] of rows) {
+    const res = run(dir, JSON.stringify(obj));
+    assert.equal(res.status, 1, `${JSON.stringify(obj)}: ${res.stdout}${res.stderr}`);
+    assert.match(res.stderr, new RegExp(`verify-release-shape: the published Release's ${field} is not a string`), JSON.stringify(obj));
+    assert.doesNotMatch(res.stderr, /TypeError|\n\s+at /, JSON.stringify(obj));
+  }
+  // control: an empty-string body is a string, so it reaches the comparison and fails there as a BODY MISMATCH, not as a type failure
+  const empty = run(dir, JSON.stringify({ name: 'v1.0.0 - a fix', body: '' }));
+  assert.equal(empty.status, 1);
+  assert.match(empty.stderr, /BODY MISMATCH/);
+});
+
 test('verify-release-shape.mjs: the derived files are missing (release-notes.mjs never ran) fails loud, names the problem', () => {
   const dir = scratch();
   const res = run(dir, JSON.stringify({ name: 'x', body: 'y' }));
@@ -187,4 +226,18 @@ test('sandboxEnv: one literal of named keys with GIT_CONFIG_NOSYSTEM the literal
   const spreads = body.split('\n').filter((l) => !l.trim().startsWith('//') && /\.\.\./.test(l)).map((l) => l.trim());
   assert.deepEqual(spreads, ['...Object.fromEntries(BASE_ENV_KEYS.filter((k) => process.env[k] !== undefined).map((k) => [k, process.env[k]])),']);
   assert.ok(/GIT_CONFIG_NOSYSTEM: '1'/.test(body));
+});
+
+// 16j (CoalWash PR #18, CoalBoard T5, CoalLedger: the same finding three times): the rail compared both sides after trim(), so a LEADING space or newline the API
+// added or lost read as a match. Only the trailing newline GitHub itself appends is tolerated (trimEnd); a leading byte is the corruption this rail exists for.
+test('verify-release-shape.mjs: a published title or body that gained a LEADING space or newline is a mismatch, exit 1; the trailing newline alone still matches -- RED before 16j', () => {
+  const dir = scratch();
+  fs.writeFileSync(path.join(dir, 'release-title.txt'), 'v1.0.0 - a fix\n');
+  fs.writeFileSync(path.join(dir, 'release-body.md'), 'A fix.\n');
+  const title = run(dir, JSON.stringify({ name: ' v1.0.0 - a fix', body: 'A fix.' }));
+  assert.equal(title.status, 1, title.stdout + title.stderr); assert.match(title.stderr, /TITLE MISMATCH/);
+  const body = run(dir, JSON.stringify({ name: 'v1.0.0 - a fix', body: '\nA fix.' }));
+  assert.equal(body.status, 1, body.stdout + body.stderr); assert.match(body.stderr, /BODY MISMATCH/);
+  const ok = run(dir, JSON.stringify({ name: 'v1.0.0 - a fix', body: 'A fix.\n' }));
+  assert.equal(ok.status, 0, ok.stdout + ok.stderr);
 });
