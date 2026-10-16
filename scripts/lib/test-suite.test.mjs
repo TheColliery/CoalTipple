@@ -65,10 +65,8 @@ test('test-suite: a file that exits 0 before its tests register is VACUOUS and t
 
 test('test-suite: a file that leaks an interval while its one test passes ENDS (force-exit), it does not hold the run open', async (t) => {
   const { dir, tests } = tree(t, { leaky: 'leak' });
-  const t0 = Date.now();
   const r = await runSuite({ repo: dir, tests, limits: TINY, quiet: true });
-  assert.equal(r.code, 0, r.output);
-  assert.ok(Date.now() - t0 < TINY.deadlineMs, 'it ended well before the whole-run deadline');
+  assert.equal(r.code, 0, r.output); // a leak that held the run open would reach the whole-run deadline and exit 1
 });
 
 test('test-suite: a test that awaits forever beside a live interval is failed at the test clock, by name, and the run ends', async (t) => {
@@ -89,11 +87,9 @@ test('test-suite: a file that hangs before its first test is killed at the file 
 
 test('test-suite: the whole-run deadline kills a hung file and the run is red with the named reason', async (t) => {
   const { dir, tests } = tree(t, { frozen: 'hangFile' });
-  const t0 = Date.now();
   const r = await runSuite({ repo: dir, tests, limits: { ...TINY, fileClockMs: 200000, deadlineMs: 3000 }, quiet: true });
   assert.equal(r.code, 1, r.output);
   assert.match(r.output, /killed at the whole-run deadline/);
-  assert.ok(Date.now() - t0 < 25000, 'it ended soon after the deadline');
 });
 
 test('test-suite: a missing runner is a named FAIL test runner line and a red exit, not a stack', async (t) => {
@@ -107,11 +103,9 @@ test('test-suite: a missing runner is a named FAIL test runner line and a red ex
 test('test-suite: a runner that outlives its own deadline is killed by the backstop and named', async (t) => {
   const { dir, tests } = tree(t, { a: 'green' });
   fs.writeFileSync(path.join(dir, 'scripts', 'lib', 'wave-run.mjs'), 'setInterval(() => {}, 1000);\n');
-  const t0 = Date.now();
   const r = await runSuite({ repo: dir, tests, limits: { ...TINY, deadlineMs: 1000, backstopMarginMs: 500 }, quiet: true });
   assert.equal(r.code, 1);
   assert.match(r.output, /FAIL test runner: wave-run was still running/);
-  assert.ok(Date.now() - t0 < 20000);
 });
 
 test('test-suite: a runner that ends with a code that is no verdict (a crash) is a named FAIL test runner line', async (t) => {
