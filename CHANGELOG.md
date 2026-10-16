@@ -2,6 +2,21 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.7.3] - 2026-10-16
+
+Hooks run without a shell; linked project config is named
+
+Both hooks now start `node` directly, a config refused for being behind a link is named at session start, and a config write that cannot rename no longer overwrites the file in place.
+
+### Fixed
+- **Both hook entries now use the exec form.** `hooks/hooks.json` ran the conductor as one shell string, `node "${CLAUDE_PLUGIN_ROOT}/hooks/coaltipple-conductor.js"`. Each entry is now `command: "node"` with the conductor path in `args`, no shell and no `onFailure`. The `args` form needs Claude Code 2.1.139 or later. This answers Claude Code 2.1.299, whose changelog reads "Windows: Fixed PreToolUse and PermissionRequest hooks that set no shell failing open when Git for Windows isn't installed; a guard that fails now blocks the call". CoalTipple's hooks are SessionStart and UserPromptSubmit, not PreToolUse, so nothing here was a guard that could block a call. What it meant for this room: on Windows without Git for Windows the old string ran under PowerShell, where `${CLAUDE_PLUGIN_ROOT}` expands to nothing, so node was given no script and the conductor did not run (no routing contract, and a visible hook error). Limit: the shell-form failure rests on that expansion, shown by CoalWash's probe of the same string shape; Claude Code's own no-Git fallback was not run on this box. — test: `scripts/lib/hooks-exec-form.test.mjs`
+- **A config write whose rename is refused no longer falls back to writing in place.** `configure.mjs` and `install.mjs` write the config through a temp file and a rename. On Windows, when another program holds the config open, the rename fails with `EPERM` or `EBUSY`; v1.7.2 and earlier then overwrote the live file in place, which a crash could leave half written. The rename is now retried up to five times, about 40 ms apart, and then the command fails with an error that names the file, says it is unchanged and says to close the other program; any other error code fails at once. The shipped plugin does not write the config, so only the user-run scripts change. — test: `scripts/lib/config-load.test.mjs`
+
+### Changed
+- **SessionStart now names a project config it refused to read.** Since v1.7.2 a config behind a link, a junction or a differently cased folder is skipped as if absent, with no word. Now one line per such file, once at session start and never on a prompt: `[CoalTipple] REFUSED: <path relative to the project> resolves outside this project's own folder (a link, a junction or a differently cased name); it was not read -- replace it with a regular file at .claude/coal/coaltipple.json.` The file is still not read. — test: `scripts/lib/project-links.test.mjs`
+- **Hyphenated spellings of the hot keywords now fire the same hints.** The conductor reads the raw line before a slash command expands, so `/security-review` reached it only as the hyphenated name and fired nothing, while the typed words "security review" fire the grade-4 hint. Added `race-condition` (grade 5), and `auth-bypass`, `sql-injection`, `access-control`, `schema-change`, `rate-limit`, `bug-scan`, `security-audit`, `security-review`, `vulnerability-scan` and `code-audit` (grade 4). It is a wider match for words already listed, not a new capability. — test: `scripts/lib/conductor.test.mjs`
+- **`SKILL.md` tells the agent to check the real path before the writes only it can make.** Before it persists `fableConsent` into the project config or writes `proposed/` or `state.json`, the agent is told to check that the target, and the folders above it inside the project, are not a link or junction, and to refuse and tell the user which path if one is. This is an instruction to the model: no code enforces it, so it is a mitigation at prose strength and the residual named in v1.7.2 stands. — test: none (prose for the model; no test can enforce it)
+
 ## [1.7.2] - 2026-10-15
 
 Project config folders that are links are now refused
