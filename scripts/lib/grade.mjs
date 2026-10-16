@@ -12,7 +12,7 @@
 // (SKILL.md Step 1/2) carries the grading — it grades by MEANING/intent and applies
 // the sensitive never-down gate by intent, because the keyword flag will not fire.
 
-import { KEYWORD_GROUPS, SENSITIVE, EXCLUDE } from './keywords.mjs';
+import { KEYWORD_GROUPS, SENSITIVE, EXCLUDE, HYPHEN_FORMS } from './keywords.mjs';
 
 // Re-exported from the keyword SSoT (keywords.mjs) — so the grader and the
 // conductor's synced copy can never disagree (the rot-canary "two sources of
@@ -43,6 +43,8 @@ const includesAny = (text, list) =>
     const stem = raw.endsWith('*');
     const word = escapeRe(stem ? raw.slice(0, -1) : raw);
     if (!word) return false;
+    // a guarded hyphen form (keywords.mjs HYPHEN_FORMS) is its own word only: no word char or hyphen before it, and after it neither a word char, a hyphen nor a dot that opens a filename
+    if (HYPHEN_FORMS.has(raw)) return new RegExp('(?<![\\w-])' + word + '(?![\\w-]|\\.\\w)').test(text);
     return new RegExp('\\b' + word + (stem ? '' : '\\b')).test(text);
   });
 

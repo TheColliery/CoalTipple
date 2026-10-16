@@ -59,3 +59,13 @@ export const SENSITIVE = ['auth', 'crypto', 'payment', 'billing', 'migration', '
 
 // Dirs never counted toward grading breadth.
 export const EXCLUDE = ['node_modules', '.git', 'dist', 'vendor', 'build', '.next', 'coverage'];
+
+// The hyphenated spellings added at 1.7.3 for slash-command and slug forms (/security-review, a bug-scan, the race-condition): each is the hyphenated twin of a spaced entry in
+// the SAME group. They are matched as their own word only: never inside a longer hyphenated name, a filename or an HTTP header (x-rate-limit-reset, Access-Control-Allow-Origin,
+// code-audit-report.md). A form matches only when no word character or hyphen sits before it, and none sits after it except a sentence-ending dot (a dot before a word
+// character is a filename). The older hyphenated entries (timing-attack, constant-time, timing-safe, side-channel, thread-saf*) are NOT in this set: they keep the plain
+// whole-word match, because narrowing a crypto flag is not this change's business. grade.mjs matches with this set; the conductor gets it as the generated HOT_GUARDED list.
+export const HYPHEN_FORMS = new Set([
+  'race-condition', 'auth-bypass', 'sql-injection', 'access-control', 'schema-change', 'rate-limit',
+  'bug-scan', 'security-audit', 'security-review', 'vulnerability-scan', 'code-audit',
+]);

@@ -270,3 +270,32 @@ test('a config.keywords grade is clamped to 1-5 — the grader never emits an un
   const lo = grade({ prompt: 'frobnicate', config: { keywords: { x: { grade: 0, words: ['frobnicate'] } } } });
   assert.ok(lo.tier);                 // 0 -> clamped to 1 -> a valid tier
 });
+
+// 16e LOW-3: grade() must treat the hyphenated hot forms exactly as the conductor does (one rule, two matchers).
+import { HYPHEN_FORMS, KEYWORD_GROUPS } from './keywords.mjs';
+
+test('grade: a hyphenated hot form inside a longer hyphenated name or a filename adds no keyword floor (LOW-3)', () => {
+  for (const prompt of ['read the x-rate-limit-reset header and log it', 'set the Access-Control-Allow-Origin header for the dev server', 'fix the typo in code-audit-report.md']) {
+    const r = grade({ prompt });
+    assert.equal(r.grade, 1, `${prompt}: ${JSON.stringify(r)}`);
+    assert.equal(r.sensitive, false, prompt);
+  }
+});
+
+test('grade: the hyphenated hot forms still floor the grade on their own (LOW-3 positives)', () => {
+  assert.equal(grade({ prompt: '/security-review' }).grade, 4);
+  assert.equal(grade({ prompt: 'please run a bug-scan.' }).grade, 4);
+  assert.equal(grade({ prompt: 'do a code-audit, then report' }).grade, 4);
+  assert.equal(grade({ prompt: 'review the auth-bypass fix' }).sensitive, true);
+  assert.equal(grade({ prompt: 'fix the race-condition!' }).grade, 5);
+});
+
+test('keywords: every guarded hyphen form is the hyphenated twin of a spaced entry in the SAME group', () => {
+  assert.ok(HYPHEN_FORMS.size > 0);
+  for (const form of HYPHEN_FORMS) {
+    const twin = form.split('-').join(' ');
+    const groups = Object.entries(KEYWORD_GROUPS).filter(([, g]) => g.words.includes(form));
+    assert.equal(groups.length, 1, `${form} must be listed in exactly one group`);
+    assert.ok(groups[0][1].words.includes(twin), `${form}: its spaced twin '${twin}' must be in the same group`);
+  }
+});

@@ -785,3 +785,26 @@ test('UserPromptSubmit: the hyphenated spelling of a multi-word hot keyword grad
     assert.doesNotMatch(plain.stdout, /grade [45]/, 'control: an unrelated slash line fires no grade hint');
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 });
+
+// 16e LOW-3 (INSPECT witness scratchpad/r15b/rv-hyphen.out): a hyphenated hot form must fire as its own word, never inside a longer hyphenated identifier, a filename or an
+// HTTP header name. The negatives below fired HOT4 on 1.7.3; the positives are the slash and prose spellings that must keep firing.
+test('UserPromptSubmit: a hyphenated hot form inside an identifier, a filename or a header name fires no grade hint (LOW-3)', () => {
+  const tmp = mk();
+  try {
+    for (const prompt of ['read the x-rate-limit-reset header and log it', 'set the Access-Control-Allow-Origin header for the dev server', 'fix the typo in code-audit-report.md', 'open security-review.md', 'see src/bug-scan-notes.txt']) {
+      const r = run({ hook_event_name: 'UserPromptSubmit', prompt }, tmp);
+      assert.equal(r.status, 0, prompt);
+      assert.doesNotMatch(r.stdout, /grade [45]/, `${prompt}: a hyphenated hot form inside a longer name must not fire\n${r.stdout}`);
+    }
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
+test('UserPromptSubmit: the hyphenated hot forms still fire on their own, at a sentence end and after a slash (LOW-3 positives)', () => {
+  const tmp = mk();
+  try {
+    for (const [prompt, grade] of [['/security-review', 4], ['/security-review src/auth.js', 4], ['please run a bug-scan.', 4], ['do a code-audit, then report', 4], ['(sql-injection)', 4], ['fix the race-condition!', 5]]) {
+      const r = run({ hook_event_name: 'UserPromptSubmit', prompt }, tmp);
+      assert.match(r.stdout, new RegExp('grade ' + grade), `${prompt}\n${r.stdout}`);
+    }
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});

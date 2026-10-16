@@ -273,6 +273,7 @@ function updateDirective(mode, days) {
 // <coaltipple-shared: hot-keywords> — synced from scripts/lib/keywords.mjs by build-plugin.mjs; edit keywords.mjs, NOT this block
 const HOT5 = ['concurrency', 'mutex', 'mutexes', 'race condition', 'race-condition', 'deadlock', 'deadlocks', 'thread-saf*', 'atomic', 'crypto', 'cryptograph*', 'timing attack', 'timing-attack', 'constant-time', 'constant time', 'timing-safe', 'side-channel', 'encrypt*', 'decrypt*', 'mathematical proof', 'formal proof', 'derive equation', 'complexity bound'];
 const HOT4 = ['oauth', 'authenticat*', 'authoriz*', 'auth bypass', 'auth-bypass', 'sql injection', 'sql-injection', 'access control', 'access-control', 'permission*', 'secret', 'secrets', 'token', 'tokens', 'password', 'passwords', 'session', 'sessions', 'migrat*', 'schema change', 'schema-change', 'payment', 'payments', 'billing', 'rate limit', 'rate-limit', 'optimize query', 'bug scan', 'bug-scan', 'scan for bugs', 'find bugs', 'find all bugs', 'security audit', 'security-audit', 'security review', 'security-review', 'vulnerability scan', 'vulnerability-scan', 'audit the codebase', 'code audit', 'code-audit', 'legal contract', 'compliance', 'license terms', 'financial audit', 'tax filing', 'valuation', 'medical diagnosis', 'clinical diagnosis', 'dosage', 'clinical trial', 'gdpr', 'hipaa', 'pii'];
+const HOT_GUARDED = ['race-condition', 'auth-bypass', 'sql-injection', 'access-control', 'schema-change', 'rate-limit', 'bug-scan', 'security-audit', 'security-review', 'vulnerability-scan', 'code-audit'];
 // </coaltipple-shared: hot-keywords>
 // Match a hot keyword with the SAME stem-vs-whole-word convention as the grader
 // (grade.mjs includesAny): a trailing `*` = STEM (prefix, leading \b only); a bare
@@ -284,6 +285,8 @@ function matchKw(t, list) {
     const stem = raw.endsWith('*');
     const word = (stem ? raw.slice(0, -1) : raw).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     if (!word) continue;
+    // a guarded hyphen form (HOT_GUARDED, generated from keywords.mjs HYPHEN_FORMS) is its own word only: no word char or hyphen before it, and after it neither a word char, a hyphen nor a dot that opens a filename
+    if (HOT_GUARDED.includes(raw)) { if (new RegExp('(?<![\\w-])' + word + '(?![\\w-]|\\.\\w)').test(t)) return true; continue; }
     if (new RegExp('\\b' + word + (stem ? '' : '\\b')).test(t)) return true;
   }
   return false;

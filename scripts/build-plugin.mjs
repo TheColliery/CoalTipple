@@ -22,7 +22,7 @@ const fmtArray = (arr) => `[${arr.map((s) => `'${s}'`).join(', ')}]`;
 // Body that belongs BETWEEN the hot-keywords markers (no marker lines).
 export async function genHotKeywords() {
   const kw = await import(pathToFileURL(path.join(repo, 'scripts', 'lib', 'keywords.mjs')).href);
-  return `const HOT5 = ${fmtArray(kw.HOT5)};\nconst HOT4 = ${fmtArray(kw.HOT4)};`;
+  return `const HOT5 = ${fmtArray(kw.HOT5)};\nconst HOT4 = ${fmtArray(kw.HOT4)};\nconst HOT_GUARDED = ${fmtArray([...kw.HYPHEN_FORMS])};`;
 }
 
 // Body BETWEEN the keywords markers in the factory .coaltipple.json: the populated keyword
