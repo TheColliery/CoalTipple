@@ -31,6 +31,11 @@ export const TARGETS = {
   gemini:   path.join(process.cwd(), '.gemini', 'skills'),
 };
 
+// The agents on which routing can ACTUATE: the ones whose spawn tool takes a same-vendor worker model + effort (README Compatibility; the header above). Defined ONCE here and read
+// by both install paths: `install.mjs all` installs only into these (and it never auto-detects claude, below, so today `all` installs nothing), and an explicitly named agent
+// outside this set still installs but prints a WARNING on stderr. Widen it only with evidence about the agent's spawn schema (the header's rule), never to make `all` install more.
+export const ACTUATING = new Set(['claude']);
+
 // Agents NOT auto-detected by `install.mjs all` (their dir is ambiguous with a
 // global/plugin install): claude (~/.claude global) and cline (project .claude,
 // also read by Claude Code itself). Both stay installable explicitly by name.
@@ -41,12 +46,12 @@ const IMPORT_CWD = process.cwd();
 // Presence detection for `install.mjs all`: an agent is present when its config
 // home (the parent of its skills dir) already exists under `cwd`. Re-roots each
 // project target onto the passed cwd so the logic stays unit-testable. Home/global
-// targets and ALL_EXCLUDE agents are never auto-detected. Deterministic.
+// targets, ALL_EXCLUDE agents and every agent outside ACTUATING are never auto-detected. Deterministic.
 export function detectPresentAgents(cwd = process.cwd()) {
   const present = [];
   const absent = [];
   for (const k of Object.keys(TARGETS)) {
-    if (ALL_EXCLUDE.has(k)) continue;
+    if (ALL_EXCLUDE.has(k) || !ACTUATING.has(k)) continue;
     const rel = path.relative(IMPORT_CWD, TARGETS[k]);
     if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) continue; // not a project target
     const marker = path.dirname(path.join(cwd, rel)); // <cwd>/.cursor, <cwd>/.agents, ...

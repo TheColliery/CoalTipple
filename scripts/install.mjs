@@ -15,7 +15,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { TARGETS, detectPresentAgents } from './lib/targets.mjs';
+import { TARGETS, ACTUATING, detectPresentAgents } from './lib/targets.mjs';
 import { buildFloorRanking, writeRankingAtomic, loadRanking } from './lib/classify.mjs';
 import { globalConfigPath, projectConfigPath, projectWriteTarget, moveLegacyAside, writeConfigAtomic, containedProjectPath, globalStateDir, oldGlobalStateDir, projectStateDir, findGitRoot } from './lib/config-load.mjs';
 
@@ -302,8 +302,9 @@ if (key === 'all') {
   if (isUninstall) { console.error("Uninstall does not support 'all' — name the agent explicitly."); process.exit(2); }
   const { present, absent } = detectPresentAgents(process.cwd());
   if (!present.length) {
-    console.log(`\nCoalTipple 'all': no agent config dir found under ${process.cwd()}.`);
-    console.log(`  Install explicitly: node scripts/install.mjs <${Object.keys(TARGETS).join('|')}|PATH>`);
+    // CoalTipple routes only where the agent's spawn tool takes a worker model + effort (targets.mjs ACTUATING): today Claude Code alone, which `all` never auto-detects (its install is the plugin).
+    console.log(`\nCoalTipple 'all': nothing to install. Routing actuates only on an agent whose spawn tool takes a worker model and effort; today that is Claude Code alone, and its install is the plugin: claude plugin install coaltipple@coaltipple (from a source checkout: node scripts/install.mjs claude).`);
+    console.log(`  Another agent can still be named explicitly (node scripts/install.mjs <${Object.keys(TARGETS).filter((k) => !ACTUATING.has(k)).join('|')}>); the files copy, routing does not actuate there.`);
     process.exit(0);
   }
   console.log(`\nCoalTipple 'all' — detected: ${present.join(', ')}${absent.length ? `  ·  skipped: ${absent.join(', ')}` : ''}`);
@@ -339,6 +340,11 @@ if (isUninstall) {
   uninstall(dest);
   console.log('\nDone.');
   process.exit(0);
+}
+
+// An explicitly named agent that cannot actuate routing still installs (the transitional behaviour), but says so once, on stderr.
+if (key in TARGETS && !ACTUATING.has(key)) {
+  console.error(`WARNING: CoalTipple cannot actuate routing on ${key}: its spawn tool does not take a same-vendor worker model and effort, so the installed files will not route. The Claude Code install is the plugin: claude plugin install coaltipple@coaltipple.`);
 }
 
 console.log(`\nInstalling CoalTipple -> ${dest}`);

@@ -362,3 +362,73 @@ test('UMB-133 B1 M2 (over-reach guard): a plain (non-reset) install with only LE
     assert.ok(!fs.existsSync(path.join(tmp, '.coaltipple.json.superseded')));
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); }
 });
+
+// 16f (CWK2-045, the chief's option (c)): CoalTipple routes only where the agent's spawn tool takes a same-vendor worker model + effort. `install.mjs all` installs only into
+// actuating targets (today that is claude alone, and `all` already skips claude), and an explicitly named non-actuating target still installs but warns on stderr.
+import * as TARGETS_LIB from './targets.mjs';
+
+const SKILLS_SUFFIX = { copilot: ['.github', 'skills'], codex: ['.agents', 'skills'], cursor: ['.cursor', 'skills'], windsurf: ['.windsurf', 'skills'], cline: ['.claude', 'skills'], amp: ['.agents', 'skills'], goose: ['.agents', 'skills'], gemini: ['.gemini', 'skills'] };
+const skillDirOf = (sb, home, key) => (key === 'claude' ? path.join(home, '.claude', 'skills', 'coaltipple') : path.join(sb, ...SKILLS_SUFFIX[key], 'coaltipple'));
+const withAllAgentHomes = (sb) => { for (const d of ['.github', '.agents', '.cursor', '.windsurf', '.claude', '.gemini']) fs.mkdirSync(path.join(sb, d), { recursive: true }); };
+const cleanSb = (...dirs) => { for (const d of dirs) fs.rmSync(d, { recursive: true, force: true }); };
+
+test('16f: the actuating set is defined once in targets.mjs, is exactly claude today, and names only real targets', () => {
+  assert.ok(TARGETS_LIB.ACTUATING instanceof Set, 'targets.mjs exports ACTUATING');
+  assert.deepEqual([...TARGETS_LIB.ACTUATING], ['claude'], 'widen this set only with README Compatibility evidence that the agent spawn tool takes a worker model and effort');
+  for (const k of TARGETS_LIB.ACTUATING) assert.ok(k in TARGETS_LIB.TARGETS, `${k} must be a real target`);
+});
+
+for (const key of Object.keys(TARGETS_LIB.TARGETS)) {
+  const actuating = () => TARGETS_LIB.ACTUATING instanceof Set && TARGETS_LIB.ACTUATING.has(key);
+
+  test(`16f all: ${key} is ${key === 'claude' ? 'skipped (the plugin install, the double-fire guard)' : 'skipped (not an actuating agent)'} even when its config home exists`, () => {
+    const sb = mkSandboxRepo();
+    const home = mkHome();
+    try {
+      withAllAgentHomes(sb);
+      const r = runSandbox(sb, home, 'all');
+      assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
+      const reachable = actuating() && key !== 'claude' && key !== 'cline'; // 'all' never auto-detects claude or cline (ambiguous dirs), whatever the set says
+      assert.equal(fs.existsSync(skillDirOf(sb, home, key)), reachable, `${key}: installed by 'all' must equal "actuating and auto-detectable"\n${r.stdout}`);
+      assert.match(r.stdout, /claude plugin install coaltipple@coaltipple/, "the one line says why and names the Claude Code install");
+    } finally { cleanSb(sb, home); }
+  });
+
+  if (key !== 'claude') {
+    test(`16f named: install.mjs ${key} still installs, and prints one WARNING on stderr naming that routing cannot actuate there (exit code unchanged)`, () => {
+      const sb = mkSandboxRepo();
+      const home = mkHome();
+      try {
+        const r = runSandbox(sb, home, key);
+        assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
+        assert.ok(fs.existsSync(skillDirOf(sb, home, key)), `${key}: a named install still copies the skill`);
+        const warnings = r.stderr.split(/\r?\n/).filter((l) => /^WARNING/.test(l));
+        assert.equal(warnings.length, 1, `exactly one WARNING line on stderr:\n${r.stderr}`);
+        assert.ok(warnings[0].includes(key), `the WARNING names ${key}: ${warnings[0]}`);
+        assert.match(warnings[0], /cannot actuate/);
+      } finally { cleanSb(sb, home); }
+    });
+  }
+}
+
+test('16f named: the actuating target claude installs with NO warning', () => {
+  const sb = mkSandboxRepo();
+  const home = mkHome();
+  try {
+    const r = runSandbox(sb, home, 'claude');
+    assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
+    assert.doesNotMatch(r.stderr, /WARNING/);
+  } finally { cleanSb(sb, home); }
+});
+
+test('16f named: --uninstall of a non-actuating target prints no WARNING (it only removes)', () => {
+  const sb = mkSandboxRepo();
+  const home = mkHome();
+  try {
+    assert.equal(runSandbox(sb, home, 'cursor').status, 0);
+    const r = runSandbox(sb, home, '--uninstall', 'cursor');
+    assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
+    assert.doesNotMatch(r.stderr, /WARNING/);
+    assert.ok(!fs.existsSync(skillDirOf(sb, home, 'cursor')), 'uninstalled');
+  } finally { cleanSb(sb, home); }
+});
