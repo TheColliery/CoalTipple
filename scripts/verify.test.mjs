@@ -430,3 +430,21 @@ test('verify.mjs pointer-check (T-G): a backticked citation of a tracked .github
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+// T-D (e2 row 16, 15b): the git-derived roots must come from `git ls-files -z`. Without -z git QUOTES a path holding a non-ASCII byte
+// (core.quotePath), so a tracked top-level directory called "dir" + e-acute derived as the quoted spelling, and the self-check that
+// compares derived roots with the no-git fallback named that spelling in its FAIL line. With -z the root derives as itself.
+test('verify.mjs: a tracked top-level directory with a non-ASCII name derives as itself, not as git\'s quoted spelling (T-D)', () => {
+  const { tmp, git } = mkGitSandbox();
+  try {
+    const name = 'dir' + String.fromCharCode(0xe9);
+    fs.mkdirSync(path.join(tmp, name));
+    fs.writeFileSync(path.join(tmp, name, 'x.txt'), 'x\n');
+    git(['add', '-A']);
+    git(['commit', '-q', '-m', 'a non-ASCII top-level root']);
+    const r = runVerify(tmp);
+    const out = r.stdout + r.stderr;
+    assert.ok(out.includes(`'${name}' is a tracked top-level root`), `the root must be named as itself:\n${out}`);
+    assert.ok(!out.includes(String.fromCharCode(92) + '303'), `git's quoted octal spelling leaked into the derivation:\n${out}`);
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});

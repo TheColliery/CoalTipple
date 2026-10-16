@@ -413,9 +413,10 @@ try {
   function pcDeriveOurRoots() {
     if (!pcHasGit) return PC_OUR_ROOTS_FALLBACK;
     try {
-      const listing = execFileSync('git', ['ls-files'], { cwd: repo, stdio: 'pipe', env: REPO_GIT_ENV }).toString('utf8');
+      // -z: NUL-separated and never quoted (without it git prints a path holding a non-ASCII byte as a quoted octal string, core.quotePath, and the root derived as that spelling)
+      const listing = execFileSync('git', ['ls-files', '-z'], { cwd: repo, stdio: 'pipe', env: REPO_GIT_ENV }).toString('utf8');
       const roots = new Set();
-      for (const line of listing.split(/\r?\n/)) {
+      for (const line of listing.split(String.fromCharCode(0))) {
         if (!line) continue;
         const first = line.split('/')[0];
         if (first === line) continue;                 // a top-level FILE, not a directory root
