@@ -24,14 +24,14 @@
 export const KEYWORD_GROUPS = {
   // Coding — split by what forces the grade: concurrency/crypto are reasoning-hard
   // (5); security/coding are sensitive (4). crypto/security/coding also never-down.
-  'concurrency': { grade: 5, words: ['concurrency', 'mutex', 'mutexes', 'race condition', 'deadlock', 'deadlocks', 'thread-saf*', 'atomic'] },
+  'concurrency': { grade: 5, words: ['concurrency', 'mutex', 'mutexes', 'race condition', 'race-condition', 'deadlock', 'deadlocks', 'thread-saf*', 'atomic'] },
   'crypto':      { grade: 5, sensitive: true, words: ['crypto', 'cryptograph*', 'timing attack', 'timing-attack', 'constant-time', 'constant time', 'timing-safe', 'side-channel', 'encrypt*', 'decrypt*'] },
-  'security':    { grade: 4, sensitive: true, words: ['oauth', 'authenticat*', 'authoriz*', 'auth bypass', 'sql injection', 'access control', 'permission*', 'secret', 'secrets', 'token', 'tokens', 'password', 'passwords', 'session', 'sessions'] },
-  'coding':      { grade: 4, sensitive: true, words: ['migrat*', 'schema change', 'payment', 'payments', 'billing', 'rate limit', 'optimize query'] },
+  'security':    { grade: 4, sensitive: true, words: ['oauth', 'authenticat*', 'authoriz*', 'auth bypass', 'auth-bypass', 'sql injection', 'sql-injection', 'access control', 'access-control', 'permission*', 'secret', 'secrets', 'token', 'tokens', 'password', 'passwords', 'session', 'sessions'] },
+  'coding':      { grade: 4, sensitive: true, words: ['migrat*', 'schema change', 'schema-change', 'payment', 'payments', 'billing', 'rate limit', 'rate-limit', 'optimize query'] },
 
   // Audit / review — finding REAL issues needs capability; a cheap tier returns a
   // confident shallow all-clear. High-by-DIFFICULTY: route UP, never size-down/floor-self.
-  'audit':       { grade: 4, words: ['bug scan', 'scan for bugs', 'find bugs', 'find all bugs', 'security audit', 'security review', 'vulnerability scan', 'audit the codebase', 'code audit'] },
+  'audit':       { grade: 4, words: ['bug scan', 'bug-scan', 'scan for bugs', 'find bugs', 'find all bugs', 'security audit', 'security-audit', 'security review', 'security-review', 'vulnerability scan', 'vulnerability-scan', 'audit the codebase', 'code audit', 'code-audit'] },
 
   // Math — reasoning-hard proof / derivation.
   'math':      { grade: 5, words: ['mathematical proof', 'formal proof', 'derive equation', 'complexity bound'] },

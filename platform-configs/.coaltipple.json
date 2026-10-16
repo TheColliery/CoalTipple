@@ -142,11 +142,11 @@
   // # The value below is GENERATED from keywords.mjs (the SSoT) by build-plugin.mjs; verify.mjs fails on drift.
 // <coaltipple-shared: keywords>
   "keywords": {
-    "concurrency": { "grade": 5, "words": ["concurrency", "mutex", "mutexes", "race condition", "deadlock", "deadlocks", "thread-saf*", "atomic"] },
+    "concurrency": { "grade": 5, "words": ["concurrency", "mutex", "mutexes", "race condition", "race-condition", "deadlock", "deadlocks", "thread-saf*", "atomic"] },
     "crypto": { "grade": 5, "sensitive": true, "words": ["crypto", "cryptograph*", "timing attack", "timing-attack", "constant-time", "constant time", "timing-safe", "side-channel", "encrypt*", "decrypt*"] },
-    "security": { "grade": 4, "sensitive": true, "words": ["oauth", "authenticat*", "authoriz*", "auth bypass", "sql injection", "access control", "permission*", "secret", "secrets", "token", "tokens", "password", "passwords", "session", "sessions"] },
-    "coding": { "grade": 4, "sensitive": true, "words": ["migrat*", "schema change", "payment", "payments", "billing", "rate limit", "optimize query"] },
-    "audit": { "grade": 4, "words": ["bug scan", "scan for bugs", "find bugs", "find all bugs", "security audit", "security review", "vulnerability scan", "audit the codebase", "code audit"] },
+    "security": { "grade": 4, "sensitive": true, "words": ["oauth", "authenticat*", "authoriz*", "auth bypass", "auth-bypass", "sql injection", "sql-injection", "access control", "access-control", "permission*", "secret", "secrets", "token", "tokens", "password", "passwords", "session", "sessions"] },
+    "coding": { "grade": 4, "sensitive": true, "words": ["migrat*", "schema change", "schema-change", "payment", "payments", "billing", "rate limit", "rate-limit", "optimize query"] },
+    "audit": { "grade": 4, "words": ["bug scan", "bug-scan", "scan for bugs", "find bugs", "find all bugs", "security audit", "security-audit", "security review", "security-review", "vulnerability scan", "vulnerability-scan", "audit the codebase", "code audit", "code-audit"] },
     "math": { "grade": 5, "words": ["mathematical proof", "formal proof", "derive equation", "complexity bound"] },
     "knowledge": { "grade": 3, "words": ["systematic review", "literature review", "citation", "claim verification"] },
     "domain": { "grade": 4, "sensitive": true, "words": ["legal contract", "compliance", "license terms", "financial audit", "tax filing", "valuation", "medical diagnosis", "clinical diagnosis", "dosage", "clinical trial", "gdpr", "hipaa", "pii"] },

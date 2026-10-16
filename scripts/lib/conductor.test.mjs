@@ -761,3 +761,25 @@ test('MARK 5: the emitted routing contract names no versioned model id (bare ali
     assert.equal(hit, null, `a versioned model id leaked into the emitted contract: ${hit && hit[0]}`);
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 });
+
+// 15b item 3 (CWK2-020 (3)): the hook runs on the raw line BEFORE a slash command expands, so `/security-review` reaches it as the hyphenated
+// name only. The typed prose "security review" fires HOT4; the hyphenated spelling of each software/security noun compound must fire it too.
+test('UserPromptSubmit: the hyphenated spelling of a multi-word hot keyword grades like the spaced one (/security-review -> grade 4)', () => {
+  const tmp = mk();
+  try {
+    const cases = [
+      ['/security-review', 4], ['/security-audit src', 4], ['run a bug-scan', 4], ['a vulnerability-scan report', 4], ['code-audit this', 4],
+      ['sql-injection in the form', 4], ['auth-bypass check', 4], ['access-control list', 4], ['the rate-limit header', 4], ['schema-change plan', 4],
+      ['fix the race-condition', 5],
+    ];
+    for (const [prompt, grade] of cases) {
+      const r = run({ hook_event_name: 'UserPromptSubmit', prompt }, tmp);
+      assert.equal(r.status, 0, prompt);
+      assert.match(r.stdout, new RegExp('grade ' + grade), `${prompt}: expected the grade-${grade} hint\n${r.stdout}`);
+    }
+    const spaced = run({ hook_event_name: 'UserPromptSubmit', prompt: 'security review' }, tmp);
+    assert.match(spaced.stdout, /grade 4/, 'control: the spaced form already fires');
+    const plain = run({ hook_event_name: 'UserPromptSubmit', prompt: '/compact' }, tmp);
+    assert.doesNotMatch(plain.stdout, /grade [45]/, 'control: an unrelated slash line fires no grade hint');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
