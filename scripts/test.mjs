@@ -50,6 +50,7 @@ const TESTS = [
   'scripts/lib/project-links.test.mjs',
   'scripts/lib/hooks-exec-form.test.mjs',
   'scripts/lib/test-env.test.mjs',
+  'scripts/front-door-links.test.mjs',
   'scripts/lib/wave-run.test.mjs',
   'scripts/lib/test-suite.test.mjs',
 ];
