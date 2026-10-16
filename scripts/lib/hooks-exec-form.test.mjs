@@ -1,6 +1,8 @@
 // CWK2-027 (15b item 1): every hook entry is the EXEC form (`command: "node"` + one `args` path), never a shell string.
-// A shell-form string carrying ${CLAUDE_PLUGIN_ROOT} runs through PowerShell on Windows without Git for Windows, where the
-// placeholder is a PowerShell variable that expands to nothing: node gets a missing script and the hook fails.
+// Why: the exec form hands the conductor path to node as ONE argument, with no shell to parse or quote it, and Claude Code's own
+// hooks reference recommends it (its changelog 2.1.139 added `args` so path placeholders never need quoting). The vendor says the
+// placeholders are substituted in BOTH forms, so the older theory that the old shell string failed because PowerShell expanded
+// ${CLAUDE_PLUGIN_ROOT} to nothing is UNVERIFIED here (CHANGELOG [1.7.3] says the same); this test does not depend on it.
 // Exec form has no shell (hooks-safety.md section 3: `command` must be a real executable on Windows, so `node`, never a shim).
 // Exemplar: CoalWash scripts/hooks-exec-form.test.mjs.
 import { test } from 'node:test';
