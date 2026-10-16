@@ -261,7 +261,7 @@ function updateDirective(mode, days) {
     case 'auto':
       return '- CoalTipple self-update (standing consent — do this now): follow /coaltipple:update to web-check the latest CoalTipple tag vs the installed plugin.json version. If newer, OFFER `claude plugin update coaltipple@coaltipple` + `/reload-plugins`; if current, say "up to date"; if git/network is unavailable, say so and suggest updating manually later (never assume).';
     case 'remind':
-      return `- CoalTipple self-update reminder (relay to the user in their language, no action needed): it has been ~${days}d since the last CoalTipple update-check — consider \`claude plugin update coaltipple@coaltipple\` to refresh, or switch to auto by setting \`updateMode\` to \`auto\` in the global \`~/.claude/.coaltipple.json\` (an installed plugin has no scripts/; in a source checkout \`node scripts/configure.mjs --updateMode auto\` does it).`;
+      return `- CoalTipple self-update reminder (relay to the user in their language, no action needed): it has been ~${days}d since the last CoalTipple update-check — consider \`claude plugin update coaltipple@coaltipple\` to refresh, or switch to auto by setting \`updateMode\` to \`auto\` in the GLOBAL config file \`~/.claude/.coaltipple.json\` (the one under CLAUDE_CONFIG_DIR if that is set); an installed plugin has no scripts/, and in a source checkout \`node scripts/configure.mjs --updateMode auto\` does it.`;
     default:
       return null; // 'off' (or unknown) -> nothing
   }

@@ -267,9 +267,14 @@ test('migration-write: an OLD-location stamp past due fires the ask, then the wr
 // 16e row 15 (reviewer): an installed plugin carries only commands/, hooks/ and skills/, so a self-update directive must not send the agent to
 // scripts/configure.mjs as THE way to save the choice. The global config file is the path every install has; configure.mjs is the source-checkout convenience.
 const directiveLine = (stdout, head) => stdout.split(/\r?\n/).find((l) => l.includes(head)) || '';
+// E1 t132: the filename alone would also pass a directive that sent the agent to a PROJECT .coaltipple.json, so each directive is held to the whole qualified phrase
+// (the home path AND the CLAUDE_CONFIG_DIR qualification) and to naming no project location.
+const GLOBAL_PHRASE = 'GLOBAL config file `~/.claude/.coaltipple.json` (the one under CLAUDE_CONFIG_DIR if that is set)';
 function assertNoScriptsDependency(line, what) {
   assert.ok(line, `${what}: the directive line is present`);
-  assert.match(line, /\.coaltipple\.json/, `${what}: names the global config file`);
+  assert.ok(line.includes(GLOBAL_PHRASE), `${what}: must name the GLOBAL file with its CLAUDE_CONFIG_DIR qualification:\n${line}`);
+  assert.ok(line.includes('~/.claude/.coaltipple.json'), `${what}: names the home path`);
+  assert.doesNotMatch(line, /project|<gitroot>|coal\/coaltipple\.json/i, `${what}: must not name a project config location`);
   assert.match(line, /updateMode/, `${what}: names the key`);
   const at = line.indexOf('configure.mjs');
   if (at >= 0) assert.match(line.slice(Math.max(0, at - 160), at), /source checkout|has no scripts/, `${what}: configure.mjs is named only as the source-checkout convenience`);
