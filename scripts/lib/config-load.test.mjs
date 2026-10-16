@@ -3,7 +3,7 @@
 // sandboxes BOTH layers: a throwaway `home` (whose .claude/.coaltipple.json is the
 // GLOBAL file) and a throwaway `cwd` (whose .claude/.coaltipple.json is the PROJECT file),
 // so a real machine config can never leak in.
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -17,6 +17,11 @@ import { loadMergedConfig, globalConfigPath, globalStateDir, oldGlobalStateDir, 
 // sets/restores it deliberately (its own property under test) and is left alone;
 // every OTHER test in this file must never see it.
 delete process.env.CLAUDE_CONFIG_DIR;
+
+// The UMB-133 walk legs below read the PROJECT tier. They pass this EMPTY home, never the project dir: <home>/.claude/.coaltipple.json is the GLOBAL path and is
+// also LEGACY-1's shape, so `home: cwd` let the global read satisfy a project-tier assertion (T-C row 9, 15b).
+const EMPTY_HOME = fs.mkdtempSync(path.join(fs.realpathSync.native(os.tmpdir()), 'ct-empty-home-'));
+after(() => fs.rmSync(EMPTY_HOME, { recursive: true, force: true }));
 
 // Build a sandbox with optional global/project file bodies; returns { home, cwd }.
 function sandbox({ global, project } = {}) {
@@ -333,10 +338,17 @@ for (const [label, rel] of [['LEGACY-1 (.claude/.coaltipple.json)', ['.claude', 
       fs.mkdirSync(path.dirname(file), { recursive: true });
       fs.writeFileSync(file, JSON.stringify({ qualityBar: 77 }), 'utf8');
       assert.equal(projectConfigPath(cwd), file);
-      assert.equal(loadMergedConfig({ cwd, home: cwd }).qualityBar, 77, 'the value is read through the cascade, not just the path resolved');
+      assert.equal(loadMergedConfig({ cwd, home: EMPTY_HOME }).qualityBar, 77, 'the value is read through the cascade, not just the path resolved');
     } finally { fs.rmSync(cwd, { recursive: true, force: true }); }
   });
 }
+
+test('UMB-133 walk control (T-C row 9): with an empty home and no project file the project tier contributes nothing', () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-proj-'));
+  try {
+    assert.equal(loadMergedConfig({ cwd, home: EMPTY_HOME }).qualityBar, undefined);
+  } finally { fs.rmSync(cwd, { recursive: true, force: true }); }
+});
 
 test('UMB-133 walk: canonical wins over BOTH legacies; LEGACY-1 wins over LEGACY-2; first EXISTING file wins', () => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-proj-'));
@@ -344,11 +356,11 @@ test('UMB-133 walk: canonical wins over BOTH legacies; LEGACY-1 wins over LEGACY
     const [canon, , , legacy1, legacy2] = projectConfigCandidates(cwd);
     for (const f of [legacy2, legacy1]) { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, JSON.stringify({ qualityBar: f === legacy1 ? 11 : 22 }), 'utf8'); }
     assert.equal(projectConfigPath(cwd), legacy1, 'legacy-1 beats legacy-2');
-    assert.equal(loadMergedConfig({ cwd, home: cwd }).qualityBar, 11);
+    assert.equal(loadMergedConfig({ cwd, home: EMPTY_HOME }).qualityBar, 11);
     fs.mkdirSync(path.dirname(canon), { recursive: true });
     fs.writeFileSync(canon, JSON.stringify({ qualityBar: 99 }), 'utf8');
     assert.equal(projectConfigPath(cwd), canon, 'canonical beats both legacies');
-    assert.equal(loadMergedConfig({ cwd, home: cwd }).qualityBar, 99);
+    assert.equal(loadMergedConfig({ cwd, home: EMPTY_HOME }).qualityBar, 99);
   } finally { fs.rmSync(cwd, { recursive: true, force: true }); }
 });
 
@@ -360,7 +372,7 @@ test('UMB-133 walk: an existing-but-CORRUPT candidate STOPS the walk -- a valid 
     fs.writeFileSync(canon, '{ this is not json', 'utf8');
     fs.writeFileSync(legacy2, JSON.stringify({ qualityBar: 55 }), 'utf8');
     assert.equal(projectConfigPath(cwd), canon, 'the corrupt canonical still wins the walk');
-    assert.equal(loadMergedConfig({ cwd, home: cwd }).qualityBar, undefined, 'and contributes nothing -- it does NOT fall through to the legacy below it');
+    assert.equal(loadMergedConfig({ cwd, home: EMPTY_HOME }).qualityBar, undefined, 'and contributes nothing -- it does NOT fall through to the legacy below it');
   } finally { fs.rmSync(cwd, { recursive: true, force: true }); }
 });
 

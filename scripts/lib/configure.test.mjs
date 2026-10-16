@@ -300,9 +300,9 @@ test('move-on-write: an existing LEGACY project config with REAL customizations 
 });
 
 // INSPECT Finding 5 (LOW): a shadowed legacy (new-shape file already exists AND
-// the legacy also exists) must still be dropped on the next write, even though
+// the legacy also exists) must still be retired on the next write (moved aside to <path>.superseded: this run never read it), even though
 // the write target is the new-shape file, not the legacy one.
-test('shadowed legacy: a legacy file coexisting with an already-migrated new-shape config is dropped on the next --project write', () => {
+test('shadowed legacy: a legacy file coexisting with an already-migrated new-shape config is moved aside to .superseded on the next --project write', () => {
   const p = freshProject();
   try {
     const legacy = path.join(p.dir, '.claude', '.coaltipple.json');
@@ -315,15 +315,16 @@ test('shadowed legacy: a legacy file coexisting with an already-migrated new-sha
     const kept = stripJsonc(fs.readFileSync(projectPath(p.dir), 'utf8'));
     assert.equal(kept.qualityBar, 81, 'the edit landed at the already-migrated new-shape file (the correct target all along)');
     assert.ok(!('mode' in kept), 'the shadowed legacy content must NOT leak into the new-shape file -- the new file was the read source, not the legacy');
-    assert.ok(!fs.existsSync(legacy), 'the shadowed legacy file must be dropped, not left behind forever');
+    assert.ok(!fs.existsSync(legacy), 'the shadowed legacy file is no longer a config path, not left behind forever');
+    assert.equal(fs.readFileSync(legacy + '.superseded', 'utf8'), JSON.stringify({ mode: 'delegation' }), 'its contents are kept byte-for-byte: this run never read it');
   } finally { cleanup(p); }
 });
 
 // UMB-133: the SECOND legacy shape (<gitroot>/.coaltipple.json). Two things must hold that a
 // positional "legacy = the last candidate" would have broken: (1) a root-only legacy is the
-// migration SEED and is dropped; (2) with BOTH legacies present LEGACY-1 is the seed (it is what a
-// READ resolves) and the shadowed LEGACY-2 is dropped with it -- neither is ever a write target.
-test('UMB-133 move-on-write: a root-only LEGACY-2 (<gitroot>/.coaltipple.json) is the migration seed and is dropped -- its real values land at canonical', () => {
+// migration SEED and is removed once its values are carried to canonical; (2) with BOTH legacies present LEGACY-1 is the seed (it is what a
+// READ resolves) and is removed, while the shadowed LEGACY-2, never read, is moved aside to <path>.superseded -- neither is ever a write target.
+test('UMB-133 move-on-write: a root-only LEGACY-2 (<gitroot>/.coaltipple.json) is the migration seed and is removed -- its real values land at canonical', () => {
   const p = freshProject();
   try {
     const rootLegacy = path.join(p.dir, '.coaltipple.json');
@@ -340,7 +341,7 @@ test('UMB-133 move-on-write: a root-only LEGACY-2 (<gitroot>/.coaltipple.json) i
   } finally { cleanup(p); }
 });
 
-test('UMB-133 move-on-write: BOTH legacies present -> LEGACY-1 is the seed (what a read resolves), and BOTH are dropped; neither is written in place', () => {
+test('UMB-133 move-on-write: BOTH legacies present -> LEGACY-1 is the seed (what a read resolves) and is removed, LEGACY-2 (never read) is moved aside to .superseded; neither is written in place', () => {
   const p = freshProject();
   try {
     const legacy1 = path.join(p.dir, '.claude', '.coaltipple.json');
@@ -353,7 +354,9 @@ test('UMB-133 move-on-write: BOTH legacies present -> LEGACY-1 is the seed (what
     const migrated = stripJsonc(fs.readFileSync(projectPath(p.dir), 'utf8'));
     assert.equal(migrated.qualityBar, 71, 'seeded from LEGACY-1, the one a read resolves');
     assert.ok(!('language' in migrated), 'the shadowed LEGACY-2 content did not leak in');
-    assert.ok(!fs.existsSync(legacy1) && !fs.existsSync(legacy2), 'both legacy files dropped -- no leftover');
+    assert.ok(!fs.existsSync(legacy1) && !fs.existsSync(legacy2), 'neither legacy is a config path any more');
+    assert.ok(!fs.existsSync(legacy1 + '.superseded'), 'LEGACY-1 was read as the seed: removed, not kept');
+    assert.equal(fs.readFileSync(legacy2 + '.superseded', 'utf8'), JSON.stringify({ qualityBar: 72, language: 'th' }), 'LEGACY-2 was never read: moved aside, contents kept byte-for-byte');
   } finally { cleanup(p); }
 });
 

@@ -586,7 +586,6 @@ test('UMB-174(b) UNREADABLE: an existing file this process cannot read (EACCES/E
 // never assumes the deny succeeded -- it PROVES readFileSync actually throws EPERM before
 // trusting the rest of the test.
 test('UMB-174(b) UNREADABLE: a file whose Windows ACL denies Read to this user (EPERM) is named, never silently treated as absent', (t) => {
-  if (process.platform !== 'win32') { t.skip('the Windows ACL (EPERM) form only applies on win32 -- covered by the chmod/EACCES test above on POSIX'); return; }
   const p = proj(t, { [CANON]: { mode: 'auto' } });
   const target = path.join(p.dir, ...CANON.split('/'));
   const user = process.env.USERNAME || process.env.USER;
@@ -600,7 +599,7 @@ test('UMB-174(b) UNREADABLE: a file whose Windows ACL denies Read to this user (
   }
   if (!capable) {
     if (user) spawnSync('icacls', [target, '/reset'], { encoding: 'utf8', timeout: SPAWN_TIMEOUT_MS });
-    t.skip('cannot simulate an EPERM-denied file via icacls on this box/user (no icacls, or the deny ACE was bypassed -- an elevated/owner context can do this) -- capability-gated, not asserting a false pass');
+    t.skip('cannot simulate an EPERM-denied file via icacls on this box/user (no icacls -- the POSIX case, where the chmod/EACCES test above covers it -- or the deny ACE was bypassed -- an elevated/owner context can do this) -- capability-gated, not asserting a false pass');
     return;
   }
   try {
