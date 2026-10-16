@@ -129,3 +129,38 @@ test('gitEnv: with gitEnv() applied the SAME ambient poisoning is contained -- t
     else process.env.GIT_DIR = savedGitDir;
   }
 });
+
+// 16e row 12 (reviewer, Windows witness): Windows environment names are case-insensitive and git reads them that way there, but a copy of process.env keeps each key
+// in the spelling it was set with, so a prefix test on the literal text GIT_ let `git_dir` or `Git_Dir` through and the child git answered the decoy repo.
+// The universal property (no key of that family in any case survives) runs everywhere; the behavioural leg is probed and skips where env names are case-sensitive.
+const gitFamily = (env) => Object.keys(env).filter((k) => /^git_/i.test(k) && k !== 'GIT_CEILING_DIRECTORIES');
+function withAmbient(name, value, fn) {
+  const saved = process.env[name];
+  try { process.env[name] = value; return fn(); }
+  finally { if (saved === undefined) delete process.env[name]; else process.env[name] = saved; }
+}
+
+test('gitEnv: a lower-case or mixed-case git_ key is stripped too, and only GIT_CEILING_DIRECTORIES is added back', () => {
+  for (const name of ['git_dir', 'Git_Dir', 'git_work_tree', 'Git_Index_File']) {
+    withAmbient(name, path.join(os.tmpdir(), 'ct-nowhere'), () => {
+      const env = gitEnv(os.tmpdir());
+      assert.deepEqual(gitFamily(env), [], `${name} survived gitEnv(): ${JSON.stringify(gitFamily(env))}`);
+      assert.equal(env.GIT_CEILING_DIRECTORIES, os.tmpdir());
+    });
+  }
+});
+
+test('gitEnv: an ambient lower-case git_dir never redirects a child git onto the wrong repo (probed: needs case-insensitive environment names, i.e. Windows)', (t) => {
+  const { root, poisonedRepo, fixtureDir } = mkIncident(t);
+  const init = spawnSync('git', ['init', '-q', '.'], { cwd: fixtureDir, encoding: 'utf8', timeout: SPAWN_TIMEOUT_MS, env: gitEnv(root) });
+  assert.equal(init.status, 0, init.stderr);
+  withAmbient('git_dir', path.join(poisonedRepo, '.git'), () => {
+    const spelled = Object.keys({ ...process.env }).filter((k) => /^git_dir$/i.test(k));
+    const poisoned = spawnSync('git', ['rev-parse', '--absolute-git-dir'], { cwd: fixtureDir, encoding: 'utf8', timeout: SPAWN_TIMEOUT_MS, env: { ...process.env, GIT_CEILING_DIRECTORIES: root } });
+    const answeredDecoy = poisoned.status === 0 && fs.realpathSync.native(poisoned.stdout.trim()) === fs.realpathSync.native(path.join(poisonedRepo, '.git'));
+    if (!answeredDecoy) { t.skip(`a lower-case git_dir does not steer git on ${process.platform} (set as ${JSON.stringify(spelled)}): env names are case-sensitive here, so the exposure does not exist; the universal leg above still holds`); return; }
+    const guarded = spawnSync('git', ['rev-parse', '--absolute-git-dir'], { cwd: fixtureDir, encoding: 'utf8', timeout: SPAWN_TIMEOUT_MS, env: gitEnv(root) });
+    assert.equal(guarded.status, 0, guarded.stderr);
+    assert.equal(fs.realpathSync.native(guarded.stdout.trim()), fs.realpathSync.native(path.join(fixtureDir, '.git')), 'the guarded child git must answer its own repository');
+  });
+});

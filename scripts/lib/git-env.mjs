@@ -22,7 +22,7 @@
 export function gitEnv(ceilingDir) {
   const env = { ...process.env };
   for (const key of Object.keys(env)) {
-    if (key.startsWith('GIT_')) delete env[key];
+    if (/^GIT_/i.test(key)) delete env[key]; // case-insensitive: Windows env names are, and a copy of process.env keeps each key as it was set (git_dir, Git_Dir)
   }
   env.GIT_CEILING_DIRECTORIES = ceilingDir;
   return env;
