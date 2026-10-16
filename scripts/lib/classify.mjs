@@ -11,6 +11,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { renameWithRetry } from './rename-retry.mjs';
 
 export const SCHEMA_VER = 1;
 export const TIERS = ['local', 'low', 'mid', 'heavy', 'reasoning'];
@@ -77,15 +78,9 @@ export function writeRankingAtomic(stateDir, ranking) {
   const tmp = `${dest}.${process.pid}.tmp`;
   try {
     fs.writeFileSync(tmp, JSON.stringify(ranking, null, 2) + '\n', 'utf8');
-    try {
-      fs.renameSync(tmp, dest);
-    } catch (e) {
-      // Windows (#7): dest held open (e.g. the conductor reading ranking.json) -> renameSync
-      // throws EPERM/EBUSY. Fall back to a direct overwrite so the update is never lost; a kill
-      // mid-overwrite leaves a corrupt dest that the Lock's validity gate catches + rebuilds.
-      if (e.code === 'EPERM' || e.code === 'EBUSY') fs.writeFileSync(dest, fs.readFileSync(tmp, 'utf8'), 'utf8');
-      else throw e;
-    }
+    // Windows (#7): dest held open (e.g. the conductor reading ranking.json) -> renameSync throws EPERM/EBUSY. Retried a bounded number of times, then it throws and the
+    // old ranking stays (node/runtime.md section 5: never an in-place write). install.mjs catches the throw and reports it.
+    renameWithRetry(tmp, dest);
   } finally {
     // Phoenix #1 (zero-garbage): a failed write/rename never leaves a stray temp.
     // On success the rename consumed tmp, so this is a no-op.

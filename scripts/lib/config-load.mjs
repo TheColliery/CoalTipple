@@ -24,6 +24,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { parseJsonc } from './jsonc.mjs';
 import { containedPath } from './contain.mjs';
+import { renameWithRetry } from './rename-retry.mjs'; // the one bounded rename retry (also used by classify.mjs writeRankingAtomic)
 
 // Read one JSONC file into an object. Returns {} for any failure mode
 // (missing file, unreadable, malformed JSON, non-object top-level) — never throws.
@@ -184,8 +185,8 @@ export function moveLegacyAside(file) {
   }
 }
 
-// PR24 #10 (configure.mjs) -- atomic write (temp sibling + rename), same idiom as
-// CoalTipple's own classify.mjs writeRankingAtomic and the conductor's writeUpdateStamp:
+// PR24 #10 (configure.mjs) -- atomic write (temp sibling + rename), same idiom and the same bounded rename retry (rename-retry.mjs) as
+// CoalTipple's own classify.mjs writeRankingAtomic; the conductor's writeUpdateStamp keeps its own copy of the idiom:
 // a plain writeFileSync truncates the destination before writing the new bytes, so a
 // kill mid-write (a crash, Ctrl-C, disk-full) leaves the user's config file EMPTY or
 // half-written -- worse than the read failure it replaced, because there is no longer a
@@ -217,25 +218,6 @@ export function moveLegacyAside(file) {
 // Lives here (not inlined in configure.mjs's main()) so it can be unit-tested directly
 // by monkey-patching fs.renameSync/fs.writeFileSync/fs.openSync, without spawning
 // configure.mjs as a child process and without its own main() running against test argv.
-// Windows: configPath held open elsewhere (a live conductor read, an editor) makes renameSync throw EPERM/EBUSY, usually for a moment. node/runtime.md section 5 (MUST): the
-// failure branch keeps the old file and NEVER falls back to an in-place write of the live path. So the rename is retried a BOUNDED number of times (RENAME_ATTEMPTS tries,
-// RENAME_WAIT_MS between them: at most (RENAME_ATTEMPTS - 1) * RENAME_WAIT_MS of waiting), and then it fails LOUD, naming the cause; the caller's finally removes the temp.
-// Any other error code throws at once. Callers (configure.mjs, install.mjs) catch the throw, print it, and exit 1; nothing was written in place.
-const RENAME_ATTEMPTS = 5;
-const RENAME_WAIT_MS = 40;
-const sleepSync = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); // a blocking wait with no busy loop; this runs in user-invoked CLIs only
-function renameWithRetry(from, to) {
-  for (let attempt = 1; ; attempt++) {
-    try { fs.renameSync(from, to); return; }
-    catch (e) {
-      if (e.code !== 'EPERM' && e.code !== 'EBUSY') throw e;
-      if (attempt >= RENAME_ATTEMPTS) {
-        throw Object.assign(new Error(`could not replace ${to} after ${RENAME_ATTEMPTS} attempts (${e.code}): it is held open by another program; the existing file is unchanged, close that program and run this again`, { cause: e }), { code: e.code });
-      }
-      sleepSync(RENAME_WAIT_MS);
-    }
-  }
-}
 export function writeConfigAtomic(configPath, text) {
   let tmpConfigPath;
   let fd;

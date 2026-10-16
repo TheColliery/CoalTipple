@@ -9,16 +9,43 @@ import {
   loadRanking, writeRankingAtomic, buildFloorRanking, SCHEMA_VER, escalationStep, applyPins, resolveWorker, isFableModel,
 } from './classify.mjs';
 
-test('writeRankingAtomic falls back to a direct write on EPERM/EBUSY (#7 Windows) — the update is never lost', () => {
+// 15b bounce 1 (MEDIUM-1, node/runtime.md section 5 MUST): the old leg here asserted the in-place fallback on EPERM/EBUSY (#7), which the rule forbids; it is replaced in this
+// named step by the two legs below, the same pair as config-load.test.mjs for writeConfigAtomic. The rename is the shared bounded retry (scripts/lib/rename-retry.mjs).
+const heldErr = (code) => Object.assign(new Error(`simulated ${code}: the destination is held open`), { code });
+const RANKING = (tiers) => ({ schemaVer: SCHEMA_VER, complete: true, tiers });
+
+test('writeRankingAtomic: a rename that fails twice with EBUSY and then succeeds lands the new ranking (the retry is real)', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-rank-'));
   try {
-    mock.method(fs, 'renameSync', () => { const e = new Error('EPERM'); e.code = 'EPERM'; throw e; });
-    writeRankingAtomic(dir, { schemaVer: SCHEMA_VER, complete: true, tiers: {} });
+    const dest = path.join(dir, 'ranking.json');
+    fs.writeFileSync(dest, JSON.stringify(RANKING({ old: true })), 'utf8');
+    const real = fs.renameSync;
+    let calls = 0;
+    mock.method(fs, 'renameSync', (a, b) => { if (++calls <= 2) throw heldErr('EBUSY'); return real(a, b); });
+    writeRankingAtomic(dir, RANKING({ fresh: true }));
     mock.restoreAll();
-    const written = fs.readdirSync(dir).filter((f) => !f.includes('.tmp'));
-    assert.equal(written.length, 1, 'dest written via the fallback; tmp cleaned (no orphan)');
-    assert.equal(JSON.parse(fs.readFileSync(path.join(dir, written[0]), 'utf8')).schemaVer, SCHEMA_VER);
+    assert.equal(calls, 3);
+    assert.deepEqual(JSON.parse(fs.readFileSync(dest, 'utf8')).tiers, { fresh: true });
+    assert.deepEqual(fs.readdirSync(dir), ['ranking.json'], 'no orphan temp');
   } finally { mock.restoreAll(); fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('writeRankingAtomic: a rename that keeps failing with EPERM/EBUSY throws, leaves the ranking byte-for-byte unchanged (never written in place) and removes the temp', () => {
+  for (const code of ['EPERM', 'EBUSY']) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-rank-'));
+    try {
+      const dest = path.join(dir, 'ranking.json');
+      const oldBytes = JSON.stringify(RANKING({ old: true }));
+      fs.writeFileSync(dest, oldBytes, 'utf8');
+      let calls = 0;
+      mock.method(fs, 'renameSync', () => { calls++; throw heldErr(code); });
+      assert.throws(() => writeRankingAtomic(dir, RANKING({ fresh: true })), (e) => e.code === code && /could not replace/.test(e.message) && /unchanged/.test(e.message), code);
+      mock.restoreAll();
+      assert.ok(calls >= 2 && calls <= 8, `${code}: a bounded number of attempts (${calls})`);
+      assert.equal(fs.readFileSync(dest, 'utf8'), oldBytes, `${code}: the live ranking is never written in place`);
+      assert.deepEqual(fs.readdirSync(dir), ['ranking.json'], `${code}: the temp is removed`);
+    } finally { mock.restoreAll(); fs.rmSync(dir, { recursive: true, force: true }); }
+  }
 });
 
 test('aliasDefaults: the alias floor structure (low<mid<heavy<reasoning = haiku<sonnet<opus<fable, no local/empty)', () => {
