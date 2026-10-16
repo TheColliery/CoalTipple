@@ -12,6 +12,7 @@ Not the cheapest router by claimed savings—a cross-provider or empirical route
 ![license](https://img.shields.io/badge/license-Apache_2.0-blue)
 ![status](https://img.shields.io/badge/status-live-brightgreen)
 ![SKILL.md](https://img.shields.io/badge/SKILL.md-open_standard-success)
+![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/TheColliery/CoalTipple?utm_source=oss&utm_medium=github&utm_campaign=TheColliery%2FCoalTipple&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)
 
 ![Claude Code](https://img.shields.io/badge/Claude_Code-validated-brightgreen)
 ![Antigravity](https://img.shields.io/badge/Antigravity-non--actuating-lightgrey)
