@@ -1,7 +1,7 @@
 // Hermetic spawn test for the conductor hook (hooks-safety section 7).
 // Spawns the REAL hook with fixture stdin in a sandbox cwd; asserts exit 0,
 // silence except sanctioned stdout, and the right state. Run: node --test conductor.test.mjs
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -9,17 +9,20 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { projectConfigCandidates, projectConfigPath } from './config-load.mjs';
+import { sandboxEnv } from './test-env.mjs';
 const SPAWN_TIMEOUT_MS = 30000; // every test spawn is bounded (testing.md: a finite clock); icacls on a temp file (Windows only), normally well under 5 s
 
 const HOOK =path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'hooks', 'coaltipple-conductor.js');
+
+// One empty sandbox for every run() that names no home: HOME/TEMP/TMP/TMPDIR point here, never at the real machine and never at the test's own project dir.
+const EMPTY_HOME = fs.mkdtempSync(path.join(fs.realpathSync.native(os.tmpdir()), 'ct-hook-empty-home-'));
+after(() => fs.rmSync(EMPTY_HOME, { recursive: true, force: true }));
 
 // `home` sandboxes the GLOBAL config layer: point USERPROFILE/HOME at a throwaway
 // dir so os.homedir() inside the hook resolves there, never the real machine.
 function run(input, cwd, home) {
   const stdin = typeof input === 'string' ? input : JSON.stringify(input);
-  const env = { ...process.env };
-  if (home) { env.USERPROFILE = home; env.HOME = home; }
-  delete env.CLAUDE_CONFIG_DIR;
+  const env = sandboxEnv(home || EMPTY_HOME); // TEMP/TMP/TMPDIR follow the sandbox, the host's CLAUDE_* are dropped (hooks-safety.md section 7)
   return spawnSync(process.execPath, [HOOK], { input: stdin, cwd, env, encoding: 'utf8', timeout: 20000 });
 }
 const mk = () => fs.mkdtempSync(path.join(os.tmpdir(), 'ct-hook-'));
@@ -662,7 +665,7 @@ test('CWK-135(a) with CLAUDE_CONFIG_DIR set, the global line names THAT dir\'s f
   const canonAbs = path.join(dir, ...CANON.split('/'));
   fs.mkdirSync(path.dirname(canonAbs), { recursive: true });
   fs.writeFileSync(canonAbs, '[1,2,3]', 'utf8');
-  const env = { ...process.env, USERPROFILE: home, HOME: home, CLAUDE_CONFIG_DIR: cfgDir };
+  const env = sandboxEnv(home, { CLAUDE_CONFIG_DIR: cfgDir });
   const r = spawnSync(process.execPath, [HOOK], { input: JSON.stringify({ hook_event_name: 'SessionStart' }), cwd: dir, env, encoding: 'utf8', timeout: 20000 });
   assert.equal(r.status, 0); assert.equal(r.stderr, '');
   const notice = lines(r.stdout, 'UNREADABLE');

@@ -25,6 +25,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { sandboxEnv } from './test-env.mjs';
 
 const HOOK = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'hooks', 'coaltipple-conductor.js');
 // Namespace campaign (#69+#39 part 2): the stamp moved under coal/; OLD_STAMP_REL is
@@ -36,8 +37,7 @@ const OLD_STAMP_REL = path.join('.claude', '.coaltipple-update-check');
 // CLAUDE_CONFIG_DIR is DELETED so it can never redirect claudeBaseDir off the sandbox.
 function run(input, home, cwd = home) {
   const stdin = typeof input === 'string' ? input : JSON.stringify(input);
-  const env = { ...process.env, USERPROFILE: home, HOME: home };
-  delete env.CLAUDE_CONFIG_DIR;
+  const env = sandboxEnv(home);
   return spawnSync(process.execPath, [HOOK], { input: stdin, cwd, env, encoding: 'utf8', timeout: 20000 });
 }
 

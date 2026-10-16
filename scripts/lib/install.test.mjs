@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { sandboxEnv } from './test-env.mjs';
 
 const INSTALL = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'install.mjs');
 // Sandbox HOME too: a throwaway home so the GLOBAL-config code path (the ~/.claude
@@ -13,7 +14,7 @@ const INSTALL = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'i
 function mkHome() { return fs.mkdtempSync(path.join(os.tmpdir(), 'ct-install-home-')); }
 const run = (cwd, home, ...a) =>
   spawnSync(process.execPath, [INSTALL, ...a],
-    { cwd, env: { ...process.env, USERPROFILE: home, HOME: home, CLAUDE_CONFIG_DIR: undefined }, encoding: 'utf8', timeout: 30000 });
+    { cwd, env: sandboxEnv(home), encoding: 'utf8', timeout: 30000 });
 
 // Canonical NEW paths (everything under .claude): the project config + state live at
 // <cwd>/.claude; the SHARED model ranking lives at <home>/.claude/.coaltipple/.
@@ -42,7 +43,7 @@ function mkSandboxRepo() {
 }
 const runSandbox = (sb, home, ...a) =>
   spawnSync(process.execPath, [path.join(sb, 'scripts', 'install.mjs'), ...a],
-    { cwd: sb, env: { ...process.env, USERPROFILE: home, HOME: home, CLAUDE_CONFIG_DIR: undefined }, encoding: 'utf8', timeout: 30000 });
+    { cwd: sb, env: sandboxEnv(home), encoding: 'utf8', timeout: 30000 });
 
 test('install to a PATH: copies skill, seeds project config + conductor + the shared global ranking', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-install-'));
@@ -244,7 +245,7 @@ test('H10: a self-target reached THROUGH a symlink/junction is refused too (the 
     try { fs.symlinkSync(sb, link, process.platform === 'win32' ? 'junction' : 'dir'); }
     catch { t.skip('dir symlink/junction not permitted here (needs the privilege on Windows)'); return; }
     const srcSkill = path.join(sb, 'skills', 'coaltipple', 'SKILL.md');
-    const env = { ...process.env, USERPROFILE: home, HOME: home, CLAUDE_CONFIG_DIR: undefined };
+    const env = sandboxEnv(home);
     const linkInstall = path.join(link, 'scripts', 'install.mjs');
     const ri = spawnSync(process.execPath, [linkInstall, path.join(link, 'skills')],
       { cwd: sb, env, encoding: 'utf8', timeout: 30000 });

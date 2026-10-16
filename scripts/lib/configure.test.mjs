@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { sandboxEnv } from './test-env.mjs';
 import { CONFIG_SCHEMA } from './config-schema.mjs';
 
 const CONFIGURE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'configure.mjs');
@@ -34,7 +35,7 @@ const projectPath = (dir) => path.join(dir, '.claude', 'coal', 'coaltipple.json'
 // helper already sets this key `undefined` for the identical reason.
 const run = ({ dir, home }, ...a) =>
   spawnSync(process.execPath, [CONFIGURE, ...a],
-    { cwd: dir, env: { ...process.env, USERPROFILE: home, HOME: home, CLAUDE_CONFIG_DIR: undefined }, encoding: 'utf8', timeout: 60000 });
+    { cwd: dir, env: sandboxEnv(home), encoding: 'utf8', timeout: 60000 });
 const cleanup = ({ dir, home }) => { fs.rmSync(dir, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); };
 
 test('CWK-120 ride-along (a): an existing config file that is valid JSON but NOT an object fails loud rather than being adopted as-is', () => {

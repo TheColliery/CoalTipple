@@ -16,6 +16,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { sandboxEnv } from './test-env.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, '..', '..');
@@ -78,8 +79,7 @@ function snap(dir) {
   return out.sort();
 }
 function childEnv(home) {
-  const env = { ...process.env, HOME: home, USERPROFILE: home };
-  delete env.CLAUDE_CONFIG_DIR;
+  const env = sandboxEnv(home); // HOME, USERPROFILE, TEMP, TMP, TMPDIR in the sandbox; the host's CLAUDE_* dropped
   for (const k of Object.keys(env)) if (/^GIT_/i.test(k)) delete env[k];
   return env;
 }

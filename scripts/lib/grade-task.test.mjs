@@ -10,6 +10,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { sandboxEnv } from './test-env.mjs';
 
 const GRADE_TASK = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'grade-task.mjs');
 
@@ -19,8 +20,7 @@ function freshHome() {
 // CLAUDE_CONFIG_DIR is DELETED so it can never redirect claudeBaseDir off the
 // sandbox home (config-load.test.mjs's own #6 precedent).
 const run = (home, ...a) => {
-  const env = { ...process.env, USERPROFILE: home, HOME: home };
-  delete env.CLAUDE_CONFIG_DIR;
+  const env = sandboxEnv(home);
   return spawnSync(process.execPath, [GRADE_TASK, ...a], { cwd: home, env, encoding: 'utf8', timeout: 60000 });
 };
 
