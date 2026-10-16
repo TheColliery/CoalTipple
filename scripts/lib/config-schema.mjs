@@ -102,8 +102,16 @@ function validateModelTiers(pins) {
   for (const tier of Object.keys(pins)) {
     if (!VALID_MODEL_TIERS.has(tier)) return `unknown tier '${tier}'; expected one of: ${[...VALID_MODEL_TIERS].join(', ')}`;
     const v = pins[tier];
-    if (typeof v === 'string') continue;
-    if (Array.isArray(v) && v.every((m) => typeof m === 'string')) continue;
+    // a pin that names no model validates and then does nothing (applyPins leaves the tier at its floor): reject it here
+    if (typeof v === 'string') {
+      if (!v.trim()) return `pin '${tier}' must not be blank`;
+      continue;
+    }
+    if (Array.isArray(v) && v.every((m) => typeof m === 'string')) {
+      if (v.length === 0) return `pin '${tier}' must name at least one model`;
+      if (v.some((m) => !m.trim())) return `pin '${tier}' must not hold a blank model name`;
+      continue;
+    }
     return `pin '${tier}' must be a model name (string) or an array of model names`;
   }
   return null;

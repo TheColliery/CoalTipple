@@ -143,3 +143,14 @@ test('fableConsent is a boolean gate (standing consent for the top fable rung)',
 test('callFable stays tombstoned (withdrawn 1.1.1 — the fable rung is now a real routable tier + fableConsent gate)', () => {
   assert.equal(specOf('callFable'), undefined, 'callFable must not be in the schema');
 });
+
+// 16e row 18 (reviewer witness scratchpad/r16e/rv-pins.out): a pin that names no model validated clean and then did nothing, because applyPins leaves the tier at its
+// floor. An empty or whitespace-only name, an empty array and an empty or whitespace-only element are config errors, not silent no-ops.
+test('16e row 18: a modelTiers pin that names no model fails loud (empty or blank name, empty array, empty or blank element)', () => {
+  const spec = specOf('modelTiers');
+  for (const bad of ['', '   ', [], [''], ['   '], ['opus', ''], ['opus', '  ']]) {
+    assert.match(validateValue(spec, { heavy: bad }), /must name at least one model|must not be blank|must not hold a blank model name/, `${JSON.stringify(bad)} must be rejected`);
+  }
+  // the controls: a real name, trimmed or not, and a real chain still validate
+  for (const good of ['opus', ' opus ', ['opus'], ['fable-9', 'opus']]) assert.equal(validateValue(spec, { heavy: good }), null, JSON.stringify(good));
+});
