@@ -630,3 +630,56 @@ test('moveLegacyAside: a failed move (source gone) leaves NO placeholder litter 
   assert.throws(() => moveLegacyAside(path.join(dir, '.coaltipple.json')), /ENOENT/);
   assert.deepEqual(fs.readdirSync(dir), [], 'the exclusive-create placeholder is removed when the rename fails');
 });
+
+// 15b item 6 (L-3(a), node/runtime.md section 5 MUST): a rename that fails because the destination is held open (Windows EPERM/EBUSY) is RETRIED a bounded
+// number of times and then fails LOUD with the old file kept and the temp removed. It never falls back to an in-place write of the live path.
+// The seam is the module's own fs.renameSync call, patched in process (the convention of the legs above); no real held file is involved.
+function withRename(fake, fn) {
+  const real = fs.renameSync;
+  fs.renameSync = fake;
+  try { return fn(); } finally { fs.renameSync = real; }
+}
+const heldErr = (code) => Object.assign(new Error(`simulated ${code}: the destination is held open`), { code });
+
+test('writeConfigAtomic (L-3a): a rename that keeps failing with EPERM/EBUSY throws, leaves the destination byte-for-byte unchanged, and leaves no temp file', () => {
+  for (const code of ['EPERM', 'EBUSY']) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-atomic-'));
+    try {
+      const configPath = path.join(dir, '.coaltipple.json');
+      const oldContent = '{"mode":"auto"}\n';
+      fs.writeFileSync(configPath, oldContent, 'utf8');
+      let calls = 0;
+      assert.throws(() => withRename(() => { calls++; throw heldErr(code); }, () => writeConfigAtomic(configPath, '{"mode":"delegation"}\n')),
+        (e) => e.code === code && /could not replace/.test(e.message) && /unchanged/.test(e.message), code);
+      assert.ok(calls >= 2 && calls <= 8, `${code}: a bounded number of attempts, not one and not unbounded (${calls})`);
+      assert.equal(fs.readFileSync(configPath, 'utf8'), oldContent, `${code}: the live config is never written in place`);
+      assert.deepEqual(fs.readdirSync(dir), ['.coaltipple.json'], `${code}: the temp sibling is removed`);
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  }
+});
+
+test('writeConfigAtomic (L-3a): a rename that fails twice with EBUSY and then succeeds lands the new bytes (the retry is real)', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-atomic-'));
+  try {
+    const configPath = path.join(dir, '.coaltipple.json');
+    fs.writeFileSync(configPath, '{"mode":"auto"}\n', 'utf8');
+    const real = fs.renameSync;
+    let calls = 0;
+    withRename((a, b) => { if (++calls <= 2) throw heldErr('EBUSY'); return real(a, b); }, () => writeConfigAtomic(configPath, '{"mode":"delegation"}\n'));
+    assert.equal(calls, 3);
+    assert.equal(fs.readFileSync(configPath, 'utf8'), '{"mode":"delegation"}\n');
+    assert.deepEqual(fs.readdirSync(dir), ['.coaltipple.json']);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('writeConfigAtomic (L-3a): any other rename error still throws at once, unretried', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-atomic-'));
+  try {
+    const configPath = path.join(dir, '.coaltipple.json');
+    fs.writeFileSync(configPath, '{"mode":"auto"}\n', 'utf8');
+    let calls = 0;
+    assert.throws(() => withRename(() => { calls++; throw heldErr('ENOSPC'); }, () => writeConfigAtomic(configPath, 'x')), /simulated ENOSPC/);
+    assert.equal(calls, 1);
+    assert.equal(fs.readFileSync(configPath, 'utf8'), '{"mode":"auto"}\n');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
