@@ -302,3 +302,29 @@ test('16e row 15: commands/update.md tells the agent to set updateMode in the gl
   assert.match(step, /updateMode/);
   assert.match(step, /source checkout/);
 });
+
+// 16e row 16 (the head's ruling (a): the docs follow the code). Routing off silences the WHOLE conductor, self-update and its stamp included: main() returns at
+// routingOff() before it reads the event (enableRouting:false and mode:"off" are pinned above; disableRouting:["all"] was not).
+test('disableRouting:["all"] silences everything, including self-update + the stamp (the third routing-off form)', () => {
+  const home = mkHome({ disableRouting: ['all'], updateMode: 'auto' });
+  try {
+    const r = run(SESSION, home);
+    assert.equal(r.status, 0);
+    assert.equal(r.stdout, '', 'disableRouting:all short-circuits before self-update');
+    assert.equal(readStamp(home), null, 'no stamp when routing is off');
+  } finally { fs.rmSync(home, { recursive: true, force: true }); }
+});
+
+// The four texts that promised the opposite ("independent of routing", "orthogonal to routing") now carry one phrase, so a reader of any of them learns the same fact.
+const ROUTING_OFF_PHRASE = 'silences the whole conductor, self-update included';
+test('16e row 16: commands/update.md, the updateMode help and both platform-configs notes say routing off silences self-update', async () => {
+  const root = path.join(path.dirname(HOOK), '..');
+  const { CONFIG_SCHEMA } = await import('./config-schema.mjs');
+  const help = CONFIG_SCHEMA.find((k) => k.key === 'updateMode').help;
+  assert.ok(help.includes(ROUTING_OFF_PHRASE), `updateMode help: ${help}`);
+  assert.ok(fs.readFileSync(path.join(root, 'commands', 'update.md'), 'utf8').includes(ROUTING_OFF_PHRASE), 'commands/update.md');
+  const cfg = fs.readFileSync(path.join(root, 'platform-configs', '.coaltipple.json'), 'utf8');
+  assert.equal(cfg.split(ROUTING_OFF_PHRASE).length - 1, 2, 'both notes in platform-configs/.coaltipple.json (the section header and the key note)');
+  assert.doesNotMatch(cfg, /orthogonal to routing/i);
+  assert.doesNotMatch(help, /orthogonal to routing/i);
+});

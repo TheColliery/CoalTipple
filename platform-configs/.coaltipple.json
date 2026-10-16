@@ -172,14 +172,14 @@
   // # Default value: auto  (off = disabled/skipped; re-enable via /coaltipple memory)
   "memoryOffer": "auto",
 
-  // ─── self-update (orthogonal to routing — its own off-switch) ───
+  // ─── self-update (runs only while routing is on: routing off silences the whole conductor, self-update included) ───
 
   // ## How CoalTipple keeps itself current. Silent by default until a check is due (every updateCheckDays).
   // ## ask = on the first due session, ask ONCE how to handle updates (then save auto/remind/off); auto = the
   // ## agent web-checks the latest CT tag vs the installed version and offers `claude plugin update` (standing
   // ## consent — the only token spend, ~1-2K/check); remind = a free periodic reminder, you run the update;
   // ## off = silent (no checks, no reminders). The HOOK never networks/spends — the version check lives only in
-  // ## the /coaltipple:update agent procedure. Independent of routing (enableRouting/mode); off here = the off-switch.
+  // ## the /coaltipple:update agent procedure. Routing off (enableRouting:false, mode:"off" or disableRouting:["all"]) silences the whole conductor, self-update included; with routing on, off here = the off-switch.
   // # Setting type: String (ask, auto, remind, off)
   // # Default value: ask
   "updateMode": "ask",
