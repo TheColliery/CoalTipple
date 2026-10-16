@@ -69,7 +69,8 @@ function snap(dir) {
     for (const e of fs.readdirSync(d, { withFileTypes: true })) {
       const p = path.join(d, e.name);
       const rel = path.relative(dir, p).split(path.sep).join('/');
-      if (e.isDirectory()) { out.push(`${rel}/`); walk(p); }
+      if (e.isSymbolicLink()) out.push(`${rel}->${fs.readlinkSync(p)}`); // a link is recorded by its target and never entered or read
+      else if (e.isDirectory()) { out.push(`${rel}/`); walk(p); }
       else {
         const bytes = fs.readFileSync(p); // read ONCE: the size comes from the same buffer the hash does (no stat-then-read race, CodeQL js/file-system-race)
         out.push(`${rel}:${bytes.length}:${crypto.createHash('sha1').update(bytes).digest('hex')}`);
@@ -354,4 +355,20 @@ test('NOTICE: UserPromptSubmit never carries the REFUSED line (session state, no
   assert.equal(r.status, 0); assert.equal(r.stderr, '');
   assert.ok(r.stdout.length > 0, 'the per-prompt forcer still speaks');
   assert.deepEqual(refusedLines(r.stdout), []);
+});
+
+// 15b item 5 (e): snap() says "links NOT followed". This leg holds it to that: a link inside the snapped tree is recorded by its own target
+// and the folder it points at is neither entered nor read (the target's bytes can change without the snapshot moving).
+test('SNAP: a link inside the snapshotted tree is recorded by target and not followed', (t) => {
+  const sb = sandbox(t);
+  write(path.join(sb.victim, 'kept.txt'), VICTIM_BYTES);
+  const elsewhere = path.join(sb.root, 'elsewhere');
+  write(path.join(elsewhere, 'inner.txt'), 'before\n');
+  if (!linkOrSkip(t, sb, elsewhere, path.join(sb.victim, 'link'), 'dir')) return;
+  const before = snap(sb.victim);
+  assert.equal(before.filter((l) => l.startsWith('link')).length, 1, before.join('\n'));
+  assert.match(before.find((l) => l.startsWith('link')), /^link->/);
+  assert.ok(!before.some((l) => l.includes('inner.txt')), 'the folder the link points at was entered');
+  write(path.join(elsewhere, 'inner.txt'), 'after, and longer\n');
+  assert.deepEqual(snap(sb.victim), before, 'a change behind the link moved the snapshot: the link was followed');
 });
