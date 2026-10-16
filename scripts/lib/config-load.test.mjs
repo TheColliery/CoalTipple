@@ -650,7 +650,7 @@ test('writeConfigAtomic (L-3a): a rename that keeps failing with EPERM/EBUSY thr
       fs.writeFileSync(configPath, oldContent, 'utf8');
       let calls = 0;
       assert.throws(() => withRename(() => { calls++; throw heldErr(code); }, () => writeConfigAtomic(configPath, '{"mode":"delegation"}\n')),
-        (e) => e.code === code && /could not replace/.test(e.message) && /unchanged/.test(e.message), code);
+        (e) => e.code === code && /could not replace/.test(e.message) && /unchanged/.test(e.message) && /held open by another program or is read-only/.test(e.message), code);
       assert.ok(calls >= 2 && calls <= 8, `${code}: a bounded number of attempts, not one and not unbounded (${calls})`);
       assert.equal(fs.readFileSync(configPath, 'utf8'), oldContent, `${code}: the live config is never written in place`);
       assert.deepEqual(fs.readdirSync(dir), ['.coaltipple.json'], `${code}: the temp sibling is removed`);

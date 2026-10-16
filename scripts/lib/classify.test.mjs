@@ -39,7 +39,7 @@ test('writeRankingAtomic: a rename that keeps failing with EPERM/EBUSY throws, l
       fs.writeFileSync(dest, oldBytes, 'utf8');
       let calls = 0;
       mock.method(fs, 'renameSync', () => { calls++; throw heldErr(code); });
-      assert.throws(() => writeRankingAtomic(dir, RANKING({ fresh: true })), (e) => e.code === code && /could not replace/.test(e.message) && /unchanged/.test(e.message), code);
+      assert.throws(() => writeRankingAtomic(dir, RANKING({ fresh: true })), (e) => e.code === code && /could not replace/.test(e.message) && /unchanged/.test(e.message) && /held open by another program or is read-only/.test(e.message), code);
       mock.restoreAll();
       assert.ok(calls >= 2 && calls <= 8, `${code}: a bounded number of attempts (${calls})`);
       assert.equal(fs.readFileSync(dest, 'utf8'), oldBytes, `${code}: the live ranking is never written in place`);
