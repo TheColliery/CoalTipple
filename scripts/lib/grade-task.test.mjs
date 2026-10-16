@@ -147,3 +147,27 @@ test('a global ranking on disk resolves suggestedModel via resolveWorker (modelS
     assert.equal(out.modelSource, 'global-ranking');
   } finally { fs.rmSync(home, { recursive: true, force: true }); }
 });
+
+// 16e row 17 (coding-style.md, User-Invoked CLI Surface, MUST): an unknown option or a stray positional is an error, never ignored. It exits non-zero, prints the
+// usage line to stderr, and prints no grading JSON on stdout (a script reading stdout must not get a verdict for input the tool did not understand).
+for (const [label, args] of [['an unknown option', ['--prompt', 'x', '--bogus']], ['a stray positional', ['--prompt', 'x', 'stray']], ['a short unknown flag before the prompt', ['-z', '--prompt', 'x']]]) {
+  test(`${label}: exits non-zero with the usage line on stderr and no grading JSON on stdout`, () => {
+    const home = freshHome();
+    try {
+      const r = run(home, ...args);
+      assert.notEqual(r.status, 0, `must fail loud\n${r.stdout}`);
+      assert.match(r.stderr, /unknown option/);
+      assert.match(r.stderr, /Usage: node scripts\/grade-task\.mjs/);
+      assert.equal(r.stdout, '', 'no verdict is printed for input the tool did not understand');
+    } finally { fs.rmSync(home, { recursive: true, force: true }); }
+  });
+}
+
+test('the known options still grade (control for the unknown-option guard)', () => {
+  const home = freshHome();
+  try {
+    const r = run(home, '--prompt', 'rename a variable', '--file', 'a.js:10', '--size-units', '2');
+    assert.equal(r.status, 0, r.stderr);
+    assert.ok(JSON.parse(r.stdout).tier, r.stdout);
+  } finally { fs.rmSync(home, { recursive: true, force: true }); }
+});

@@ -19,6 +19,8 @@ import { loadRanking, resolveWorker } from './lib/classify.mjs';
 // file {path:"--size-units"} AND silently drop --size-units' own value).
 const looksLikeFlag = (s) => typeof s === 'string' && s.startsWith('-');
 
+const USAGE = 'Usage: node scripts/grade-task.mjs --prompt "<task text>" [--file path[:lines] ...] [--size-units N]';
+
 function parseArgs(argv) {
   const out = { prompt: '', files: [], sizeUnits: 0 };
   for (let i = 0; i < argv.length; i++) {
@@ -50,6 +52,7 @@ function parseArgs(argv) {
       if (!Number.isFinite(n)) return { error: '--size-units needs a numeric value' };
       out.sizeUnits = n;
     } else if (a === '--help' || a === '-h') out.help = true;
+    else return { error: `unknown option ${a}`, usage: true }; // an unknown flag or a stray positional is never ignored
   }
   return out;
 }
@@ -58,11 +61,12 @@ function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.error) {
     console.error(`Error: ${args.error}`);
+    if (args.usage) console.error(USAGE);
     process.exitCode = 1;
     return;
   }
   if (args.help || !args.prompt) {
-    console.log('Usage: node scripts/grade-task.mjs --prompt "<task text>" [--file path[:lines] ...] [--size-units N]');
+    console.log(USAGE);
     console.log('Advisory only -- see COALTIPPLE_RESIDENT_DISPATCH_DESIGN.md. Prints grade()\'s own verdict as JSON; never touches effort or a flip decision.');
     process.exitCode = args.help ? 0 : 1;
     return;
