@@ -13,6 +13,7 @@ The self-update `remind` line now says which global config file to edit, and `sc
 
 ### Repo tooling (user-run scripts; not in the plugin)
 - **`scripts/install.mjs all` installs only into agents where routing can actuate.** That set is Claude Code alone, whose install is the plugin, so `all` now installs nothing and prints one line saying so and how to install for Claude Code (`claude plugin install coaltipple@coaltipple`, or `node scripts/install.mjs claude` from a source checkout); it exits 0. Before, `all` copied the skill into every other agent it found configured in the project, none of which can run CoalTipple's routing. Naming an agent explicitly (`node scripts/install.mjs cursor`) still installs, and now prints one warning on stderr that routing cannot actuate there; `--uninstall` and `claude` print none. This is a behaviour change for anyone who used `all` for those copies. — test: `scripts/lib/install.test.mjs`
+- **The canon `front-door-links` gate is adopted by blob.** Every http(s) link in the front-door docs (README, SECURITY, CONTRIBUTING, PRIVACY) must answer, checked on change and weekly. The four files are copied unchanged from `TheColliery/.github` `fd40327`: `.github/workflows/front-door-links.yml` `db4173d4`, `scripts/front-door-links.mjs` `3793a056`, `scripts/lib/front-door-links.mjs` `7df59db6` and `scripts/front-door-links.test.mjs` `3cff2b30`. No plugin byte changes. — test: `scripts/front-door-links.test.mjs`
 
 ## [1.7.4] - 2026-10-16
 
