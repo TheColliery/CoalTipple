@@ -2,6 +2,24 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.7.4] - 2026-10-16
+
+Update choice saves without scripts; hot keywords stop over-matching
+
+The self-update prompt now tells an installed plugin how to save your choice, the docs say that routing off also silences self-update, and the hyphenated hot keywords no longer fire inside longer names and filenames.
+
+### Fixed
+- **The self-update prompt's "save the choice" step works in an installed plugin.** The `ask` and `remind` directives and `/coaltipple:update` told the agent to run `node scripts/configure.mjs --updateMode ...`. An installed plugin carries only `commands/`, `hooks/` and `skills/`, so there is no `scripts/` to run. They now tell the agent to set `updateMode` (`auto`, `remind` or `off`) directly in the global config file, `~/.claude/.coaltipple.json` (the one under `CLAUDE_CONFIG_DIR` if that is set), with its edit tool, and name `configure.mjs` as the equivalent in a source checkout. — test: `scripts/lib/conductor-update.test.mjs`
+- **The hyphenated hot keywords added in 1.7.3 no longer fire inside longer names.** `x-rate-limit-reset`, `Access-Control-Allow-Origin` and `code-audit-report.md` raised the grade-4 hint, because a hyphen or a dot counts as a word boundary. The eleven forms from 1.7.3 now match only as a word of their own: nothing word-like or hyphen before, and nothing after except a sentence-ending dot. `/security-review`, `/security-review src/auth.js`, "a bug-scan." and "(sql-injection)" still fire. One cost: `sql-injection-safe query builder` no longer fires by its hyphenated form (the spaced "sql injection" still does). The older hyphenated entries (`timing-attack`, `constant-time`, `timing-safe`, `side-channel`) keep the plain match on purpose. — test: `scripts/lib/conductor.test.mjs`, `scripts/lib/grade.test.mjs`
+
+### Changed
+- **The docs now say routing off silences self-update too.** `enableRouting: false`, `mode: "off"` and `disableRouting: ["all"]` silence the whole conductor, self-update check included, and no update stamp is written; with routing on, `updateMode: off` is the update-only switch. The code already behaved this way; `/coaltipple:update` and the config help had said self-update was independent of routing. — test: `scripts/lib/conductor-update.test.mjs`
+
+### Repo tooling (user-run scripts; not in the plugin)
+- `grade-task.mjs` now fails on an unknown option or a stray argument, with the usage line on stderr and nothing on stdout; it used to ignore them and print a grading. — test: `scripts/lib/grade-task.test.mjs`
+- A `modelTiers` pin that names no model (an empty or blank name, an empty list, a blank element) is now a validation error instead of silently doing nothing. A real name or chain still validates. — test: `scripts/lib/config-schema.test.mjs`
+- On a case-insensitive environment (Windows), a lower-case `git_dir` in the environment no longer reaches the git commands the scripts run; the `GIT_*` strip is now case-insensitive. — test: `scripts/lib/git-env.test.mjs`
+
 ## [1.7.3] - 2026-10-16
 
 Hooks run without a shell; linked project config is named

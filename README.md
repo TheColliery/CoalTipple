@@ -27,7 +27,7 @@ Not the cheapest router by claimed savings—a cross-provider or empirical route
 
 [Benchmark](https://github.com/TheColliery/.github/tree/main/benchmarks/CoalTipple) · [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md) · [Security](SECURITY.md) · [Privacy](PRIVACY.md) · [Releases](https://github.com/TheColliery/CoalTipple/releases)
 
-**Docs:** [thecolliery.gitbook.io/thecolliery-docs/tools/coaltipple](https://thecolliery.gitbook.io/thecolliery-docs/tools/coaltipple) *(publishing soon)*
+**Docs:** [docs.thecolliery.org/tools/coaltipple](https://docs.thecolliery.org/tools/coaltipple)
 
 **Part of [TheColliery](https://github.com/TheColliery)**—siblings: **[CoalMine](https://github.com/TheColliery/CoalMine)** (quality canaries) · **[CoalBoard](https://github.com/TheColliery/CoalBoard)** (consensus & debate board) · **[CoalHearth](https://github.com/TheColliery/CoalHearth)** (session warm-resume) · **[CoalFace](https://github.com/TheColliery/CoalFace)** (fan-out discipline) · **[CoalWash](https://github.com/TheColliery/CoalWash)** (memory defrag) · **[CoalLedger](https://github.com/TheColliery/CoalLedger)** (docs health) · **[CoalGob](https://github.com/TheColliery/CoalGob)** (OS-trash delete guard, PUBLIC BETA v0.1.0-beta.1).
 
@@ -88,7 +88,7 @@ Optional per-project config override, first-found wins: `<project>/.claude/coal/
 
 ### Other platforms — no install (routing cannot actuate)
 
-There is deliberately **no file-copy or `install.mjs` path** for other agents: none gives CT what it needs to ship as designed -- most have no worker model-pick at all, and the one exception (Antigravity) picks a cross-vendor tier with no effort knob (see [Compatibility](#-compatibility) for the full reason).
+No other agent is a supported install. `scripts/install.mjs <agent>` can copy the skill into another agent's skills folder (the `TARGETS` map in `scripts/lib/targets.mjs`), but routing cannot actuate there: most have no worker model-pick at all, and the one exception (Antigravity) picks a cross-vendor tier with no effort knob (see [Compatibility](#-compatibility)). A copy installed there will not route, and a weak model may claim a delegation it cannot perform.
 
 * **Antigravity**—**does not ship CT, but not for the reason previously stated here.** The 2026-06-16 note that AG has "no per-spawn model parameter" was wrong, or went stale -- we cannot tell which from here. Re-verified 2026-08-04 by reading the live tool schema and running a real spawn: `invoke_subagent`'s `Model` field (`inherit` / `flash_lite` / `flash` / `pro`) DOES let the agent pick a per-spawn tier at invocation time (the earlier check only looked at `define_subagent`, which has no such field) -- a Claude Opus 4.6 parent spawned a Gemini 2.0 Flash child by naming `Model: "flash"`. What IS still true, confirmed the same day: **no effort knob exists anywhere in the schema.** CT still does not install here: the `Model` enum selects a GOOGLE tier regardless of the parent's own vendor -- a cross-vendor handoff, not a cheaper same-family worker -- and CT's never-down gate, qualityBar staircase, and Claude alias floor (haiku<sonnet<opus<fable) don't map onto that shape. A tier-only, cross-vendor AG lane would be a different, unbuilt product under CT's name, not a missing install step.
 * **Codex · Gemini CLI · Cline · Windsurf**—no worker model-pick → not supported.
