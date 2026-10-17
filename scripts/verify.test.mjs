@@ -6,7 +6,7 @@
 // test in this room). Copies the whole repo into a tmp dir (verify.mjs's own
 // `repo` is derived from its OWN file location, so the copy must be self-contained)
 // and spawns the real script -- never imports its internals.
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -97,25 +97,70 @@ test('verify.mjs pointer-check pass line: the printed surface count matches the 
 // (findings-back MEDIUM-2). Needs its own git-initialised sandbox (VERIFY_ITEMS above
 // omits README/SECURITY/CONTRIBUTING/PRIVACY and .gitignore -- board #64's narrower
 // scope) since the property under test is specifically about a GITIGNORED root.
+// 17e (UMB3-039 practice 1): the git baseline is built ONCE per file run, lazily at the first call, and every case gets its own copy (.git included). It used to run
+// git init, three config calls, add and commit for each of the five callers; the copy costs no git spawn. A case that mutates its sandbox mutates its own copy only.
+let gitBaseline = null;
+const gitIn = (cwd, args) => {
+  const r = spawnSync('git', args, { cwd, encoding: 'utf8', timeout: SPAWN_TIMEOUT_MS, env: gitEnv(path.dirname(cwd)) });
+  if (r.status !== 0) throw new Error(`git ${args.join(' ')} failed: ${r.stderr || r.error?.message}`);
+  return r.stdout;
+};
+function gitBaselineDir() {
+  if (gitBaseline) return gitBaseline;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-verify-baseline-'));
+  try {
+    for (const item of VERIFY_ITEMS) fs.cpSync(path.join(repo, item), path.join(dir, item), { recursive: true });
+    for (const f of ['README.md', 'SECURITY.md', 'CONTRIBUTING.md', 'PRIVACY.md', '.gitignore']) {
+      fs.copyFileSync(path.join(repo, f), path.join(dir, f));
+    }
+    gitIn(dir, ['init', '-q', '-b', 'main']);
+    gitIn(dir, ['config', 'user.email', 'test@test.invalid']);
+    gitIn(dir, ['config', 'user.name', 'Test']);
+    gitIn(dir, ['config', 'commit.gpgsign', 'false']);
+    gitIn(dir, ['add', '-A']);
+    gitIn(dir, ['commit', '-q', '-m', 'baseline']);
+  } catch (e) {
+    fs.rmSync(dir, { recursive: true, force: true });
+    throw e;
+  }
+  gitBaseline = dir;
+  return dir;
+}
+after(() => { if (gitBaseline) fs.rmSync(gitBaseline, { recursive: true, force: true }); });
 function mkGitSandbox() {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-verify-nonlocal-'));
-  for (const item of VERIFY_ITEMS) fs.cpSync(path.join(repo, item), path.join(tmp, item), { recursive: true });
-  for (const f of ['README.md', 'SECURITY.md', 'CONTRIBUTING.md', 'PRIVACY.md', '.gitignore']) {
-    fs.copyFileSync(path.join(repo, f), path.join(tmp, f));
+  try {
+    fs.cpSync(gitBaselineDir(), tmp, { recursive: true });
+  } catch (e) {
+    fs.rmSync(tmp, { recursive: true, force: true });
+    throw e;
   }
-  const git = (args) => {
-    const r = spawnSync('git', args, { cwd: tmp, encoding: 'utf8', timeout: SPAWN_TIMEOUT_MS, env: gitEnv(path.dirname(tmp)) });
-    if (r.status !== 0) throw new Error(`git ${args.join(' ')} failed: ${r.stderr || r.error?.message}`);
-    return r.stdout;
-  };
-  git(['init', '-q', '-b', 'main']);
-  git(['config', 'user.email', 'test@test.invalid']);
-  git(['config', 'user.name', 'Test']);
-  git(['config', 'commit.gpgsign', 'false']);
-  git(['add', '-A']);
-  git(['commit', '-q', '-m', 'baseline']);
-  return { tmp, git };
+  return { tmp, git: (args) => gitIn(tmp, args) };
 }
+
+test('verify.mjs fixtures: a commit made in one git sandbox copy is absent from a second copy and from the baseline (17e)', () => {
+  const a = mkGitSandbox();
+  const b = mkGitSandbox();
+  try {
+    const base = gitBaselineDir();
+    const head = (cwd) => gitIn(cwd, ['rev-parse', 'HEAD']).trim();
+    const h0 = head(base);
+    assert.equal(head(a.tmp), h0, 'a copy starts at the baseline commit');
+    assert.equal(head(b.tmp), h0, 'a second copy starts at the baseline commit');
+    fs.writeFileSync(path.join(a.tmp, 'only-in-a.txt'), 'a\n');
+    a.git(['add', '-A']);
+    a.git(['commit', '-q', '-m', 'only in a']);
+    assert.notEqual(head(a.tmp), h0, 'the commit landed in copy a');
+    assert.equal(head(b.tmp), h0, 'copy b did not move');
+    assert.equal(head(base), h0, 'the baseline did not move');
+    assert.equal(fs.existsSync(path.join(b.tmp, 'only-in-a.txt')), false, 'the file is absent from copy b');
+    assert.equal(gitIn(b.tmp, ['ls-files', 'only-in-a.txt']).trim(), '', 'and untracked by copy b');
+    assert.equal(gitIn(base, ['ls-files', 'only-in-a.txt']).trim(), '', 'and by the baseline');
+  } finally {
+    fs.rmSync(a.tmp, { recursive: true, force: true });
+    fs.rmSync(b.tmp, { recursive: true, force: true });
+  }
+});
 
 test('verify.mjs pointer check: an extensionless citation under a gitignored root is checked NON-LOCALLY, not exempt (CWK-079)', () => {
   // Plants land on SECURITY.md/CONTRIBUTING.md -- root-level surfaces whose pcSurfaces
