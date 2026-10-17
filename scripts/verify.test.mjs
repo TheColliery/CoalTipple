@@ -105,8 +105,42 @@ const gitIn = (cwd, args) => {
   if (r.status !== 0) throw new Error(`git ${args.join(' ')} failed: ${r.stderr || r.error?.message}`);
   return r.stdout;
 };
+// 18a (LOW-1 of the 17e INSPECT): a run killed as a tree never reaches the after() above and leaves its baseline in the temp folder. Each file run therefore sweeps
+// the STALE ones before it builds its own. A narrow delete (AGENTS.md DURABLE DATA): only a direct child of the realpath'd root, named with the prefix, a real
+// directory by lstat (a link is never followed), whose realpath parent is the root, older than the bound, and not this run's own baseline. Anything that fails a
+// check is skipped; nothing here throws. The root, clock and bound are arguments so a test points it at a sandbox root.
+const BASELINE_PREFIX = 'ct-verify-baseline-';
+// 30 min: a live run of this file takes ~66-102 s here (n = 5, 17e), so a second session's fresh baseline is far inside the bound and is never touched; the wave
+// runner's per-file clock (scripts/lib/test-suite.mjs) bounds a live run well below it too.
+const BASELINE_MAX_AGE_MS = 30 * 60 * 1000;
+function sweepStaleBaselines(root, now, maxAgeMs, keep) {
+  const removed = [];
+  let realRoot;
+  let names;
+  try {
+    realRoot = fs.realpathSync.native(root);
+    names = fs.readdirSync(realRoot);
+  } catch { return removed; /* an unreadable root is nothing to sweep */ }
+  let realKeep = null;
+  try { if (keep) realKeep = fs.realpathSync.native(keep); } catch { /* a missing own baseline cannot be in the way */ }
+  for (const name of names) {
+    if (!name.startsWith(BASELINE_PREFIX)) continue;
+    try {
+      const candidate = path.join(realRoot, name);
+      const st = fs.lstatSync(candidate);
+      if (!st.isDirectory()) continue;
+      const realCandidate = fs.realpathSync.native(candidate);
+      if (path.dirname(realCandidate) !== realRoot || realCandidate === realKeep) continue;
+      if (now - st.mtimeMs <= maxAgeMs) continue;
+      fs.rmSync(candidate, { recursive: true, force: true });
+      removed.push(name);
+    } catch { /* a candidate that fails any check or the delete is skipped, never thrown on */ }
+  }
+  return removed;
+}
 function gitBaselineDir() {
   if (gitBaseline) return gitBaseline;
+  try { sweepStaleBaselines(os.tmpdir(), Date.now(), BASELINE_MAX_AGE_MS, gitBaseline); } catch { /* a sweep problem never fails the suite */ }
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-verify-baseline-'));
   try {
     for (const item of VERIFY_ITEMS) fs.cpSync(path.join(repo, item), path.join(dir, item), { recursive: true });
@@ -492,4 +526,78 @@ test('verify.mjs: a tracked top-level directory with a non-ASCII name derives as
     assert.ok(out.includes(`'${name}' is a tracked top-level root`), `the root must be named as itself:\n${out}`);
     assert.ok(!out.includes(String.fromCharCode(92) + '303'), `git's quoted octal spelling leaked into the derivation:\n${out}`);
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
+// 18a legs for sweepStaleBaselines(): one behaviour per test; only the link leg can skip (capability-probed, visible).
+const mkSweepRoot = (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-verify-sweep-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  return root;
+};
+const plantDir = (root, name, ageMs, now) => {
+  const dir = path.join(root, name);
+  fs.mkdirSync(dir);
+  fs.writeFileSync(path.join(dir, 'marker.txt'), 'x\n');
+  const when = new Date(now - ageMs);
+  fs.utimesSync(dir, when, when);
+  return dir;
+};
+const SWEEP_NOW = Date.UTC(2026, 9, 18, 12, 0, 0);
+
+test('baseline sweep: a STALE ct-verify-baseline-* directory under the root is removed (18a)', (t) => {
+  const root = mkSweepRoot(t);
+  const stale = plantDir(root, BASELINE_PREFIX + 'stale', BASELINE_MAX_AGE_MS + 60000, SWEEP_NOW);
+  const removed = sweepStaleBaselines(root, SWEEP_NOW, BASELINE_MAX_AGE_MS, null);
+  assert.deepEqual(removed, [BASELINE_PREFIX + 'stale']);
+  assert.equal(fs.existsSync(stale), false, 'the stale baseline is gone');
+});
+
+test('baseline sweep: a FRESH ct-verify-baseline-* directory (younger than the bound) is kept (18a)', (t) => {
+  const root = mkSweepRoot(t);
+  const fresh = plantDir(root, BASELINE_PREFIX + 'fresh', BASELINE_MAX_AGE_MS - 60000, SWEEP_NOW);
+  assert.deepEqual(sweepStaleBaselines(root, SWEEP_NOW, BASELINE_MAX_AGE_MS, null), []);
+  assert.equal(fs.existsSync(path.join(fresh, 'marker.txt')), true, 'a second session\'s live baseline survives');
+});
+
+test('baseline sweep: a foreign folder (another prefix), however old, is kept (18a)', (t) => {
+  const root = mkSweepRoot(t);
+  const foreign = plantDir(root, 'someone-elses-' + BASELINE_PREFIX, BASELINE_MAX_AGE_MS * 100, SWEEP_NOW);
+  const other = plantDir(root, 'ct-verify-nonlocal-old', BASELINE_MAX_AGE_MS * 100, SWEEP_NOW);
+  assert.deepEqual(sweepStaleBaselines(root, SWEEP_NOW, BASELINE_MAX_AGE_MS, null), []);
+  assert.equal(fs.existsSync(foreign), true);
+  assert.equal(fs.existsSync(other), true, 'the sibling fixture prefix is not this sweep\'s');
+});
+
+test('baseline sweep: a FILE named with the prefix is kept (18a)', (t) => {
+  const root = mkSweepRoot(t);
+  const file = path.join(root, BASELINE_PREFIX + 'file');
+  fs.writeFileSync(file, 'x\n');
+  const when = new Date(SWEEP_NOW - BASELINE_MAX_AGE_MS * 10);
+  fs.utimesSync(file, when, when);
+  assert.deepEqual(sweepStaleBaselines(root, SWEEP_NOW, BASELINE_MAX_AGE_MS, null), []);
+  assert.equal(fs.existsSync(file), true);
+});
+
+test('baseline sweep: the run\'s own baseline is never removed, even when it reads stale (18a)', (t) => {
+  const root = mkSweepRoot(t);
+  const own = plantDir(root, BASELINE_PREFIX + 'own', BASELINE_MAX_AGE_MS * 10, SWEEP_NOW);
+  assert.deepEqual(sweepStaleBaselines(root, SWEEP_NOW, BASELINE_MAX_AGE_MS, own), []);
+  assert.equal(fs.existsSync(own), true);
+});
+
+test('baseline sweep: a LINK named with the prefix is not followed and its target survives (18a)', (t) => {
+  const root = mkSweepRoot(t);
+  const targetRoot = mkSweepRoot(t);
+  const target = plantDir(targetRoot, 'precious', BASELINE_MAX_AGE_MS * 10, SWEEP_NOW);
+  const link = path.join(root, BASELINE_PREFIX + 'link');
+  try {
+    fs.symlinkSync(target, link, process.platform === 'win32' ? 'junction' : 'dir');
+  } catch (e) {
+    t.skip('cannot create a directory link here (' + (e.code || e.message) + ')');
+    return;
+  }
+  try { const old = new Date(SWEEP_NOW - BASELINE_MAX_AGE_MS * 10); fs.lutimesSync(link, old, old); } catch { /* the link's own age is not what the leg proves */ }
+  sweepStaleBaselines(root, SWEEP_NOW, BASELINE_MAX_AGE_MS, null);
+  assert.equal(fs.existsSync(path.join(target, 'marker.txt')), true, 'the link target was not deleted through the link');
+  assert.equal(fs.lstatSync(link).isSymbolicLink(), true, 'the link itself was not replaced or followed');
 });
