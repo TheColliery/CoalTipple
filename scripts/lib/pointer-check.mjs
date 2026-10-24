@@ -270,8 +270,18 @@ export const PENDING_POINTERS = [
 // non-0/1 branch specifically (the 0/1 cases ARE driven through a real git process in the
 // test file -- only a genuine non-0/1 exit needs a synthetic `ci` shape, per this room's own
 // measurement that git 2.55 tolerates every malformed-input fixture tried down to exit 1).
+// r24c (CWK2-060) -- THE PIPE RACE, one answer in two forms. When git exits BEFORE it reads stdin (a core.bare=true
+// repo refuses at once with 128), a spawnSync still writing `input` gets the pipe error AND the real status: EPIPE
+// on POSIX, EOF on Windows (measured 2026-10-24: EOF beside 128 at 65,550 bytes, 4 MB and 16 MB). The child
+// answered, so its exit is the verdict, not a spawn failure. Only that pairing (a pipe code, an integer status other
+// than 0 or 1) is read that way: a pipe error beside status 0 or 1 may mean git never saw all of its input, and a
+// non-pipe error beside any status is a real spawn failure. Both stay fail-closed. Keyed on error.code, never on
+// error.message (node/runtime.md §7). Ported from CoalHearth 6f39694 (CoalBoard af07b9c, CoalLedger 0fd838b).
+const STDIN_CLOSED_CODES = new Set(['EPIPE', 'EOF']);
 export function classifyCheckIgnoreResult(ci) {
-  if (ci.error) {
+  const childExitedFirst = Boolean(ci.error) && STDIN_CLOSED_CODES.has(ci.error.code)
+    && Number.isInteger(ci.status) && ci.status !== 0 && ci.status !== 1;
+  if (ci.error && !childExitedFirst) {
     return { ok: false, message: `git check-ignore --stdin failed to spawn: ${ci.error.message}` };
   }
   if (ci.status !== 0 && ci.status !== 1) {

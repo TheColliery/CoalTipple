@@ -10,6 +10,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -517,6 +519,75 @@ test('classifyCheckIgnoreResult: a synthetic spawn error (git missing/unspawnabl
   const verdict = classifyCheckIgnoreResult({ error: new Error('spawn git ENOENT'), status: null, stdout: null, stderr: null });
   assert.equal(verdict.ok, false);
   assert.match(verdict.message, /failed to spawn: spawn git ENOENT/);
+});
+
+// r24c (CWK2-060, the EPIPE class): when git exits BEFORE it reads stdin (a core.bare=true repo refuses at once),
+// a spawnSync still writing `input` gets the pipe error AND the real status. That is the child's answer, not a
+// spawn failure: the verdict must name the status and stderr. EPIPE (POSIX) and EOF (Windows, measured 2026-10-24
+// with core.bare=true and an input over the pipe buffer) are the two codes. Any other pairing stays fail-closed.
+// Ported from CoalHearth 6f39694 (and CoalBoard af07b9c, CoalLedger 0fd838b).
+const PIPE_CLOSED = (code) => Object.assign(new Error(`spawnSync git ${code}`), { code });
+const NO_WORK_TREE = 'fatal: this operation must be run in a work tree\n';
+
+test('classifyCheckIgnoreResult: r24c -- EPIPE beside status 128 names the EXIT, not a spawn failure (POSIX pipe race)', () => {
+  const v = classifyCheckIgnoreResult({ error: PIPE_CLOSED('EPIPE'), status: 128, stdout: '', stderr: NO_WORK_TREE });
+  assert.equal(v.ok, false);
+  assert.match(v.message, /exited 128 -- fatal: this operation must be run in a work tree/);
+  assert.doesNotMatch(v.message, /failed to spawn/);
+});
+
+test('classifyCheckIgnoreResult: r24c -- EOF beside status 128 names the EXIT (Windows pipe race, measured)', () => {
+  const v = classifyCheckIgnoreResult({ error: PIPE_CLOSED('EOF'), status: 128, stdout: '', stderr: NO_WORK_TREE });
+  assert.equal(v.ok, false);
+  assert.match(v.message, /exited 128 -- fatal: this operation must be run in a work tree/);
+  assert.doesNotMatch(v.message, /failed to spawn/);
+});
+
+test('classifyCheckIgnoreResult: r24c -- a pipe error with no stderr still names the status, with no dangling separator', () => {
+  const v = classifyCheckIgnoreResult({ error: PIPE_CLOSED('EPIPE'), status: 128, stdout: '', stderr: '' });
+  assert.equal(v.message, 'git check-ignore --stdin exited 128 -- cannot tell which cited roots are gitignored');
+});
+
+test('classifyCheckIgnoreResult: r24c FAIL-CLOSED -- a pipe error beside status 0 stays "failed to spawn" (input may not have reached git)', () => {
+  const v = classifyCheckIgnoreResult({ error: PIPE_CLOSED('EPIPE'), status: 0, stdout: 'a/.probe\n', stderr: '' });
+  assert.equal(v.ok, false);
+  assert.match(v.message, /failed to spawn: spawnSync git EPIPE/);
+});
+
+test('classifyCheckIgnoreResult: r24c FAIL-CLOSED -- a pipe error beside status 1 stays "failed to spawn" (git may have stopped reading)', () => {
+  const v = classifyCheckIgnoreResult({ error: PIPE_CLOSED('EOF'), status: 1, stdout: '', stderr: '' });
+  assert.equal(v.ok, false);
+  assert.match(v.message, /failed to spawn: spawnSync git EOF/);
+});
+
+test('classifyCheckIgnoreResult: r24c FAIL-CLOSED -- a pipe error beside NO status stays "failed to spawn"', () => {
+  const v = classifyCheckIgnoreResult({ error: PIPE_CLOSED('EPIPE'), status: null, stdout: '', stderr: '' });
+  assert.equal(v.ok, false);
+  assert.match(v.message, /failed to spawn: spawnSync git EPIPE/);
+});
+
+test('classifyCheckIgnoreResult: r24c FAIL-CLOSED -- a NON-pipe error beside status 128 stays "failed to spawn" (ENOENT is not the child answering)', () => {
+  const v = classifyCheckIgnoreResult({ error: PIPE_CLOSED('ENOENT'), status: 128, stdout: '', stderr: NO_WORK_TREE });
+  assert.equal(v.ok, false);
+  assert.match(v.message, /failed to spawn: spawnSync git ENOENT/);
+});
+
+// r24c REAL-GIT leg: no fake pipe error. A core.bare=true repo makes git refuse before it reads stdin (exit 128);
+// an input past the 64 KB pipe buffer then makes the parent's write fail with the pipe code. Measured on this box
+// 2026-10-24: EOF beside status 128 at 65,550 bytes and at 4 MB and 16 MB, status 128 with no error at 9 bytes.
+test('r24c real path: a core.bare repo refusing check-ignore with input past the pipe buffer names the EXIT, never a spawn failure', (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'r24c-pipe-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const env = gitEnv(path.dirname(dir));
+  const g = (args) => spawnSync('git', args, { cwd: dir, encoding: 'utf8', env, timeout: SPAWN_TIMEOUT_MS });
+  assert.equal(g(['init', '-q']).status, 0, 'setup: git init');
+  assert.equal(g(['config', 'core.bare', 'true']).status, 0, 'setup: core.bare=true');
+  const input = ('a/.pointer-check-probe-' + 'x'.repeat(40) + '\n').repeat(2000);
+  const ci = spawnSync('git', ['check-ignore', '--stdin'], { cwd: dir, encoding: 'utf8', env, input, maxBuffer: 1 << 26, timeout: SPAWN_TIMEOUT_MS });
+  const v = classifyCheckIgnoreResult(ci);
+  assert.equal(v.ok, false);
+  assert.match(v.message, /exited 128 -- fatal: this operation must be run in a work tree/, `${v.message} (error ${ci.error ? ci.error.code : 'none'})`);
+  assert.doesNotMatch(v.message, /failed to spawn/);
 });
 
 test('applyCheckIgnoreProbe: an empty toProbe never spawns and never fails', () => {
