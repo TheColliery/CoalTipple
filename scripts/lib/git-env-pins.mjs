@@ -8,7 +8,8 @@
 // env from named keys, or the canon rule reads a strip filter. git-env.test.mjs plants GIT_DIR on purpose, to reproduce the hazard CWK-133 closed.
 // 09a: scripts/secret-gate.test.mjs left this list when the canon rewrote it to named keys (2f066650).
 // 09b: scripts/secret-scan.test.mjs left it when Bankfire's source (bd328f2) and the canon rebuilt its env from named keys (a0319dcd); the census passes it with no pin.
+// 25a: scripts/secret-gate.mjs re-copied from the canon (eecd5f9, blob 6b452f2f) and re-pinned to that blob; the census still finds its lines 57 and 60.
 export const CENSUS_PINS = [
   { rel: "scripts/lib/git-env.test.mjs", blob: "be246755d951ebbc523849dab880da8efbab350c", why: "plants GIT_DIR in poisonedEnv on purpose (lines 97 and 104 hand it to a git spawn), and a lower-case git_dir copied from process.env (the probed 16e leg at the end of the file), to reproduce the CWK-133 hazard; KEEP while the test reproduces the hazard" },
-  { rel: "scripts/secret-gate.mjs", blob: "856956a1cca6f716e5507f6c23ac90ed34cbbe5f", why: "canon gate, byte-equal by skeleton-check; its gitEnv() copies process.env minus GIT_* but keeps GIT_INDEX_FILE and GIT_CEILING_DIRECTORIES by design (lines 57 and 60 are the findings); DELETE when the census rule accepts a GIT_*-stripping copy of process.env or the canon builds its env from named keys" },
+  { rel: "scripts/secret-gate.mjs", blob: "6b452f2f8667805876cc2f33a74123bb6f0acf45", why: "canon gate, byte-equal by skeleton-check; its gitEnv() copies process.env minus GIT_* but keeps GIT_INDEX_FILE and GIT_CEILING_DIRECTORIES by design (lines 57 and 60 are the findings); DELETE when the census rule accepts a GIT_*-stripping copy of process.env or the canon builds its env from named keys" },
 ];
