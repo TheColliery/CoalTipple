@@ -57,7 +57,9 @@ function stripFences(text) {
 // this room's own ship-text, measured before choosing this shape) -- a target with a
 // space is invisible to this regex the same way an unbacktick citation is invisible
 // to pointer-check's funnel: a named, measured blind spot, not a denial.
-const LINK_RE = /(!?)\[[^\]\n]*\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
+// The label stops at the next `[` as well as at `]` and a line break: an unclosed `[` then fails at once instead of
+// scanning to the end of the line, so a long run of them stays linear (scripts/lib/link-check-linear.test.mjs).
+const LINK_RE = /(!?)\[[^[\]\n]*\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
 
 export function extractLinkTargets(text) {
   const out = [];
