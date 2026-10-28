@@ -86,6 +86,28 @@ test('--list shows the merged effective config (project > global)', () => {
   } finally { cleanup(p); }
 });
 
+// 29a bounce 1 (L-2): a config over the byte bound is read as absent (config-bound.mjs), so --list must say it skipped the file instead of naming it as the source of a config it did not read.
+test('--list names a config over the byte bound as skipped, never as the source of the config it shows (29a bounce 1)', () => {
+  const p = freshProject();
+  try {
+    const target = globalPath(p.home);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    const body = '{"qualityBar":97}';
+    fs.writeFileSync(target, body + ' '.repeat(1024 * 1024 + 1 - body.length));
+    const r = run(p, '--list');
+    assert.equal(r.status, 0, r.stderr);
+    assert.ok(r.stdout.includes(`Skipped ${target}: larger than 1048576 bytes, read as absent.`), r.stdout);
+    assert.ok(!r.stdout.includes('from global'), 'the skipped file is not named as the source: ' + r.stdout);
+    const shown = JSON.parse(r.stdout.slice(r.stdout.indexOf('{')));
+    assert.ok(Object.keys(shown).length > 0 && shown.qualityBar !== 97, 'the factory defaults are shown, not the skipped file or {}');
+    assert.equal(r.stdout.split('Skipped ').length - 1, 1, 'the file is named once');
+    // Run from the home folder the project config path and the global path are one file: it is still named once.
+    const atHome = spawnSync(process.execPath, [CONFIGURE, '--list'], { cwd: p.home, env: sandboxEnv(p.home), encoding: 'utf8', timeout: 60000 });
+    assert.equal(atHome.status, 0, atHome.stderr);
+    assert.equal(atHome.stdout.split('Skipped ').length - 1, 1, 'one file reached by two paths is named once: ' + atHome.stdout);
+  } finally { cleanup(p); }
+});
+
 test('an out-of-range int is rejected with the schema message and writes nothing (either target)', () => {
   const p = freshProject();
   try {

@@ -29,7 +29,7 @@ import { fileURLToPath } from 'node:url';
 import { CONFIG_SCHEMA, validateValue } from './lib/config-schema.mjs';
 import { loadMergedConfig, globalConfigPath, projectConfigPath, projectWriteTarget, moveLegacyAside, writeConfigAtomic, containedProjectPath } from './lib/config-load.mjs';
 import { stripJsonc } from './lib/jsonc.mjs';
-import { readConfigBounded } from './lib/config-bound.mjs';
+import { readConfigBounded, MAX_CONFIG_BYTES } from './lib/config-bound.mjs';
 import { escapeRegExp } from './lib/regex-escape.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -225,9 +225,15 @@ function main() {
     try { merged = loadMergedConfig(); } catch (e) {
       console.error(`Error: cannot read config cascade: ${e.message}`); process.exitCode = 1; return;
     }
-    const hasGlobal = fs.existsSync(globalPath), hasProject = projectReadPath !== null && fs.existsSync(projectReadPath);
+    // A config over the byte bound was read as absent by loadMergedConfig (config-bound.mjs): say so, and never name it as a source of what is shown.
+    // The notice goes to stdout, the stream the other --list notices below already use.
+    const overBound = (p) => { try { return fs.statSync(p).size > MAX_CONFIG_BYTES; } catch { return false; } };
+    const skipped = [...new Set([globalPath, projectReadPath])].filter((p) => p !== null && fs.existsSync(p) && overBound(p)); // the Set: run from the home folder, both paths are one file
+    for (const p of skipped) console.log(`Skipped ${p}: larger than ${MAX_CONFIG_BYTES} bytes, read as absent.`);
+    const hasGlobal = fs.existsSync(globalPath) && !skipped.includes(globalPath);
+    const hasProject = projectReadPath !== null && fs.existsSync(projectReadPath) && !skipped.includes(projectReadPath);
     if (!hasGlobal && !hasProject) {
-      console.log('No .coaltipple.json yet (global or project) — showing factory defaults:');
+      console.log(skipped.length ? 'No usable .coaltipple.json (global or project) — showing factory defaults:' : 'No .coaltipple.json yet (global or project) — showing factory defaults:');
       try { merged = parseConfig(readConfigBounded(factoryCfg)); } catch {}
     } else {
       const sources = [hasGlobal ? `global ${globalPath}` : null, hasProject ? `project ${projectReadPath}` : null].filter(Boolean);
