@@ -121,6 +121,27 @@ test('verify.mjs: a plugin.json that fails to parse with a line break in its quo
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 });
 
+// 29a bounce 1 (L-1): a terminal control, a C1 control or a Unicode line separator in a printed value must not reach the output raw either. Every character
+// is built from its code, never typed, so this file holds no raw control. JSON.stringify leaves C1 and U+2028 raw; flat() writes them out as visible escapes.
+test('verify.mjs: a planted ESC, C1 control and U+2028 in a printed value or a parse error never reach the output raw (29a bounce 1)', () => {
+  const ESC = String.fromCharCode(0x1b);
+  const CSI = String.fromCharCode(0x9b);
+  const LS = String.fromCharCode(0x2028);
+  const planted = 'coaltipple' + ESC + '[2K' + CSI + 'x' + LS + 'y';
+  const named = verifyWithPlugin((pj) => { pj.name = planted; });
+  const raw = (out) => [ESC, CSI, LS].filter((c) => out.includes(c)).map((c) => c.charCodeAt(0).toString(16));
+  assert.equal(named.status, 1, named.stdout);
+  assert.deepEqual(raw(named.stdout), [], 'the planted name reached the output with raw controls');
+  assert.ok(named.stdout.includes('\\u001b') && named.stdout.includes('\\u009b') && named.stdout.includes('\\u2028'), 'the controls are written out as visible escapes');
+  const tmp = mkSandbox();
+  try {
+    fs.writeFileSync(path.join(tmp, '.claude-plugin', 'plugin.json'), ESC + '[2K' + CSI + LS + 'x}', 'utf8'); // JSON.parse quotes the start of this text in its message
+    const parsed = runVerify(tmp);
+    assert.equal(parsed.status, 1, parsed.stdout);
+    assert.deepEqual(raw(parsed.stdout), [], 'the parse error reached the output with raw controls');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
 test('verify.mjs pointer-check pass line: the printed surface count matches the ACTUAL walked set (CWK-078, CoalHearth-class -- a typed number the instrument does not produce)', () => {
   // Spawns the REAL verify.mjs against the REAL repo, no sandbox -- the pointer-check block
   // reads README/SECURITY/CONTRIBUTING/PRIVACY, none of which VERIFY_ITEMS above copies (that

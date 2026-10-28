@@ -29,9 +29,19 @@ let fails = 0;
 const ok = (m) => console.log(`  ok   ${m}`);
 const fail = (m) => { console.log(`  FAIL ${m}`); fails++; };
 // A value read from a file a contributor controls (plugin.json, the CHANGELOG heading, the factory config's keys) is printed through
-// JSON.stringify, and an error message that can quote such a file has its line breaks written out by flat(): a line break inside the
-// value must never start a new output line of its own.
-const flat = (s) => String(s).replace(/\r/g, '\\r').replace(/\n/g, '\\n');
+// show(), and an error message that can quote such a file through flat(). flat() writes out as visible escapes every character that could
+// start a new output line or drive a terminal: CR and LF as \r and \n, every other C0 control except tab (ESC included), DEL, every C1
+// control, U+2028 and U+2029 as \uXXXX. show() is flat(JSON.stringify(v)), because JSON.stringify escapes C0 but leaves C1 and U+2028 raw.
+// The backslash is built from its code, never typed, so an escape in this comment or here cannot be rewritten in transit.
+const BS = String.fromCharCode(92);
+const flat = (s) => Array.from(String(s), (ch) => {
+  const n = ch.codePointAt(0);
+  if (n === 10) return BS + 'n';
+  if (n === 13) return BS + 'r';
+  if ((n < 0x20 && n !== 9) || (n >= 0x7f && n <= 0x9f) || n === 0x2028 || n === 0x2029) return BS + 'u' + n.toString(16).padStart(4, '0');
+  return ch;
+}).join('');
+const show = (v) => flat(JSON.stringify(v));
 
 console.log('files:');
 for (const [label, p] of [
@@ -45,7 +55,7 @@ for (const [label, p] of [
 console.log('plugin (manifest vs CHANGELOG):');
 try {
   const pj = JSON.parse(fs.readFileSync(path.join(repo, '.claude-plugin', 'plugin.json'), 'utf8'));
-  if (pj.name === 'coaltipple') ok("plugin.json name = 'coaltipple'"); else fail(`plugin.json name = ${JSON.stringify(pj.name)} (want 'coaltipple')`);
+  if (pj.name === 'coaltipple') ok("plugin.json name = 'coaltipple'"); else fail(`plugin.json name = ${show(pj.name)} (want 'coaltipple')`);
   // Semver accepting a pre-release/build suffix (flock-canonical form, e.g. CoalHearth/CoalFace
   // verify.mjs) — a strict x.y.z-only regex once rejected a beta tag at release time on a sibling.
   // CT ships stable-only today (latent), but the CHANGELOG-heading capture below must accept the
@@ -55,8 +65,8 @@ try {
     const cl = fs.readFileSync(path.join(repo, 'CHANGELOG.md'), 'utf8');
     const top = (cl.match(/^##\s*\[(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)\]/m) || [])[1];
     if (top === pj.version) ok(`version ${pj.version} matches top CHANGELOG entry`);
-    else fail(`plugin.json version ${JSON.stringify(pj.version)} != top CHANGELOG ${JSON.stringify(top || 'none')} — bump bookkeeping out of sync`);
-  } else fail(`plugin.json version ${JSON.stringify(pj.version)} not semver`);
+    else fail(`plugin.json version ${show(pj.version)} != top CHANGELOG ${show(top || 'none')} — bump bookkeeping out of sync`);
+  } else fail(`plugin.json version ${show(pj.version)} not semver`);
   // hooks.json must reference the conductor under ${CLAUDE_PLUGIN_ROOT} (only resolves with plugin.json present)
   const hj = fs.readFileSync(path.join(repo, 'hooks', 'hooks.json'), 'utf8');
   if (hj.includes('${CLAUDE_PLUGIN_ROOT}/hooks/coaltipple-conductor.js')) ok('hooks.json wires the conductor via ${CLAUDE_PLUGIN_ROOT}');
@@ -67,7 +77,7 @@ try {
   const mkt = JSON.parse(mktRaw);
   const srcField = mkt.plugins?.[0]?.source;
   if (srcField === './plugin') ok('marketplace serves ./plugin (conformed dist)');
-  else fail(`marketplace plugins[0].source is ${JSON.stringify(srcField)} — must be "./plugin" so installs get conformed skills`);
+  else fail(`marketplace plugins[0].source is ${show(srcField)} — must be "./plugin" so installs get conformed skills`);
 } catch (e) { fail(`plugin manifest: ${flat(e.message)}`); }
 
 console.log('skill:');
@@ -153,9 +163,9 @@ try {
   let bad = 0;
   for (const [k, v] of Object.entries(cfg)) {
     const spec = byKey[k];
-    if (!spec) { fail(`key ${JSON.stringify(k)} not in schema`); bad++; continue; }
+    if (!spec) { fail(`key ${show(k)} not in schema`); bad++; continue; }
     const err = validateValue(spec, v);
-    if (err) { fail(`${JSON.stringify(k)} ${err}`); bad++; }
+    if (err) { fail(`${show(k)} ${err}`); bad++; }
   }
   if (!bad) ok(`${Object.keys(cfg).length} keys all valid`);
 } catch (e) { fail(`factory config: ${flat(e.message)}`); }
