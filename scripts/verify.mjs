@@ -26,8 +26,11 @@ const REPO_GIT_ENV = gitEnv(path.dirname(repo));
 // checks) are untouched.
 const BOM_RE = new RegExp('^' + String.fromCharCode(0xfeff));
 let fails = 0;
-const ok = (m) => console.log(`  ok   ${m}`);
-const fail = (m) => { console.log(`  FAIL ${m}`); fails++; };
+// Every line the gate prints for a repo-file value goes through flat() HERE, at the sink, so a message that quotes a repo-file string (a schema
+// message naming a modelTiers tier, a doc citation, a heading, a file name) cannot carry a control character or a line break to the terminal,
+// whichever call site built it. flat() is defined below; it is only called after this file has run that far.
+const ok = (m) => console.log(`  ok   ${flat(m)}`);
+const fail = (m) => { console.log(`  FAIL ${flat(m)}`); fails++; };
 // A value read from a file a contributor controls (plugin.json, the CHANGELOG heading, the factory config's keys) is printed through
 // show(), and an error message that can quote such a file through flat(). flat() writes out as visible escapes every character that could
 // start a new output line or drive a terminal: CR and LF as \r and \n, every other C0 control except tab (ESC included), DEL, every C1
@@ -165,7 +168,7 @@ try {
     const spec = byKey[k];
     if (!spec) { fail(`key ${show(k)} not in schema`); bad++; continue; }
     const err = validateValue(spec, v);
-    if (err) { fail(`${show(k)} ${err}`); bad++; }
+    if (err) { fail(`${show(k)} ${flat(err)}`); bad++; } // err quotes a modelTiers tier or a keywords group name from this file
   }
   if (!bad) ok(`${Object.keys(cfg).length} keys all valid`);
 } catch (e) { fail(`factory config: ${flat(e.message)}`); }
@@ -341,12 +344,12 @@ try {
   const scope = blindSkips.length ? 'every DETECTABLE config key' : 'every config key';
   if (hard.length === 0) ok(`${scope} named across ${coverage.mdFiles.length} doc + ${coverage.noticeSites.length} notice-site + ${coverage.keyTables.length} key-table surface(s) resolves in the schema`);
   for (const f of findings) {
-    if (f.level === 'SKIP') console.log('  --   ' + f.msg);
+    if (f.level === 'SKIP') console.log('  --   ' + flat(f.msg));
     else fail(f.msg);
   }
-  for (const m of coverage.mdFiles) console.log(`  cov  markdown ${m.file}: ${m.readable ? `${m.candidates} candidate(s)` : 'UNREADABLE'}`);
-  for (const n of coverage.noticeSites) console.log(`  cov  notice "${n.name}" (${n.file}): ${n.readable ? `${n.lines} line(s), ${n.candidates} candidate(s)` : 'UNREADABLE'}`);
-  for (const t of coverage.keyTables) console.log(`  cov  key table ${t.file} "${t.heading}": ${t.readable ? `${t.rows} row(s)` : 'UNREADABLE'}`);
+  for (const m of coverage.mdFiles) console.log(flat(`  cov  markdown ${m.file}: ${m.readable ? `${m.candidates} candidate(s)` : 'UNREADABLE'}`));
+  for (const n of coverage.noticeSites) console.log(flat(`  cov  notice "${n.name}" (${n.file}): ${n.readable ? `${n.lines} line(s), ${n.candidates} candidate(s)` : 'UNREADABLE'}`));
+  for (const t of coverage.keyTables) console.log(flat(`  cov  key table ${t.file} "${t.heading}": ${t.readable ? `${t.rows} row(s)` : 'UNREADABLE'}`)); // t.heading is README text
 
   // SCHEMA COMPLETENESS (CWK-060 findings-back r34, ITEM 5) -- the direction the check
   // above never covered: does every SCHEMA key appear on a surface that CLAIMS to be
@@ -568,7 +571,7 @@ try {
   });
   const pcHard = pcFindings.filter((f) => f.level !== 'SKIP');
   for (const f of pcFindings) {
-    if (f.level === 'SKIP') console.log('  --   ' + f.msg);
+    if (f.level === 'SKIP') console.log('  --   ' + flat(f.msg));
   }
   // CWK-078 fix, still true: `${pcSurfaces.length}` replaces a former TYPED "8 surfaces"
   // literal that disagreed with the real walked array (12) -- a CoalHearth-class defect (a

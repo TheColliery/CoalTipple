@@ -142,6 +142,27 @@ test('verify.mjs: a planted ESC, C1 control and U+2028 in a printed value or a p
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 });
 
+// 29a bounce 2 (R-1): validateValue() quotes a modelTiers tier name from the factory config in its message, and the gate printed that message as it came. The tier name
+// below holds an ESC and a U+2028 written as JSON escapes (the backslash and every character built from codes, never typed).
+test('verify.mjs: a modelTiers tier name with ESC and U+2028 in the factory config never reaches the output raw (29a bounce 2)', () => {
+  const ESC = String.fromCharCode(0x1b);
+  const LS = String.fromCharCode(0x2028);
+  const BS = String.fromCharCode(92);
+  const tmp = mkSandbox();
+  try {
+    const p = path.join(tmp, 'platform-configs', '.coaltipple.json');
+    const text = fs.readFileSync(p, 'utf8');
+    const tier = 'x' + BS + 'u001b[2K' + BS + 'u2028 planted';
+    fs.writeFileSync(p, text.replace('{', '{\n  "modelTiers": { "' + tier + '": "m" },'), 'utf8');
+    const r = runVerify(tmp);
+    assert.equal(r.status, 1, r.stdout);
+    assert.ok(r.stdout.includes('unknown tier'), 'the schema message for the planted tier is in the output: ' + JSON.stringify(r.stdout.split('\n').filter((l) => l.includes('modelTiers'))));
+    assert.equal(r.stdout.includes(ESC), false, 'a raw ESC reached the output');
+    assert.equal(r.stdout.includes(LS), false, 'a raw U+2028 reached the output');
+    assert.ok(r.stdout.includes(BS + 'u001b') && r.stdout.includes(BS + 'u2028'), 'the controls are written out as visible escapes');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
 test('verify.mjs pointer-check pass line: the printed surface count matches the ACTUAL walked set (CWK-078, CoalHearth-class -- a typed number the instrument does not produce)', () => {
   // Spawns the REAL verify.mjs against the REAL repo, no sandbox -- the pointer-check block
   // reads README/SECURITY/CONTRIBUTING/PRIVACY, none of which VERIFY_ITEMS above copies (that
