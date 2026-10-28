@@ -23,16 +23,18 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { parseJsonc } from './jsonc.mjs';
+import { readConfigBounded } from './config-bound.mjs';
 import { containedPath } from './contain.mjs';
 import { renameWithRetry } from './rename-retry.mjs'; // the one bounded rename retry (also used by classify.mjs writeRankingAtomic)
 
 // Read one JSONC file into an object. Returns {} for any failure mode
-// (missing file, unreadable, malformed JSON, non-object top-level) — never throws.
+// (missing file, unreadable, over the byte bound, malformed JSON, non-object top-level) — never throws.
+// An over-size file is never read whole: readConfigBounded refuses it before any content is read (config-bound.mjs).
 // parseJsonc drops __proto__/constructor/prototype at parse (proto-pollution guard,
 // SKILL-REPO-PATTERN.md Layer 3 — flock-canonical; this file was the one room missing it).
 function readJsonc(file) {
   try {
-    let content = fs.readFileSync(file, 'utf8');
+    let content = readConfigBounded(file);
     if (content.charCodeAt(0) === 0xfeff) content = content.slice(1); // BOM-safe
     const parsed = parseJsonc(content);
     return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};

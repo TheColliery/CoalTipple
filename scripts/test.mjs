@@ -29,6 +29,7 @@ const TESTS = [
   'scripts/lib/conductor-update.test.mjs',
   'scripts/lib/install.test.mjs',
   'scripts/lib/jsonc.test.mjs',
+  'scripts/lib/jsonc-linear.test.mjs',
   'scripts/lib/grade-task.test.mjs',
   'scripts/lib/config-keys.test.mjs',
   'scripts/lib/pointer-check.test.mjs',

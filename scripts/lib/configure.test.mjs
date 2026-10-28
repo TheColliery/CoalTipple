@@ -10,9 +10,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { sandboxEnv } from './test-env.mjs';
 import { CONFIG_SCHEMA } from './config-schema.mjs';
+import { stripJsonc as stripJsoncText } from './jsonc.mjs';
 
 const CONFIGURE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'configure.mjs');
-const stripJsonc = (raw) => JSON.parse(raw.replace(/\\"|"(?:\\"|[^"])*"|(\/\/.*|\/\*[\s\S]*?\*\/)/g, (m, g) => (g ? '' : m)));
+// The production stripper (scripts/lib/jsonc.mjs), not a copy of its regex: one implementation to keep linear and in sync.
+const stripJsonc = (raw) => JSON.parse(stripJsoncText(raw));
 
 // A sandboxed project (cwd, with a .git anchor) AND a sandboxed home (whose
 // .claude/.coaltipple.json is the GLOBAL target). USERPROFILE/HOME point at the

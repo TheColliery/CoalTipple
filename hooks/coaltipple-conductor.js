@@ -93,10 +93,17 @@ function projectConfigCandidates(cwd) {
 // readJsonc and configure.mjs's parseConfig (verified consistent, not re-derived here) --
 // a BOM-prefixed VALID object must be READ, never reported as "malformed JSON" by an
 // implementation that tried to parse before stripping.
+// A config file over this many bytes is never read whole and never stripped: it is named (too large) and skipped.
+// Held equal with scripts/lib/config-bound.mjs by scripts/lib/jsonc-sync.mjs.
+const MAX_CONFIG_BYTES = 1024 * 1024;
 function readCfgFile(file) {
   let content;
   try {
-    content = fs.readFileSync(file, 'utf8');
+    const fd = fs.openSync(file, 'r');
+    try {
+      if (fs.fstatSync(fd).size > MAX_CONFIG_BYTES) return { cfg: null, reason: 'too large' };
+      content = fs.readFileSync(fd, 'utf8');
+    } finally { fs.closeSync(fd); }
   } catch (e) {
     if (e.code === 'ENOENT') return { cfg: null, reason: null }; // absent -- nothing to report
     if (e.code === 'EISDIR') return { cfg: null, reason: 'a directory' };
@@ -104,10 +111,12 @@ function readCfgFile(file) {
   }
   if (content.charCodeAt(0) === 0xFEFF) content = content.slice(1); // BOM-safe, no literal BOM
   // String-aware JSONC stripper (CM #12 fix): the string alternative consumes
-  // an escaped char (\\.) or any non-quote/non-backslash char, so a value
+  // an escaped char (a backslash plus any character) or any non-quote/non-backslash char, so a value
   // ending in a literal backslash terminates the string correctly instead of
   // leaking escape state into the next token and mis-stripping a later comment.
-  const cleanJson = content.replace(/"(?:\\.|[^"\\])*"|\/\/.*|\/\*[\s\S]*?\*\//g, (m) => (m[0] === '"' ? m : ''));
+  // An unclosed opener is consumed to the end of the input in one match and kept as written (linear time,
+  // and a malformed config still fails JSON.parse). Held byte-equal with scripts/lib/jsonc.mjs by scripts/lib/jsonc-sync.mjs.
+  const cleanJson = content.replace(/"(?:\\[\s\S]|[^"\\])*(?:"|\\?$)|\/\/.*|\/\*[\s\S]*?(\*\/|$)/g, (m, close) => (m[0] === '"' || (m[1] === '*' && close !== '*/') ? m : ''));
   let parsed;
   try {
     // Prototype-pollution guard (OWASP Node.js; flock-canonical -- CoalMine/CoalBoard's own

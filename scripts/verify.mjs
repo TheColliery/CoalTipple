@@ -138,7 +138,8 @@ for (const [label, p, isSkill] of descTargets) {
 
 console.log('config (factory vs schema):');
 try {
-  let c = fs.readFileSync(path.join(repo, 'platform-configs', '.coaltipple.json'), 'utf8');
+  const { readConfigBounded } = await import(pathToFileURL(path.join(repo, 'scripts', 'lib', 'config-bound.mjs')).href); // over MAX_CONFIG_BYTES is a named failure below, never read whole
+  let c = readConfigBounded(path.join(repo, 'platform-configs', '.coaltipple.json'));
   if (c.charCodeAt(0) === 0xFEFF) c = c.slice(1);
   // Use the SHARED stripJsonc (lib/jsonc.mjs) — the #12-fixed parser runtime + the
   // conductor use — so the gate validates with the SAME parser as runtime, not a 3rd divergent regex.
@@ -289,6 +290,16 @@ try {
     else fail(`${file} no longer imports containedProjectPath from config-load.mjs -- its project-side writes are no longer link-checked`);
   }
 } catch (e) { fail(`containment sync: ${e.message}`); }
+
+// The JSONC strip call (regex AND callback) and the config byte bound live in scripts/lib and are inlined in the conductor (Phoenix #9) and its plugin/ mirror.
+// A copy that drifts reads green everywhere else: jsonc-sync.mjs names it. Also pinned by scripts/lib/jsonc-linear.test.mjs.
+console.log('JSONC strip + byte bound sync (jsonc.mjs, config-bound.mjs vs the conductor and its plugin/ mirror):');
+try {
+  const { checkJsoncSync } = await import(pathToFileURL(path.join(repo, 'scripts', 'lib', 'jsonc-sync.mjs')).href);
+  const bad = checkJsoncSync(repo);
+  if (bad.length === 0) ok('JSONC strip call and MAX_CONFIG_BYTES are byte-equal across jsonc.mjs, config-bound.mjs, the conductor and plugin/hooks');
+  else for (const m of bad) fail(m);
+} catch (e) { fail(`JSONC sync: ${e.message}`); }
 
 // config-key drift (CWK-060, ported from CoalMine 0019e09): every config key NAMED on
 // a user-facing surface must RESOLVE in config-schema.mjs, or be declared in

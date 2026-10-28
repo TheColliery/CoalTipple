@@ -29,6 +29,7 @@ import { fileURLToPath } from 'node:url';
 import { CONFIG_SCHEMA, validateValue } from './lib/config-schema.mjs';
 import { loadMergedConfig, globalConfigPath, projectConfigPath, projectWriteTarget, moveLegacyAside, writeConfigAtomic, containedProjectPath } from './lib/config-load.mjs';
 import { stripJsonc } from './lib/jsonc.mjs';
+import { readConfigBounded } from './lib/config-bound.mjs';
 import { escapeRegExp } from './lib/regex-escape.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -227,7 +228,7 @@ function main() {
     const hasGlobal = fs.existsSync(globalPath), hasProject = projectReadPath !== null && fs.existsSync(projectReadPath);
     if (!hasGlobal && !hasProject) {
       console.log('No .coaltipple.json yet (global or project) — showing factory defaults:');
-      try { merged = parseConfig(fs.readFileSync(factoryCfg, 'utf8')); } catch {}
+      try { merged = parseConfig(readConfigBounded(factoryCfg)); } catch {}
     } else {
       const sources = [hasGlobal ? `global ${globalPath}` : null, hasProject ? `project ${projectReadPath}` : null].filter(Boolean);
       console.log(`Effective config (project > global; from ${sources.join(' + ')}):`);
@@ -286,17 +287,17 @@ function main() {
   let seededFrom = null; // the legacy file whose contents this run actually read into the target
   try {
     try {
-      text = fs.readFileSync(configPath, 'utf8');
+      text = readConfigBounded(configPath);
       parseConfig(text); // validate it parses before we touch it
     } catch (readErr) {
       if (readErr.code !== 'ENOENT') throw readErr; // real read/parse failure -> fail loud below
       if (toProject && writeTarget.legacyToRemove) {
-        text = fs.readFileSync(writeTarget.legacyToRemove, 'utf8');
+        text = readConfigBounded(writeTarget.legacyToRemove);
         parseConfig(text); // same parse-before-touch guarantee as the normal path
         seededFrom = writeTarget.legacyToRemove;
         console.log(`Migrating ${writeTarget.legacyToRemove} -> ${configPath}, applying your edits.`);
       } else {
-        text = fs.readFileSync(factoryCfg, 'utf8');
+        text = readConfigBounded(factoryCfg);
         console.log(`No ${toProject ? 'project' : 'global'} config at ${configPath} — seeding from factory then applying your edits.`);
       }
     }

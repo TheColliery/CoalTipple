@@ -4,14 +4,18 @@
 //
 // Strips // and /* */ comments that sit OUTSIDE strings, then leaves the rest
 // untouched so JSON.parse can read a comment-tolerant .coaltipple.json. The string
-// alternative consumes an escaped char (\\.) or any non-quote/non-backslash char,
-// so a value ending in a literal backslash (e.g. "C:\\") terminates the string
+// alternative consumes an escaped char (\\ plus any character) or any non-quote/non-backslash
+// char, so a value ending in a literal backslash (e.g. "C:\\") terminates the string
 // correctly instead of leaking escape state into the next token — which would
 // mis-strip a later //-containing string and silently revert the whole config.
-// (Ports the CM #12 fix from CoalMine/scripts/lib/jsonc.mjs verbatim-in-spirit.)
+// An opener that never closes (an unclosed string, a dangling backslash, an unclosed /*) is
+// consumed to the end of the input in ONE match and kept as written, so the strip runs in
+// linear time and a malformed config still fails JSON.parse. (Ported verbatim from
+// CoalMine/scripts/lib/jsonc.mjs at v3.23.7.) The regex AND its callback are held byte-equal
+// with the conductor's inline copy and the plugin/ mirror by scripts/lib/jsonc-sync.mjs.
 
 export function stripJsonc(content) {
-  return content.replace(/"(?:\\.|[^"\\])*"|\/\/.*|\/\*[\s\S]*?\*\//g, (m) => (m[0] === '"' ? m : ''));
+  return content.replace(/"(?:\\[\s\S]|[^"\\])*(?:"|\\?$)|\/\/.*|\/\*[\s\S]*?(\*\/|$)/g, (m, close) => (m[0] === '"' || (m[1] === '*' && close !== '*/') ? m : ''));
 }
 
 // Prototype-pollution guard (OWASP Node.js; flock-canonical shape — CoalFace/CoalHearth/
