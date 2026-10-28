@@ -15,10 +15,10 @@ Reading a `.coaltipple.json` no longer stalls on input full of unclosed comments
 - **A config file over 1 MiB (1,048,576 bytes) is never read.** The conductor skips it and names it in its existing UNREADABLE line as `(too large)`, and the config loader treats it as absent. — test: `scripts/lib/jsonc-linear.test.mjs`
 
 ### Repo tooling (user-run scripts; not in the plugin)
-- **`configure.mjs` stops on an over-size config** with a message that names the size, and leaves the file untouched. — test: `scripts/lib/jsonc-linear.test.mjs`
+- **A `configure.mjs` write stops on an over-size config** with a message that names the size, and leaves the file untouched. `configure.mjs --list` reads such a file as absent and prints one line naming it as skipped (`Skipped <file>: larger than 1048576 bytes, read as absent.`), then shows the defaults. — test: `scripts/lib/jsonc-linear.test.mjs`, `scripts/lib/configure.test.mjs`
 - **The house secret scanner pair is re-copied from its source, byte for byte:** `scripts/lib/secret-scan.mjs` `bd70dd5d` and `scripts/secret-scan.test.mjs` `142221ed`, both as in `LLMWorks/Bankfire` at `71f71ae`. No plugin byte changes. — test: `scripts/secret-scan.test.mjs`
 - **Link extraction is linear on unclosed brackets,** with the same link targets as before. — test: `scripts/lib/link-check-linear.test.mjs`
-- **`verify` prints values read from repo files quoted,** so a line break in one of them cannot start an output line of its own. — test: `scripts/verify.test.mjs`
+- **`verify` prints values read from repo files quoted,** so a line break in one of them cannot start an output line of its own; control characters in such a value (ESC, the C1 range, U+2028 and U+2029) are written out as escapes too. — test: `scripts/verify.test.mjs`
 - **`verify`'s SKILL.md frontmatter check runs in linear time** on a frontmatter that never closes. It now requires `name:` and `description:` to start a line inside the frontmatter block, and requires the name to be exactly `coaltipple`. — test: `scripts/lib/skill-frontmatter.test.mjs`
 - **`build-dist.mjs --check` names a link under a shipped item** and does not follow it. — test: `scripts/build-dist.test.mjs`
 
