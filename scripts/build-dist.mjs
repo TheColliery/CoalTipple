@@ -67,22 +67,27 @@ export function buildDist(distRoot = dist) {
 // Every source file under DIST_ITEMS must exist in distRoot AND match byte-for-byte, distRoot
 // must hold nothing under those items without a source (orphan), AND no top-level entry may
 // exist that no DIST_ITEM accounts for (the cruft guard). Returns [] when in sync.
-export function checkDist(distRoot = dist) {
+// A symbolic link or junction met under a DIST_ITEM, on either side, is a failure line and is never descended: the walk
+// uses lstat, so a directory link that points back up the tree cannot be followed until the path runs out. `srcRoot`
+// defaults to this repo; a test passes a scratch tree.
+export function checkDist(distRoot = dist, srcRoot = repo) {
   const out = [];
-  const filesUnder = (root, rel) => {
+  const filesUnder = (root, rel, side) => {
     const abs = path.join(root, rel);
-    if (!fs.existsSync(abs)) return [];
-    if (fs.statSync(abs).isDirectory()) return fs.readdirSync(abs).flatMap((n) => filesUnder(root, path.join(rel, n)));
+    let st;
+    try { st = fs.lstatSync(abs); } catch { return []; } // absent
+    if (st.isSymbolicLink()) { out.push(`link in ${side}: ${rel}`); return []; }
+    if (st.isDirectory()) return fs.readdirSync(abs).flatMap((n) => filesUnder(root, path.join(rel, n), side));
     return [rel];
   };
   for (const item of DIST_ITEMS) {
-    for (const rel of filesUnder(repo, item)) {
+    for (const rel of filesUnder(srcRoot, item, 'plugin source')) {
       const d = path.join(distRoot, rel);
       if (!fs.existsSync(d)) out.push(`missing in plugin/: ${rel}`);
-      else if (!filesMatch(path.join(repo, rel), d)) out.push(`stale in plugin/: ${rel}`);
+      else if (!filesMatch(path.join(srcRoot, rel), d)) out.push(`stale in plugin/: ${rel}`);
     }
-    for (const rel of filesUnder(distRoot, item)) {
-      if (!fs.existsSync(path.join(repo, rel))) out.push(`orphan in plugin/ (no source): ${rel}`);
+    for (const rel of filesUnder(distRoot, item, 'plugin/')) {
+      if (!fs.existsSync(path.join(srcRoot, rel))) out.push(`orphan in plugin/ (no source): ${rel}`);
     }
   }
   // A top-level entry the dist carries that no DIST_ITEM accounts for (e.g. a hand-added

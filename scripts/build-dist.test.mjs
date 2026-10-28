@@ -5,7 +5,8 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { buildDist, checkDist } from './build-dist.mjs';
+import { fileURLToPath } from 'node:url';
+import { buildDist, checkDist, DIST_ITEMS } from './build-dist.mjs';
 
 const withTempDist = (fn) => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-dist-'));
@@ -82,5 +83,56 @@ test('a real content INSERTION under CRLF line endings still fails loud (stale, 
     fs.writeFileSync(path.join(tmp, rel), withInsertion);
     const drift = checkDist(tmp);
     assert.ok(drift.some((d) => d.startsWith('stale') && d.includes(rel)), `expected a stale entry for ${rel}, got: ${JSON.stringify(drift)}`);
+  });
+});
+
+// 29a: a directory link (a symlink, or a junction on Windows) under a DIST_ITEM is a failure line and is never descended. checkDist used to
+// follow it with statSync, so a link that points back up the tree was walked until the path ran out. One skippable leg per test: the probe
+// below decides at run time whether this machine can make a directory link at all.
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+function tryDirLink(target, linkPath) {
+  try { fs.symlinkSync(target, linkPath, process.platform === 'win32' ? 'junction' : 'dir'); return null; } catch (e) { return e.code || e.message; }
+}
+function copyDistItems(toRoot) {
+  for (const item of DIST_ITEMS) {
+    fs.mkdirSync(path.dirname(path.join(toRoot, item)), { recursive: true });
+    fs.cpSync(path.join(repoRoot, item), path.join(toRoot, item), { recursive: true });
+  }
+}
+
+test('checkDist names a directory link under a DIST_ITEM on the dist side and does not descend into it (29a)', (t) => {
+  withTempDist((tmp) => {
+    buildDist(tmp);
+    const why = tryDirLink(path.join(tmp, 'skills'), path.join(tmp, 'skills', 'loop'));
+    if (why) { t.skip('cannot create a directory link here (' + why + ')'); return; }
+    const out = checkDist(tmp);
+    assert.ok(out.includes('link in plugin/: ' + path.join('skills', 'loop')), JSON.stringify(out));
+    assert.ok(out.every((d) => !d.includes(path.join('loop', 'loop'))), 'the link was not descended: ' + JSON.stringify(out));
+  });
+});
+
+test('checkDist names a directory link under a DIST_ITEM on the source side and does not descend into it (29a)', (t) => {
+  withTempDist((tmp) => {
+    const src = path.join(tmp, 'src');
+    const dst = path.join(tmp, 'dst');
+    copyDistItems(src);
+    copyDistItems(dst);
+    const why = tryDirLink(path.join(src, 'hooks'), path.join(src, 'hooks', 'loop'));
+    if (why) { t.skip('cannot create a directory link here (' + why + ')'); return; }
+    const out = checkDist(dst, src);
+    assert.ok(out.includes('link in plugin source: ' + path.join('hooks', 'loop')), JSON.stringify(out));
+    assert.ok(out.every((d) => !d.includes(path.join('loop', 'loop'))), 'the link was not descended: ' + JSON.stringify(out));
+  });
+});
+
+test('checkDist given a separate source root still finds a clean copy in sync and a stale file stale (29a)', () => {
+  withTempDist((tmp) => {
+    const src = path.join(tmp, 'src');
+    const dst = path.join(tmp, 'dst');
+    copyDistItems(src);
+    copyDistItems(dst);
+    assert.deepEqual(checkDist(dst, src), []);
+    fs.appendFileSync(path.join(dst, 'hooks', 'coaltipple-conductor.js'), '\n// drift');
+    assert.deepEqual(checkDist(dst, src), ['stale in plugin/: ' + path.join('hooks', 'coaltipple-conductor.js')]);
   });
 });
