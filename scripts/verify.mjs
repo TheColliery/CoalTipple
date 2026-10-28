@@ -28,6 +28,10 @@ const BOM_RE = new RegExp('^' + String.fromCharCode(0xfeff));
 let fails = 0;
 const ok = (m) => console.log(`  ok   ${m}`);
 const fail = (m) => { console.log(`  FAIL ${m}`); fails++; };
+// A value read from a file a contributor controls (plugin.json, the CHANGELOG heading, the factory config's keys) is printed through
+// JSON.stringify, and an error message that can quote such a file has its line breaks written out by flat(): a line break inside the
+// value must never start a new output line of its own.
+const flat = (s) => String(s).replace(/\r/g, '\\r').replace(/\n/g, '\\n');
 
 console.log('files:');
 for (const [label, p] of [
@@ -41,7 +45,7 @@ for (const [label, p] of [
 console.log('plugin (manifest vs CHANGELOG):');
 try {
   const pj = JSON.parse(fs.readFileSync(path.join(repo, '.claude-plugin', 'plugin.json'), 'utf8'));
-  if (pj.name === 'coaltipple') ok("plugin.json name = 'coaltipple'"); else fail(`plugin.json name = '${pj.name}' (want 'coaltipple')`);
+  if (pj.name === 'coaltipple') ok("plugin.json name = 'coaltipple'"); else fail(`plugin.json name = ${JSON.stringify(pj.name)} (want 'coaltipple')`);
   // Semver accepting a pre-release/build suffix (flock-canonical form, e.g. CoalHearth/CoalFace
   // verify.mjs) — a strict x.y.z-only regex once rejected a beta tag at release time on a sibling.
   // CT ships stable-only today (latent), but the CHANGELOG-heading capture below must accept the
@@ -51,8 +55,8 @@ try {
     const cl = fs.readFileSync(path.join(repo, 'CHANGELOG.md'), 'utf8');
     const top = (cl.match(/^##\s*\[(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)\]/m) || [])[1];
     if (top === pj.version) ok(`version ${pj.version} matches top CHANGELOG entry`);
-    else fail(`plugin.json version ${pj.version} != top CHANGELOG [${top || 'none'}] — bump bookkeeping out of sync`);
-  } else fail(`plugin.json version '${pj.version}' not semver`);
+    else fail(`plugin.json version ${JSON.stringify(pj.version)} != top CHANGELOG ${JSON.stringify(top || 'none')} — bump bookkeeping out of sync`);
+  } else fail(`plugin.json version ${JSON.stringify(pj.version)} not semver`);
   // hooks.json must reference the conductor under ${CLAUDE_PLUGIN_ROOT} (only resolves with plugin.json present)
   const hj = fs.readFileSync(path.join(repo, 'hooks', 'hooks.json'), 'utf8');
   if (hj.includes('${CLAUDE_PLUGIN_ROOT}/hooks/coaltipple-conductor.js')) ok('hooks.json wires the conductor via ${CLAUDE_PLUGIN_ROOT}');
@@ -64,7 +68,7 @@ try {
   const srcField = mkt.plugins?.[0]?.source;
   if (srcField === './plugin') ok('marketplace serves ./plugin (conformed dist)');
   else fail(`marketplace plugins[0].source is ${JSON.stringify(srcField)} — must be "./plugin" so installs get conformed skills`);
-} catch (e) { fail(`plugin manifest: ${e.message}`); }
+} catch (e) { fail(`plugin manifest: ${flat(e.message)}`); }
 
 console.log('skill:');
 try {
@@ -133,7 +137,7 @@ for (const [label, p, isSkill] of descTargets) {
     if (!pj.description) fail('.claude-plugin/plugin.json: description missing');
     else if (len > DESC_CAP) fail(`.claude-plugin/plugin.json: description ${len} chars exceeds the ${DESC_CAP}-char cap`);
     else ok(`.claude-plugin/plugin.json: ${len} chars (cap ${DESC_CAP})`);
-  } catch (e) { fail(`.claude-plugin/plugin.json description check: ${e.message}`); }
+  } catch (e) { fail(`.claude-plugin/plugin.json description check: ${flat(e.message)}`); }
 }
 
 console.log('config (factory vs schema):');
@@ -148,12 +152,12 @@ try {
   let bad = 0;
   for (const [k, v] of Object.entries(cfg)) {
     const spec = byKey[k];
-    if (!spec) { fail(`key '${k}' not in schema`); bad++; continue; }
+    if (!spec) { fail(`key ${JSON.stringify(k)} not in schema`); bad++; continue; }
     const err = validateValue(spec, v);
-    if (err) { fail(`'${k}' ${err}`); bad++; }
+    if (err) { fail(`${JSON.stringify(k)} ${err}`); bad++; }
   }
   if (!bad) ok(`${Object.keys(cfg).length} keys all valid`);
-} catch (e) { fail(`factory config: ${e.message}`); }
+} catch (e) { fail(`factory config: ${flat(e.message)}`); }
 
 console.log('libs:');
 for (const lib of ['config-schema.mjs', 'config-load.mjs', 'grade.mjs', 'classify.mjs', 'keywords.mjs', 'targets.mjs']) {

@@ -66,6 +66,61 @@ test('verify.mjs negative path: an over-cap .claude-plugin/plugin.json descripti
   }
 });
 
+// 29a: a value the gate prints from a file a contributor controls must not be able to start an output line of its own. The planted words
+// are neutral on purpose: the leg asserts on the SHAPE of the output (a line that begins with the planted text), not on a spoofed verdict.
+const PLANT = 'FAIL planted line';
+const startsAPlantedLine = (out) => out.split('\n').some((l) => l.replace(/^ +/, '').startsWith(PLANT));
+function verifyWithPlugin(mutate) {
+  const tmp = mkSandbox();
+  try {
+    const p = path.join(tmp, '.claude-plugin', 'plugin.json');
+    const pj = JSON.parse(fs.readFileSync(p, 'utf8'));
+    mutate(pj);
+    fs.writeFileSync(p, JSON.stringify(pj, null, 2) + '\n', 'utf8');
+    return runVerify(tmp);
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+}
+
+test('verify.mjs: a plugin.json name holding a line break never starts an output line (29a)', () => {
+  const r = verifyWithPlugin((pj) => { pj.name = 'coaltipple\n  ' + PLANT; });
+  assert.equal(r.status, 1, r.stdout);
+  assert.equal(startsAPlantedLine(r.stdout), false, `a raw line break from the value reached the output:\n${r.stdout}`);
+  assert.ok(r.stdout.includes('plugin.json name = ' + JSON.stringify('coaltipple\n  ' + PLANT)), 'the value is printed as one JSON string');
+});
+
+test('verify.mjs: a plugin.json version holding a line break never starts an output line (29a)', () => {
+  const r = verifyWithPlugin((pj) => { pj.version = '9.9.9\n  ' + PLANT; });
+  assert.equal(r.status, 1, r.stdout);
+  assert.equal(startsAPlantedLine(r.stdout), false, `a raw line break from the value reached the output:\n${r.stdout}`);
+  assert.ok(r.stdout.includes('plugin.json version ' + JSON.stringify('9.9.9\n  ' + PLANT) + ' not semver'), 'the value is printed as one JSON string');
+});
+
+test('verify.mjs: a factory config key holding a line break never starts an output line (29a)', () => {
+  const tmp = mkSandbox();
+  try {
+    const p = path.join(tmp, 'platform-configs', '.coaltipple.json');
+    const text = fs.readFileSync(p, 'utf8');
+    const key = JSON.stringify('zz\n  ' + PLANT);
+    fs.writeFileSync(p, text.replace('{', '{\n  ' + key + ': 1,'), 'utf8');
+    const r = runVerify(tmp);
+    assert.equal(r.status, 1, r.stdout);
+    assert.equal(startsAPlantedLine(r.stdout), false, `a raw line break from the key reached the output:\n${r.stdout}`);
+    assert.ok(r.stdout.includes('key ' + key + ' not in schema'), 'the key is printed as one JSON string');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
+test('verify.mjs: a plugin.json that fails to parse with a line break in its quoted text never starts an output line (29a)', () => {
+  const tmp = mkSandbox();
+  try {
+    // JSON.parse quotes the start of a text that opens with a bad token, line break included.
+    fs.writeFileSync(path.join(tmp, '.claude-plugin', 'plugin.json'), '\n' + PLANT + '}', 'utf8');
+    const r = runVerify(tmp);
+    assert.equal(r.status, 1, r.stdout);
+    assert.equal(startsAPlantedLine(r.stdout), false, `a raw line break from the parse error reached the output:\n${r.stdout}`);
+    assert.match(r.stdout, /plugin manifest: .*\\n/, 'the parse error is on one line with its break written out');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
 test('verify.mjs pointer-check pass line: the printed surface count matches the ACTUAL walked set (CWK-078, CoalHearth-class -- a typed number the instrument does not produce)', () => {
   // Spawns the REAL verify.mjs against the REAL repo, no sandbox -- the pointer-check block
   // reads README/SECURITY/CONTRIBUTING/PRIVACY, none of which VERIFY_ITEMS above copies (that
