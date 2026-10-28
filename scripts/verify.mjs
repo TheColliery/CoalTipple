@@ -73,7 +73,8 @@ try {
 console.log('skill:');
 try {
   const md = fs.readFileSync(path.join(repo, 'skills', 'coaltipple', 'SKILL.md'), 'utf8');
-  if (/^---[\s\S]*?name:\s*coaltipple[\s\S]*?description:[\s\S]*?---/.test(md)) ok('SKILL.md frontmatter (name + description)');
+  const { skillFrontmatterOk } = await import(pathToFileURL(path.join(repo, 'scripts', 'lib', 'skill-frontmatter.mjs')).href); // linear on a malformed file (skill-frontmatter.test.mjs)
+  if (skillFrontmatterOk(md)) ok('SKILL.md frontmatter (name + description)');
   else fail('SKILL.md frontmatter malformed (need name: coaltipple + description)');
 } catch (e) { fail(`SKILL.md unreadable: ${e.message}`); }
 
