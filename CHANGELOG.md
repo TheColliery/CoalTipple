@@ -2,6 +2,29 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.7.6] - 2026-10-29
+
+Config parsing stays linear; a config over 1 MiB is skipped
+
+Reading a `.coaltipple.json` no longer stalls on input full of unclosed comments, strings or backslashes, and a config file over 1 MiB is no longer read at all. The repo tooling gets the same linear parsing, a few stricter checks in `verify`, and a re-copied secret scanner.
+
+### Fixed
+- **The comment strip of a `.coaltipple.json` runs in linear time.** An unclosed `/*`, string or backslash run in a config file could take seconds in the conductor's read, with the same cost in `configure.mjs`. The strip now keeps an unclosed opener to the end of the file, unchanged, so the file stays unreadable as JSON but no longer stalls the hook. — test: `scripts/lib/jsonc-linear.test.mjs`
+
+### Changed
+- **A config file over 1 MiB (1,048,576 bytes) is never read.** The conductor skips it and names it in its existing UNREADABLE line as `(too large)`, and the config loader treats it as absent. — test: `scripts/lib/jsonc-linear.test.mjs`
+
+### Repo tooling (user-run scripts; not in the plugin)
+- **`configure.mjs` stops on an over-size config** with a message that names the size, and leaves the file untouched. — test: `scripts/lib/jsonc-linear.test.mjs`
+- **The house secret scanner pair is re-copied from its source, byte for byte:** `scripts/lib/secret-scan.mjs` `bd70dd5d` and `scripts/secret-scan.test.mjs` `142221ed`, both as in `LLMWorks/Bankfire` at `71f71ae`. No plugin byte changes. — test: `scripts/secret-scan.test.mjs`
+- **Link extraction is linear on unclosed brackets,** with the same link targets as before. — test: `scripts/lib/link-check-linear.test.mjs`
+- **`verify` prints values read from repo files quoted,** so a line break in one of them cannot start an output line of its own. — test: `scripts/verify.test.mjs`
+- **`verify`'s SKILL.md frontmatter check runs in linear time** on a frontmatter that never closes. It now requires `name:` and `description:` to start a line inside the frontmatter block, and requires the name to be exactly `coaltipple`. — test: `scripts/lib/skill-frontmatter.test.mjs`
+- **`build-dist.mjs --check` names a link under a shipped item** and does not follow it. — test: `scripts/build-dist.test.mjs`
+
+### Notes
+CoalTipple's own effort ladder stays `low` to `max` by design. The platform's ladder also has `xhigh`, which is a named divergence rather than a leak; the older entries that called it a "vocabulary leak" are not rewritten.
+
 ## [1.7.5] - 2026-10-16
 
 Remind prompt names the global config; install all narrowed
