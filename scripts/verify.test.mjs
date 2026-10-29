@@ -69,6 +69,8 @@ test('verify.mjs negative path: an over-cap .claude-plugin/plugin.json descripti
 // 29a: a value the gate prints from a file a contributor controls must not be able to start an output line of its own. The planted words
 // are neutral on purpose: the leg asserts on the SHAPE of the output (a line that begins with the planted text), not on a spoofed verdict.
 const PLANT = 'FAIL planted line';
+// Plants a fixture entry right after the first opening brace of a config text, by index: the position is the intent, so no string pattern is replaced.
+const plantAfterFirstBrace = (text, entry) => { const i = text.indexOf('{'); return text.slice(0, i + 1) + entry + text.slice(i + 1); };
 const startsAPlantedLine = (out) => out.split('\n').some((l) => l.replace(/^ +/, '').startsWith(PLANT));
 function verifyWithPlugin(mutate) {
   const tmp = mkSandbox();
@@ -101,7 +103,7 @@ test('verify.mjs: a factory config key holding a line break never starts an outp
     const p = path.join(tmp, 'platform-configs', '.coaltipple.json');
     const text = fs.readFileSync(p, 'utf8');
     const key = JSON.stringify('zz\n  ' + PLANT);
-    fs.writeFileSync(p, text.replace('{', '{\n  ' + key + ': 1,'), 'utf8');
+    fs.writeFileSync(p, plantAfterFirstBrace(text, '\n  ' + key + ': 1,'), 'utf8');
     const r = runVerify(tmp);
     assert.equal(r.status, 1, r.stdout);
     assert.equal(startsAPlantedLine(r.stdout), false, `a raw line break from the key reached the output:\n${r.stdout}`);
@@ -153,7 +155,7 @@ test('verify.mjs: a modelTiers tier name with ESC and U+2028 in the factory conf
     const p = path.join(tmp, 'platform-configs', '.coaltipple.json');
     const text = fs.readFileSync(p, 'utf8');
     const tier = 'x' + BS + 'u001b[2K' + BS + 'u2028 planted';
-    fs.writeFileSync(p, text.replace('{', '{\n  "modelTiers": { "' + tier + '": "m" },'), 'utf8');
+    fs.writeFileSync(p, plantAfterFirstBrace(text, '\n  "modelTiers": { "' + tier + '": "m" },'), 'utf8');
     const r = runVerify(tmp);
     assert.equal(r.status, 1, r.stdout);
     assert.ok(r.stdout.includes('unknown tier'), 'the schema message for the planted tier is in the output: ' + JSON.stringify(r.stdout.split('\n').filter((l) => l.includes('modelTiers'))));
