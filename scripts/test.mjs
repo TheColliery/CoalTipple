@@ -36,6 +36,7 @@ const TESTS = [
   'scripts/lib/link-check.test.mjs',
   'scripts/lib/link-check-linear.test.mjs',
   'scripts/lib/skill-frontmatter.test.mjs',
+  'scripts/lib/is-main.test.mjs',
   'scripts/lib/git-env.test.mjs',
   'scripts/lib/git-env-census.test.mjs',
   'scripts/lib/git-env-pins.test.mjs',

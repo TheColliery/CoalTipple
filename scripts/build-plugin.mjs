@@ -15,6 +15,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { isMainModule } from './lib/is-main.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const fmtArray = (arr) => `[${arr.map((s) => `'${s}'`).join(', ')}]`;
@@ -100,6 +101,6 @@ async function main() {
 }
 
 // Run only when executed directly — verify.mjs imports genHotKeywords without firing main().
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isMainModule(import.meta.url)) {
   main().catch((e) => { console.error(`build failed: ${e.message}`); process.exit(1); });
 }

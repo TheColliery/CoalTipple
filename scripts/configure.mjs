@@ -228,10 +228,20 @@ function main() {
     // A config over the byte bound was read as absent by loadMergedConfig (config-bound.mjs): say so, and never name it as a source of what is shown.
     // The notice goes to stdout, the stream the other --list notices below already use.
     const overBound = (p) => { try { return fs.statSync(p).size > MAX_CONFIG_BYTES; } catch { return false; } };
-    const skipped = [...new Set([globalPath, projectReadPath])].filter((p) => p !== null && fs.existsSync(p) && overBound(p)); // the Set: run from the home folder, both paths are one file
+    // Two spellings of one file (macOS spells a temp folder /var/... and /private/var/..., a link spells it by its own name) are ONE file, so the skipped set is keyed on the
+    // real path, falling back to the string when it cannot be resolved. Run from the home folder the project path and the global path are one file.
+    const realKey = (p) => { try { return fs.realpathSync.native(p); } catch { return p; } };
+    const skippedKeys = new Set();
+    const skipped = [];
+    for (const p of [globalPath, projectReadPath]) {
+      if (p === null || !fs.existsSync(p) || !overBound(p)) continue;
+      if (!skippedKeys.has(realKey(p))) skipped.push(p);
+      skippedKeys.add(realKey(p));
+    }
+    const isSkipped = (p) => skippedKeys.has(realKey(p));
     for (const p of skipped) console.log(`Skipped ${p}: larger than ${MAX_CONFIG_BYTES} bytes, read as absent.`);
-    const hasGlobal = fs.existsSync(globalPath) && !skipped.includes(globalPath);
-    const hasProject = projectReadPath !== null && fs.existsSync(projectReadPath) && !skipped.includes(projectReadPath);
+    const hasGlobal = fs.existsSync(globalPath) && !isSkipped(globalPath);
+    const hasProject = projectReadPath !== null && fs.existsSync(projectReadPath) && !isSkipped(projectReadPath);
     if (!hasGlobal && !hasProject) {
       console.log(skipped.length ? 'No usable .coaltipple.json (global or project) — showing factory defaults:' : 'No .coaltipple.json yet (global or project) — showing factory defaults:');
       try { merged = parseConfig(readConfigBounded(factoryCfg)); } catch {}

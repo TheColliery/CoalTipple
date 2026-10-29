@@ -108,6 +108,25 @@ test('--list names a config over the byte bound as skipped, never as the source 
   } finally { cleanup(p); }
 });
 
+// 29a-red: --list named one over-size file twice when the global path and the project path were two spellings of it (macOS spells a temp folder /var/... and /private/var/...).
+// A directory link reproduces the two spellings on any machine that can make one: HOME is the real folder, the working directory is the link.
+test('--list names an over-size config once when the global and project paths are one file reached by two spellings (29a-red)', (t) => {
+  const p = freshProject();
+  const holder = fs.mkdtempSync(path.join(fs.realpathSync.native(os.tmpdir()), 'ct-cfg-two-spellings-'));
+  t.after(() => { cleanup(p); fs.rmSync(holder, { recursive: true, force: true }); });
+  const target = globalPath(p.home);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  const body = '{"qualityBar":97}';
+  fs.writeFileSync(target, body + ' '.repeat(1024 * 1024 + 1 - body.length));
+  const link = path.join(holder, 'home-link');
+  try { fs.symlinkSync(p.home, link, process.platform === 'win32' ? 'junction' : 'dir'); } catch (e) { t.skip('cannot create a directory link here (' + (e.code || e.message) + ')'); return; }
+  const r = spawnSync(process.execPath, [CONFIGURE, '--list'], { cwd: link, env: sandboxEnv(p.home), encoding: 'utf8', timeout: 60000 });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout.split('Skipped ').length - 1, 1, 'one file reached by two spellings is named once: ' + r.stdout);
+  assert.ok(!r.stdout.includes('Effective config'), 'the skipped file is not named as a source under either spelling: ' + r.stdout);
+  assert.ok(r.stdout.includes('No usable .coaltipple.json'), r.stdout);
+});
+
 test('an out-of-range int is rejected with the schema message and writes nothing (either target)', () => {
   const p = freshProject();
   try {

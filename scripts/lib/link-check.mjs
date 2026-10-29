@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { isMainModule } from './is-main.mjs';
 
 // CW-017 -- zero-dep link/anchor checker (Phoenix #2: node:fs + node:path only, no
 // network, no npm dependency). Closes the canon MUST at .github/SKILL-REPO-PATTERN.md:91
@@ -232,6 +232,6 @@ function main() {
 // §1.0's user-invoked-CLI row), so nothing is swallowed here; an uncaught throw is
 // exactly what "fail loud" asks for on a genuine defect (a per-file read failure is
 // already handled gracefully above, inside checkLinks() via readRel()'s own catch).
-if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+if (isMainModule(import.meta.url)) {
   main();
 }
