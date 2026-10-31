@@ -6,7 +6,8 @@
 // opening and closing lines break on \n or \r\n.
 // An optional counter, `{ steps }`, receives the number of character visits, so a test can assert the work is proportional
 // to the text without reading a clock (scripts/lib/skill-frontmatter.test.mjs).
-const isBreak = (c) => c === '\n' || c === '\r' || c === ' ' || c === ' ';
+// U+2028 and U+2029 are written as code points: the source stays visible and safe from transit.
+const isBreak = (c) => c === '\n' || c === '\r' || c === '\u2028' || c === '\u2029';
 const isBlank = (c) => c === ' ' || c === '\t';
 
 // Whether the line that starts at index p (and ends at end) is exactly `name: coaltipple`, blanks allowed after the colon and at the end.

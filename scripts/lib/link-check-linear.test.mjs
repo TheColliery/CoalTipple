@@ -119,7 +119,8 @@ const FIXTURES = [
   '', '[', '[]', '[](', '[]()', '[](a)', '[](a', '[](a ', '[](a "', '[](a "t', '[](a "t"', '[](a "t")', '[](a  "t")', '[](a\n"t")',
   '[a](b[c](d)', '![x](y)', '!![x](y)', '[x]](y)', '[x](y))', '[x]( y)', '[x](y "z" )', '[[x](y)](z)', '[x\ny](z)', '[x](y\nz)',
   '[x](y "a\nb")', '[x](y "a""b")', '[x](y "a" "b")', '[x] (y)', '[x](y)[z](w)', '[x](y)[z](w', '[](][](a)', '[](x "y"[](z)',
-  'text [a](b) more [c](d "e") end', '[x](a "t")', '[x](a "t")', '[x](a\t"t")', '[x](a\r\n"t")',
+  // U+00A0 and U+2028 are written as code points: the source stays visible and safe from transit.
+  'text [a](b) more [c](d "e") end', '[x](a\u00a0"t")', '[x](a\u2028"t")', '[x](a\t"t")', '[x](a\r\n"t")',
 ];
 
 test('differential: the scanner returns what the old pattern returned on the existing fixtures and this repo\'s own markdown', () => {
