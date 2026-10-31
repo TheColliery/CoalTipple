@@ -11,7 +11,7 @@ import { isMainModule } from './is-main.mjs';
 // fixed 52b2bc4) -- not its engine: that room's checker is a vendored CommonMark+GFM
 // AST (its own doc-structure canary's engine, reused); this room has no AST vendored
 // and the canon's own DEFAULT reading is "a small scripts/lib/link-check.mjs walking
-// the repo's own .md files" -- so this is that default, built fresh, regex-based.
+// the repo's own .md files" -- so this is that default, built fresh (a single-pass scanner for links, patterns for headings).
 //
 // WHAT THIS CHECKS, and nothing more:
 //   1. an internal relative link `](path)` resolves to a real file, joined against
@@ -30,7 +30,7 @@ import { isMainModule } from './is-main.mjs';
 // WHAT IS OUT, by design: external URLs and any other schemed target (`mailto:`,
 // `tel:`, ...), protocol-relative (`//host/...`), absolute (`/...`) and home-relative
 // (`~/...`) targets, bare autolinks (`<https://...>` -- a different syntax this
-// engine's [text](target) regex never matches), and GFM table shape (the canon
+// engine's [text](target) scanner never matches), and GFM table shape (the canon
 // itself calls that optional; CoalLedger's own AST engine owns it and this room is
 // not vendoring one for one check).
 //
@@ -48,22 +48,68 @@ const OUTSIDE = /^([~/]|[A-Za-z]:|[a-z][a-z0-9+.-]*:)/i;
 // the same rule and the same regex shape pointer-check.mjs already uses for backtick
 // path citations, applied here to both link syntax and heading syntax (a `#`-prefixed
 // shell comment inside a fenced block must never be read as a markdown heading).
-function stripFences(text) {
+export function stripFences(text) {
   return String(text).replace(/^```[\s\S]*?^```/gm, '');
 }
 
 // LINK EXTRACTION. Deliberately does not handle a target containing a literal space
 // (CommonMark spells that as `<a target.md>` or percent-encoding; neither appears in
 // this room's own ship-text, measured before choosing this shape) -- a target with a
-// space is invisible to this regex the same way an unbacktick citation is invisible
+// space is invisible to this scanner the same way an unbacktick citation is invisible
 // to pointer-check's funnel: a named, measured blind spot, not a denial.
-// The label stops at the next `[` as well as at `]` and a line break: an unclosed `[` then fails at once instead of
-// scanning to the end of the line, so a long run of them stays linear (scripts/lib/link-check-linear.test.mjs).
-const LINK_RE = /(!?)\[[^[\]\n]*\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
+//
+// One left-to-right pass, no backtracking, so the work is linear on every input shape. It reads exactly
+// what the pattern `(!?)\[[^[\]\n]*\]\(([^)\s]+)(?:\s+"[^"]*")?\)` read: a `[`, a label that holds no `[`, `]`
+// or line break, `](`, a destination of one or more characters that are neither `)` nor white space,
+// then either `)` or white space, a double-quoted title and `)`. A start that fails resumes at the
+// character where its label ended, never at the character after the `[`, because the label held no `[`.
+// Two scans are shared between starts instead of repeated: the end of a destination (many `[](` starts
+// reach the same one) and the title that follows a destination end. Both caches key on that end index,
+// which never decreases from one start to the next.
+// An optional counter, `{ steps }`, receives the number of character visits, so a test can assert the
+// work is proportional to the text without reading a clock (scripts/lib/link-check-linear.test.mjs).
+const isWs = (c) => /\s/.test(c);
 
-export function extractLinkTargets(text) {
+export function extractLinkTargets(text, counter) {
+  const s = stripFences(text);
+  const n = s.length;
   const out = [];
-  for (const m of stripFences(text).matchAll(LINK_RE)) out.push(m[2]);
+  let steps = 0;
+  let stopEnd = -1; // the destination end last found (first `)` or white space, or n), valid for any later start up to it
+  let titleKey = -1; // the destination end whose title was last tried
+  let titleResult = -1; // the index after the closing `)` of that title, or -1
+  let p = 0;
+  while (p < n) {
+    steps++;
+    if (s[p] !== '[') { p++; continue; }
+    let j = p + 1;
+    while (j < n && s[j] !== '[' && s[j] !== ']' && s[j] !== '\n') { j++; steps++; }
+    if (!(j + 1 < n && s[j] === ']' && s[j + 1] === '(')) { p = j; continue; }
+    const d = j + 2;
+    if (d > stopEnd) {
+      let e = d;
+      while (e < n && s[e] !== ')' && !isWs(s[e])) { e++; steps++; }
+      stopEnd = e;
+    }
+    const e = stopEnd;
+    if (e === d || e >= n) { p = j; continue; }
+    if (s[e] === ')') { out.push(s.slice(d, e)); p = e + 1; continue; }
+    if (titleKey !== e) {
+      titleKey = e;
+      titleResult = -1;
+      let k = e;
+      while (k < n && isWs(s[k])) { k++; steps++; }
+      if (k < n && s[k] === '"') {
+        let q = k + 1;
+        while (q < n && s[q] !== '"') { q++; steps++; }
+        if (q + 1 < n && s[q + 1] === ')') titleResult = q + 2;
+      }
+    }
+    if (titleResult < 0) { p = j; continue; }
+    out.push(s.slice(d, e));
+    p = titleResult;
+  }
+  if (counter) counter.steps += steps;
   return out;
 }
 
