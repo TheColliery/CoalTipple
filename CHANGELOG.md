@@ -2,6 +2,26 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.7.7] - 2026-11-01
+
+configure edits the setting JSON reads; config parsing stays linear
+
+`configure` now changes the value JSON actually reads, even when a config file repeats a key or puts one on the same line as the opening brace, and it refuses to write a change that would not read back as the value asked. The comment strip that reads a config is one counted scan with the same output.
+
+### Fixed
+- **`configure` edits the setting JSON reads.** A config file with a key written twice, or with a key on the same line as the opening brace, could make `configure` change a copy that JSON ignores, so the value on screen and the value in force differed. It now edits the last copy of the key, the one JSON keeps, and when the result would not read back as the value asked it stops with `Error: ...` and leaves the file as it was. — test: `scripts/lib/config-edit.test.mjs`, `scripts/lib/configure.test.mjs`
+
+### Changed
+- **The comment strip in the config reader is one counted scan** on every input shape, with the same output as before, in the conductor's inline copy as well (`scripts/lib/jsonc-sync.mjs` holds the copies equal). — test: `scripts/lib/jsonc-linear.test.mjs`
+
+### Repo tooling (user-run scripts; not in the plugin)
+- **The config timing test counts work instead of reading a clock.** The check for the strip runs on step counts over doubling input sizes, so a slow machine cannot fail it and a quadratic regression cannot pass it. — test: `scripts/lib/jsonc-linear.test.mjs`
+
+### Notes
+The 1.7.6 entry says link extraction stays linear. That held for every shape the 1.7.6 code handled except an unclosed `[](` run, which still took quadratic time there. It is linear from 1.7.7 on, with a counted witness in `scripts/lib/link-check-linear.test.mjs`.
+
+The 1.7.6 entry does not name that 1.7.6 also carried the re-copy of the secret-scan pair (`c4f33ee`, repo tooling only, no plugin byte).
+
 ## [1.7.6] - 2026-10-29
 
 Config parsing stays linear; a config over 1 MiB is skipped
