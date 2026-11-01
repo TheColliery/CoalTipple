@@ -1,6 +1,6 @@
 // Copy-sync guard for the JSONC strip and the config byte bound.
 //
-// The strip call (the regex AND its callback) lives in scripts/lib/jsonc.mjs, in the conductor's inline copy
+// The strip function (its declaration through its closing brace) lives in scripts/lib/jsonc.mjs, in the conductor's inline copy
 // (hooks/coaltipple-conductor.js, which cannot import: Phoenix #9) and in the plugin/ mirror of that conductor.
 // The byte bound's constant lives in scripts/lib/config-bound.mjs and in the same two conductor copies. A copy that
 // drifts reads green everywhere else, so verify.mjs and scripts/lib/jsonc-linear.test.mjs both call this.
@@ -14,30 +14,31 @@ export const JSONC_SYNC_FILES = ['scripts/lib/jsonc.mjs', 'hooks/coaltipple-cond
 const BOUND_FILES = ['scripts/lib/config-bound.mjs', 'hooks/coaltipple-conductor.js', 'plugin/hooks/coaltipple-conductor.js'];
 // Every file the guard reads (a test copying the repo into a scratch tree needs this whole set).
 export const JSONC_GUARD_FILES = [...new Set([...JSONC_SYNC_FILES, ...BOUND_FILES])];
-const CALL_START = 'content.replace(/"';
-const CALL_END = ": ''))";
+// The function text runs from its declaration to the first closing brace at column 0; the header comments of the copies do not repeat the declaration text, so the first match is the declaration.
+const FN_START = 'function stripJsonc(';
+const FN_END = '\n}\n';
 const BOUND_LINE = 'const MAX_CONFIG_BYTES = 1024 * 1024;';
 const BOUND_LINE_SRC = 'export const MAX_CONFIG_BYTES = 1024 * 1024;';
 
-function stripCall(text) {
-  const a = text.indexOf(CALL_START);
+function stripFn(text) {
+  const a = text.indexOf(FN_START);
   if (a === -1) return null;
-  const b = text.indexOf(CALL_END, a);
-  return b === -1 ? null : text.slice(a, b + CALL_END.length);
+  const b = text.indexOf(FN_END, a);
+  return b === -1 ? null : text.slice(a, b + 2);
 }
 
 export function checkJsoncSync(repo) {
   const out = [];
   const read = (rel) => { try { return fs.readFileSync(path.join(repo, rel), 'utf8'); } catch (e) { out.push(`${rel}: cannot read (${e.code || e.message})`); return null; } };
   const src = read(JSONC_SYNC_FILES[0]);
-  const want = src === null ? null : stripCall(src);
-  if (src !== null && want === null) out.push(`${JSONC_SYNC_FILES[0]}: the strip call (regex and callback) was not found`);
+  const want = src === null ? null : stripFn(src);
+  if (src !== null && want === null) out.push(`${JSONC_SYNC_FILES[0]}: the strip function was not found`);
   for (const rel of JSONC_SYNC_FILES.slice(1)) {
     const text = read(rel);
     if (text === null || want === null) continue;
-    const got = stripCall(text);
-    if (got === null) out.push(`${rel}: the strip call (regex and callback) was not found`);
-    else if (got !== want) out.push(`${rel}: JSONC strip call DIVERGED from ${JSONC_SYNC_FILES[0]}`);
+    const got = stripFn(text);
+    if (got === null) out.push(`${rel}: the strip function was not found`);
+    else if (got !== want) out.push(`${rel}: JSONC strip function DIVERGED from ${JSONC_SYNC_FILES[0]}`);
   }
   const bound = read(BOUND_FILES[0]);
   if (bound !== null && !bound.includes(BOUND_LINE_SRC)) out.push(`${BOUND_FILES[0]}: the MAX_CONFIG_BYTES line (${BOUND_LINE_SRC}) was not found`);

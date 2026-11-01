@@ -83,6 +83,54 @@ function projectConfigCandidates(cwd) {
   candidates.push(path.join(root, '.coaltipple.json')); // LEGACY-2, always last
   return candidates;
 }
+// JSONC comment stripper: one left-to-right counted pass, linear on every input shape. The declaration and its body are held
+// byte-equal with scripts/lib/jsonc.mjs and the plugin/ mirror by scripts/lib/jsonc-sync.mjs (ported from CoalMine commit 373c696).
+function stripJsonc(content, counter) {
+  const n = content.length;
+  let out = '';
+  let from = 0; // start of the text not yet copied to out
+  let i = 0;
+  let steps = 0;
+  while (i < n) {
+    steps++;
+    const c = content[i];
+    if (c === '"') {
+      // a string runs to its first unescaped quote, or to the end of the input; it is kept whole
+      i++;
+      while (i < n) {
+        steps++;
+        if (content[i] === '\\') i += 2;
+        else if (content[i++] === '"') break;
+      }
+      continue;
+    }
+    if (c === '/' && content[i + 1] === '/') {
+      out += content.slice(from, i);
+      i += 2;
+      while (i < n) {
+        steps++;
+        const d = content[i];
+        if (d === '\n' || d === '\r' || d === '\u2028' || d === '\u2029') break;
+        i++;
+      }
+      from = i;
+      continue;
+    }
+    if (c === '/' && content[i + 1] === '*') {
+      let j = i + 2;
+      while (j < n && !(content[j] === '*' && content[j + 1] === '/')) { steps++; j++; }
+      if (j >= n) break; // unclosed: the rest of the input is kept as it is
+      out += content.slice(from, i);
+      i = j + 2;
+      from = i;
+      continue;
+    }
+    i++;
+  }
+  out += content.slice(from);
+  if (counter) counter.steps += steps;
+  return out;
+}
 // UMB-174(b) -- returns { cfg, reason }, never a bare object-or-null. An ABSENT file
 // (ENOENT) is the normal, silent case: reason stays null, nothing to report. Any other
 // failure mode is a file that EXISTS but could not be turned into a config, and each
@@ -110,13 +158,7 @@ function readCfgFile(file) {
     return { cfg: null, reason: 'unreadable' }; // EACCES / EPERM / any other read failure
   }
   if (content.charCodeAt(0) === 0xFEFF) content = content.slice(1); // BOM-safe, no literal BOM
-  // String-aware JSONC stripper (CM #12 fix): the string alternative consumes
-  // an escaped char (a backslash plus any character) or any non-quote/non-backslash char, so a value
-  // ending in a literal backslash terminates the string correctly instead of
-  // leaking escape state into the next token and mis-stripping a later comment.
-  // An unclosed opener is consumed to the end of the input in one match and kept as written (linear time,
-  // and a malformed config still fails JSON.parse). Held byte-equal with scripts/lib/jsonc.mjs by scripts/lib/jsonc-sync.mjs.
-  const cleanJson = content.replace(/"(?:\\[\s\S]|[^"\\])*(?:"|\\?$)|\/\/.*|\/\*[\s\S]*?(\*\/|$)/g, (m, close) => (m[0] === '"' || (m[1] === '*' && close !== '*/') ? m : ''));
+  const cleanJson = stripJsonc(content); // string-aware, linear; the function above is held byte-equal with scripts/lib/jsonc.mjs
   let parsed;
   try {
     // Prototype-pollution guard (OWASP Node.js; flock-canonical -- CoalMine/CoalBoard's own

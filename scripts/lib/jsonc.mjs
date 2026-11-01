@@ -1,21 +1,66 @@
 // JSONC comment stripper — shared by scripts/lib/config-load.mjs and scripts/configure.mjs.
 // The conductor (hooks/coaltipple-conductor.js) carries an inline copy of the same logic
-// per Phoenix #9 (standalone-portable — no imports from scripts/).
+// per Phoenix #9 (standalone-portable - no imports from scripts/). The declaration and its body are held
+// byte-equal across this file, the conductor and the plugin/ mirror by scripts/lib/jsonc-sync.mjs.
+// (Ported verbatim from CoalMine/scripts/lib/jsonc.mjs at commit 373c696, v3.23.8.)
 //
 // Strips // and /* */ comments that sit OUTSIDE strings, then leaves the rest
-// untouched so JSON.parse can read a comment-tolerant .coaltipple.json. The string
-// alternative consumes an escaped char (\\ plus any character) or any non-quote/non-backslash
-// char, so a value ending in a literal backslash (e.g. "C:\\") terminates the string
-// correctly instead of leaking escape state into the next token — which would
-// mis-strip a later //-containing string and silently revert the whole config.
-// An opener that never closes (an unclosed string, a dangling backslash, an unclosed /*) is
-// consumed to the end of the input in ONE match and kept as written, so the strip runs in
-// linear time and a malformed config still fails JSON.parse. (Ported verbatim from
-// CoalMine/scripts/lib/jsonc.mjs at v3.23.7.) The regex AND its callback are held byte-equal
-// with the conductor's inline copy and the plugin/ mirror by scripts/lib/jsonc-sync.mjs.
+// untouched so JSON.parse can read a comment-tolerant .coaltipple.json. A string
+// runs to its first unescaped quote, so a value ending in a literal backslash
+// (e.g. "C:\\") terminates the string correctly instead of leaking escape state
+// into the next token - which would mis-strip a later //-containing string and
+// silently revert the whole config.
+//
+// One left-to-right pass with no backtracking: each character is visited once or twice, so the work is linear
+// however many openers never close. An unclosed string or block comment is kept to the end of the input, so a
+// malformed config still fails JSON.parse. An optional counter, `{ steps }`, receives one step per character
+// visit; scripts/lib/jsonc-linear.test.mjs asserts the work by that count instead of reading a clock.
 
-export function stripJsonc(content) {
-  return content.replace(/"(?:\\[\s\S]|[^"\\])*(?:"|\\?$)|\/\/.*|\/\*[\s\S]*?(\*\/|$)/g, (m, close) => (m[0] === '"' || (m[1] === '*' && close !== '*/') ? m : ''));
+export function stripJsonc(content, counter) {
+  const n = content.length;
+  let out = '';
+  let from = 0; // start of the text not yet copied to out
+  let i = 0;
+  let steps = 0;
+  while (i < n) {
+    steps++;
+    const c = content[i];
+    if (c === '"') {
+      // a string runs to its first unescaped quote, or to the end of the input; it is kept whole
+      i++;
+      while (i < n) {
+        steps++;
+        if (content[i] === '\\') i += 2;
+        else if (content[i++] === '"') break;
+      }
+      continue;
+    }
+    if (c === '/' && content[i + 1] === '/') {
+      out += content.slice(from, i);
+      i += 2;
+      while (i < n) {
+        steps++;
+        const d = content[i];
+        if (d === '\n' || d === '\r' || d === '\u2028' || d === '\u2029') break;
+        i++;
+      }
+      from = i;
+      continue;
+    }
+    if (c === '/' && content[i + 1] === '*') {
+      let j = i + 2;
+      while (j < n && !(content[j] === '*' && content[j + 1] === '/')) { steps++; j++; }
+      if (j >= n) break; // unclosed: the rest of the input is kept as it is
+      out += content.slice(from, i);
+      i = j + 2;
+      from = i;
+      continue;
+    }
+    i++;
+  }
+  out += content.slice(from);
+  if (counter) counter.steps += steps;
+  return out;
 }
 
 // Prototype-pollution guard (OWASP Node.js; flock-canonical shape — CoalFace/CoalHearth/
