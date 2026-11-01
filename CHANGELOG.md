@@ -15,12 +15,14 @@ configure edits the setting JSON reads; config parsing stays linear
 - **The comment strip in the config reader is one counted scan** on every input shape, with the same output as before, in the conductor's inline copy as well (`scripts/lib/jsonc-sync.mjs` holds the copies equal). — test: `scripts/lib/jsonc-linear.test.mjs`
 
 ### Repo tooling (user-run scripts; not in the plugin)
-- **The config timing test counts work instead of reading a clock.** The check for the strip runs on step counts over doubling input sizes, so a slow machine cannot fail it and a quadratic regression cannot pass it. — test: `scripts/lib/jsonc-linear.test.mjs`
+- **Link extraction and the SKILL.md frontmatter check in `verify` are each one left-to-right scan,** with the same results as the patterns they replace; link extraction is now linear on a run of `[](`. — test: `scripts/lib/link-check-linear.test.mjs`, `scripts/lib/skill-frontmatter.test.mjs`
+- **The timing tests count work instead of reading a clock.** The checks for the config comment strip, link extraction and the frontmatter check run on step counts over doubling input sizes, so a slow machine cannot fail them and a quadratic regression cannot pass them. — test: `scripts/lib/jsonc-linear.test.mjs`, `scripts/lib/link-check-linear.test.mjs`, `scripts/lib/skill-frontmatter.test.mjs`
+- **One file reached by two path spellings is one file.** `configure --list` no longer prints an over-size config's "Skipped" line twice when the file arrives as two spellings (a link, or macOS's `/var` and `/private/var`), and `build-dist.mjs`, `build-plugin.mjs` and `link-check.mjs` now run when started through a link instead of exiting 0 having done nothing. — test: `scripts/lib/configure.test.mjs`, `scripts/lib/is-main.test.mjs`
 
 ### Notes
 The 1.7.6 entry says link extraction stays linear. That held for every shape the 1.7.6 code handled except an unclosed `[](` run, which still took quadratic time there. It is linear from 1.7.7 on, with a counted witness in `scripts/lib/link-check-linear.test.mjs`.
 
-The 1.7.6 entry does not name that 1.7.6 also carried the re-copy of the secret-scan pair (`c4f33ee`, repo tooling only, no plugin byte).
+The 1.7.6 entry does not name that 1.7.6 also carried the canon re-copy of the secret gate, `scripts/secret-gate.mjs` and `scripts/secret-gate.test.mjs` (`c4f33ee`, repo tooling only, no plugin byte).
 
 ## [1.7.6] - 2026-10-29
 
