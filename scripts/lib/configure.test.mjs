@@ -470,3 +470,81 @@ test('UMB-133 B1 M1: a second run never overwrites an earlier .superseded (numbe
     assert.equal(JSON.parse(fs.readFileSync(L2(p.dir) + '.superseded.1', 'utf8')).gen, 2, 'the second lands beside it');
   } finally { cleanup(p); }
 });
+
+// ---------------------------------------------------------------------------
+// The edit lands on the property JSON keeps (29l): the key search reads the text as a JSONC document, so it finds the top-level
+// property that JSON.parse keeps, never a nested key, a commented line or an earlier duplicate, and it matches a key written on the
+// same line as the opening brace. The value that wins after the edit is compared with the one requested before anything is written.
+// ---------------------------------------------------------------------------
+
+const countKey = (raw, key) => raw.split(`"${key}"`).length - 1;
+
+test('29l: a key written on the same line as the opening brace is edited in place, never appended a second time', () => {
+  const p = freshProject();
+  try {
+    fs.mkdirSync(path.dirname(globalPath(p.home)), { recursive: true });
+    fs.writeFileSync(globalPath(p.home), '{"qualityBar": 60, "mode": "auto"}\n', 'utf8');
+    const r = run(p, '--qualityBar', '85');
+    assert.equal(r.status, 0, r.stderr);
+    const raw = fs.readFileSync(globalPath(p.home), 'utf8');
+    assert.equal(countKey(raw, 'qualityBar'), 1, `the key must stay written once:\n${raw}`);
+    assert.equal(stripJsonc(raw).qualityBar, 85);
+    assert.equal(stripJsonc(raw).mode, 'auto');
+  } finally { cleanup(p); }
+});
+
+test('29l: a duplicated top-level key changes the effective (last) one, so the value JSON keeps is the value requested', () => {
+  const p = freshProject();
+  try {
+    fs.mkdirSync(path.dirname(globalPath(p.home)), { recursive: true });
+    fs.writeFileSync(globalPath(p.home), '{\n  "qualityBar": 60,\n  "mode": "auto",\n  "qualityBar": 70 // the one JSON keeps\n}\n', 'utf8');
+    const r = run(p, '--qualityBar', '90');
+    assert.equal(r.status, 0, r.stderr);
+    const raw = fs.readFileSync(globalPath(p.home), 'utf8');
+    assert.equal(stripJsonc(raw).qualityBar, 90, `the effective value must be the requested one:\n${raw}`);
+    assert.ok(raw.includes('"qualityBar": 60,'), 'the earlier copy is left as it was');
+    assert.ok(raw.includes('// the one JSON keeps'), 'the comment after the edited value survives');
+    assert.match(r.stdout, /qualityBar = 90/);
+  } finally { cleanup(p); }
+});
+
+test('29l: a nested key of the same name is left alone and the top-level property is set', () => {
+  const p = freshProject();
+  try {
+    fs.mkdirSync(path.dirname(globalPath(p.home)), { recursive: true });
+    fs.writeFileSync(globalPath(p.home), '{\n  "keywords": {\n    "qualityBar": 5\n  },\n  "mode": "auto"\n}\n', 'utf8');
+    const r = run(p, '--qualityBar', '90');
+    assert.equal(r.status, 0, r.stderr);
+    const parsed = stripJsonc(fs.readFileSync(globalPath(p.home), 'utf8'));
+    assert.equal(parsed.qualityBar, 90, 'the top-level property is set');
+    assert.equal(parsed.keywords.qualityBar, 5, 'the nested key is untouched');
+  } finally { cleanup(p); }
+});
+
+test('29l: a matching line inside a block comment is not the property: the real top-level key is edited', () => {
+  const p = freshProject();
+  try {
+    fs.mkdirSync(path.dirname(globalPath(p.home)), { recursive: true });
+    fs.writeFileSync(globalPath(p.home), '{\n  /*\n  "qualityBar": 1,\n  */\n  "qualityBar": 60\n}\n', 'utf8');
+    const r = run(p, '--qualityBar', '85');
+    assert.equal(r.status, 0, r.stderr);
+    const raw = fs.readFileSync(globalPath(p.home), 'utf8');
+    assert.equal(stripJsonc(raw).qualityBar, 85, `the effective value must be the requested one:\n${raw}`);
+    assert.ok(raw.includes('"qualityBar": 1,'), 'the commented line is left as it was');
+  } finally { cleanup(p); }
+});
+
+test('29l: a multi-line array value is replaced whole and the comma and comment after it survive', () => {
+  const p = freshProject();
+  try {
+    fs.mkdirSync(path.dirname(globalPath(p.home)), { recursive: true });
+    fs.writeFileSync(globalPath(p.home), '{\n  "sensitivePaths": [\n    "a",\n    "b"\n  ], // old list\n  "mode": "auto"\n}\n', 'utf8');
+    const r = run(p, '--sensitive', 'x,y');
+    assert.equal(r.status, 0, r.stderr);
+    const raw = fs.readFileSync(globalPath(p.home), 'utf8');
+    const parsed = stripJsonc(raw);
+    assert.deepEqual(parsed.sensitivePaths, ['x', 'y']);
+    assert.equal(parsed.mode, 'auto');
+    assert.ok(raw.includes('["x","y"], // old list'), `the comma and the comment follow the new value:\n${raw}`);
+  } finally { cleanup(p); }
+});

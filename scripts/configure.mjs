@@ -30,7 +30,7 @@ import { CONFIG_SCHEMA, validateValue } from './lib/config-schema.mjs';
 import { loadMergedConfig, globalConfigPath, projectConfigPath, projectWriteTarget, moveLegacyAside, writeConfigAtomic, containedProjectPath } from './lib/config-load.mjs';
 import { stripJsonc } from './lib/jsonc.mjs';
 import { readConfigBounded, MAX_CONFIG_BYTES } from './lib/config-bound.mjs';
-import { escapeRegExp } from './lib/regex-escape.mjs';
+import { setKeyInText, assertEffective } from './lib/config-edit.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const factoryCfg = path.join(repo, 'platform-configs', '.coaltipple.json');
@@ -130,59 +130,12 @@ function parseValue(spec, raw) {
   }
 }
 
-// Rewrite a single top-level "key": value line in the JSONC text, preserving the
-// leading indentation, the trailing comma, any trailing // comment, and every
-// comment around it. Returns the new text, or null if the key line is not present
-// (caller appends instead). Validates the result parses before returning so a
-// corrupt rewrite is caught before the caller writes to disk.
-function setKeyInText(text, key, jsonValue) {
-  // Match an active (non-commented) "key": ... line. The lazy suffix group captures
-  // everything after the colon-space up to the optional trailing whitespace at EOL.
-  // We then dissect the suffix ourselves to separate value / comma / comment so that:
-  //   - the trailing comma is PRESERVED AS-IS (never synthesised) — H1 fix
-  //   - any trailing // comment is preserved verbatim — M6 fix
-  const re = new RegExp(`^(\\s*"${escapeRegExp(key)}"\\s*:\\s*)([^\\n]*?)(\\s*)$`, 'm')
-  if (!re.test(text)) return null
-  const result = text.replace(re, (_m, head, suffix, tail) => {
-    // Walk the suffix char-by-char to find the first '//' outside a quoted string.
-    let commentPart = ''
-    let rest = suffix
-    let inStr = false
-    for (let ci = 0; ci < rest.length - 1; ci++) {
-      const ch = rest[ci]
-      if (inStr) {
-        if (ch === '\\') { ci++; continue } // skip escaped char
-        if (ch === '"') inStr = false
-      } else {
-        if (ch === '"') { inStr = true; continue }
-        if (ch === '/' && rest[ci + 1] === '/') {
-          commentPart = rest.slice(ci) // "// ..." to end of suffix
-          rest = rest.slice(0, ci)     // value[,][spaces]
-          break
-        }
-      }
-    }
-    // Extract the trailing comma and any spaces between the value/comma and the comment.
-    // `rest` at this point is everything before the '//' (e.g. '"auto", ' or '"on"').
-    // Trim trailing whitespace to isolate the structural content, then separate the comma.
-    const restTrimmed = rest.trimEnd()       // e.g. '"auto",' or '"on"'
-    const trailingSpaces = rest.slice(restTrimmed.length) // spaces before comment (e.g. ' ')
-    const trailingComma = restTrimmed.endsWith(',') ? ',' : '' // H1: preserve, never synthesise
-    return `${head}${jsonValue}${trailingComma}${trailingSpaces}${commentPart}${tail}`
-  })
-  // Validate the rewrite parses before the caller writes it to disk.
-  let check = result
-  if (check.charCodeAt(0) === 0xFEFF) check = check.slice(1)
-  JSON.parse(stripJsonc(check)) // throws if the rewrite corrupted the JSON
-  return result
-}
-
 // PR24 #2 -- locate the LAST '}' that is OUTSIDE any quoted string or JSONC comment: the
 // root object's own closing brace. A naive text.lastIndexOf('}') (the previous shape) can
 // select a brace inside a trailing line/block comment or inside a string value; the
 // append-new-key path below then inserts content into that comment/string and writes
-// malformed JSONC before parseConfig ever sees it again. Single left-to-right scan, the
-// same string/comment state machine setKeyInText's own suffix walker already uses,
+// malformed JSONC before parseConfig ever sees it again. Single left-to-right scan with the
+// same string/comment states the property reader in scripts/lib/config-edit.mjs uses,
 // generalized to the whole file. Because a JSONC config is one top-level object, the
 // LAST real '}' in the byte stream IS the root's own closer regardless of how many
 // nested objects it contains -- their own closers always come earlier in the stream.
@@ -326,7 +279,10 @@ function main() {
   // if a key is missing (e.g. an optional key the user never had).
   for (const [key, value] of edits) {
     const json = JSON.stringify(value);
-    const replaced = setKeyInText(text, key, json);
+    let replaced;
+    try { replaced = setKeyInText(text, key, json); } catch (e) {
+      console.error(`Error: ${e.message}`); process.exitCode = 1; return;
+    }
     if (replaced !== null) { text = replaced; continue; }
     const close = findRootClose(text);
     if (close === -1) { console.error('Error: config has no closing brace.'); process.exitCode = 1; return; }
@@ -334,6 +290,9 @@ function main() {
     const lastChar = before.slice(-1);
     const needsComma = lastChar !== ',' && lastChar !== '{'; // a value precedes -> comma; empty object -> none
     text = `${before}${needsComma ? ',' : ''}\n  "${key}": ${json}\n${text.slice(close)}`;
+    try { assertEffective(text, key, json); } catch (e) { // the appended key must be the value in force, like an edited one
+      console.error(`Error: ${e.message}`); process.exitCode = 1; return;
+    }
   }
 
   // PR24 #2 -- validate the COMPLETE edited text before writing anything. setKeyInText
