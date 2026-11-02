@@ -37,10 +37,11 @@ const realDest = (dest) => fs.realpathSync.native(dest);
 function hashFolder(dir) {
   const out = {};
   const walk = (abs, rel) => {
-    for (const name of fs.readdirSync(abs)) {
-      const child = path.join(abs, name);
-      const key = rel === '' ? name : `${rel}/${name}`;
-      if (fs.statSync(child).isDirectory()) walk(child, key);
+    // The kind comes from the directory listing, not from a stat of the path just before the read (a check-then-use race shape).
+    for (const e of fs.readdirSync(abs, { withFileTypes: true })) {
+      const child = path.join(abs, e.name);
+      const key = rel === '' ? e.name : `${rel}/${e.name}`;
+      if (e.isDirectory()) walk(child, key);
       else out[key] = createHash('sha256').update(fs.readFileSync(child)).digest('hex');
     }
   };
@@ -153,6 +154,25 @@ test('6. a kept folder the record names keeps its OLD hashes in the record', (t)
   const r = run(sb, dest);
   assert.equal(r.status, 1, r.stdout + r.stderr);
   assert.deepEqual(readRecord(sb).targets[realDest(dest)].skills.coaltipple, oldHashes, 'the kept folder keeps the hashes it was recorded with');
+});
+
+test('8. a link at <dest>/coaltipple is kept by install and by uninstall; the link target is left alone', (t) => {
+  const sb = sandbox(t);
+  const ref = path.join(sb.root, 'ref');
+  assert.equal(run(sb, ref).status, 0);
+  const dest = path.join(sb.root, 'skills');
+  fs.mkdirSync(dest, { recursive: true });
+  const other = copyShipped(path.join(sb.root, 'other'));
+  try { fs.symlinkSync(other, path.join(dest, 'coaltipple'), 'junction'); }
+  catch (e) { t.skip(`this volume cannot make a link (${e.code || e.message})`); return; }
+  const before = fs.readFileSync(path.join(other, 'SKILL.md'));
+  const install = run(sb, dest);
+  assert.equal(install.status, 1, install.stdout + install.stderr);
+  assert.match(install.stdout + install.stderr, /it is a link or a file, not a folder CoalTipple wrote/);
+  const uninstall = run(sb, '--uninstall', dest);
+  assert.equal(uninstall.status, 1, uninstall.stdout + uninstall.stderr);
+  assert.match(uninstall.stdout + uninstall.stderr, /it is a link or a file, not a folder CoalTipple wrote/);
+  assert.ok(fs.readFileSync(path.join(other, 'SKILL.md')).equals(before), 'the link target is unchanged');
 });
 
 test('7. a record from a newer schema is left byte-identical; one line says so; the byte-match path still applies', (t) => {
