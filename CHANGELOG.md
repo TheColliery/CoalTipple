@@ -2,6 +2,21 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.8.0] - 2026-11-02
+
+installer keeps folders it cannot prove it wrote
+
+The user-run `scripts/install.mjs` keeps a record of the skill folders it installed, and it removes or replaces a folder only when that record proves CoalTipple wrote it. A folder it cannot prove, such as one you edited, is kept, named on a `[kept]` line, and the run exits 1.
+
+### Added
+- **An install record.** `scripts/install.mjs` keeps `~/.claude/coal/coaltipple/install-record.json`, which names each skill folder it wrote with the hashes of its files. A byte-equal folder the record does not yet name is adopted on install, never removed on uninstall. — test: `scripts/lib/install-ownership.test.mjs`
+
+### Changed
+- **A reinstall over a folder it cannot prove is kept.** Before, a reinstall replaced whatever was at `<dest>/coaltipple`. Now it keeps the folder, prints a `[kept]` line that says to remove or move the whole folder aside and run again, and exits 1. — test: `scripts/lib/install-ownership.test.mjs`, `scripts/lib/install.test.mjs`
+- **An uninstall without a record keeps the folder.** Before, uninstall removed `<dest>/coaltipple` unconditionally. Now it removes only the folder the record names, or an empty one; a folder whose bytes match the shipped skill is kept, and the run exits 1. — test: `scripts/lib/install-ownership.test.mjs`
+
+The shipped plugin did not change. Only the user-run `scripts/install.mjs` did, and the version changed.
+
 ## [1.7.7] - 2026-11-01
 
 configure edits the setting JSON reads; config parsing stays linear
