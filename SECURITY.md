@@ -9,7 +9,9 @@ CoalTipple is verified under the same framework as **[CoalMine](https://github.c
 Report a vulnerability via **GitHub private vulnerability reporting**—[Security → Report a vulnerability](https://github.com/TheColliery/CoalTipple/security/advisories/new). Do not open a public issue for a security finding.
 * **In scope:** the conductor hook's routing/sensitive never-down gate, the config-cascade merge-safety clamp, the installer's file-write and self-target paths, `.claude/.coaltipple/proposed/`/damage-control, and anything else that could make the skill route, spend, or write somewhere it shouldn't.
 * **Out of scope:** a SkillSpector false positive, a style nit, or anything without a security impact—those go through the project's normal (public) issue flow instead.
-* **What to expect:** acknowledged promptly, triaged, and coordinated disclosure once a fix ships—no fixed SLA is committed today.
+* **What to expect:** read and triaged against the scope above. We acknowledge a report within 5 days, send an assessment within 10 days, and disclose publicly once the fix ships, or at 90 days at most. During an absence announced on the maintainer's GitHub profile, the 5 days count from the first day back.
+
+* [GHSA-9vh7-mfmq-qxg4](https://github.com/TheColliery/CoalTipple/security/advisories/GHSA-9vh7-mfmq-qxg4): the conductor could stall on a cloned repository's malformed config file; fixed in 1.7.6.
 
 ---
 
