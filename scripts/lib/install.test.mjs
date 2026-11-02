@@ -171,16 +171,22 @@ test('GLOBAL config preservation: reinstall keeps a customized global config; --
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); }
 });
 
-test('reinstall is clean (no stale skill files); uninstall removes the skill', () => {
+test('a changed skill folder is kept, not wiped, by reinstall (29ah); removing the change lets reinstall and uninstall run clean', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-reinstall-'));
   const home = mkHome();
   const dest = path.join(tmp, 'skills');
   try {
     run(tmp, home, dest);
     fs.writeFileSync(path.join(dest, 'coaltipple', 'STALE.md'), 'old', 'utf8');
-    run(tmp, home, dest);
-    assert.ok(!fs.existsSync(path.join(dest, 'coaltipple', 'STALE.md')), 'reinstall wipes stale files');
+    const kept = run(tmp, home, dest);
+    assert.equal(kept.status, 1, 'the recorded folder no longer matches its record, so it is kept');
+    assert.ok(fs.existsSync(path.join(dest, 'coaltipple', 'STALE.md')), 'the extra file survives: nothing is wiped on a guess');
     assert.ok(fs.existsSync(path.join(dest, 'coaltipple', 'SKILL.md')), 'skill still present');
+    assert.ok(/\[kept\] .*coaltipple: not removed or overwritten/.test(kept.stderr), kept.stderr);
+
+    fs.rmSync(path.join(dest, 'coaltipple', 'STALE.md'));
+    const clean = run(tmp, home, dest);
+    assert.equal(clean.status, 0, clean.stderr);
 
     const un = run(tmp, home, '--uninstall', dest);
     assert.equal(un.status, 0);

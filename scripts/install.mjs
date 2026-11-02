@@ -16,6 +16,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { TARGETS, ACTUATING, detectPresentAgents } from './lib/targets.mjs';
+import { loadInstallRecord, saveInstallRecord, folderHashes, sameHashes } from './lib/install-record.mjs';
+import { readConfigBounded } from './lib/config-bound.mjs';
 import { buildFloorRanking, writeRankingAtomic, loadRanking } from './lib/classify.mjs';
 import { globalConfigPath, projectConfigPath, projectWriteTarget, moveLegacyAside, writeConfigAtomic, containedProjectPath, globalStateDir, oldGlobalStateDir, projectStateDir, findGitRoot } from './lib/config-load.mjs';
 
@@ -66,14 +68,118 @@ function physicalForCreate(p) {
   }
 }
 
+// ─── Skill folder ownership (29ah) ───────────────────────────────────────────
+// The installer writes or removes `<dest>/coaltipple` only when it can prove CoalTipple installed it. The proof is the install record
+// (lib/install-record.mjs), keyed by the target's real path: the folder is ours when its files are exactly the recorded files with the
+// recorded hashes (record). A target with no record entry at all adopts a folder whose files are byte-equal to the shipped source
+// (adopt), but only to INSTALL over it: identical bytes change nothing when written again. A DELETE never adopts: two byte-equal copies
+// cannot say whose they are, and a project may keep its own copy. An absent or empty folder has nothing to protect. Everything else is
+// KEPT: never removed or overwritten, one [kept] line says why, exit 1. Only the record and the byte match authorize anything: a manifest
+// or marker planted inside the folder does not.
+// Divergence from CoalMine 3.25.1: CoalTipple ships one skill folder, copied verbatim, so the shipped hashes are the source folder's own
+// (no rendered shared sections, no retired names, no orphan sweep beyond the record, no project manifest), because there is nothing to render.
+// Divergence from CoalMine 3.25.1: the record lives under the user's home (`~/.claude/coal/coaltipple/`), as CoalMine's does, and is
+// written through writeConfigAtomic, because a cloned repository cannot write there and a link at the record is replaced, not followed.
+const SKILL = 'coaltipple';
+function keepMessage(p, reason) {
+  return `  [kept] ${p}: not removed or overwritten, because ${reason}. CoalTipple cannot prove it installed this folder. Remove the whole folder, or move the whole folder aside, then re-run; an absent folder is installed fresh.`;
+}
+const lexists = (p) => { try { fs.lstatSync(p); return true; } catch { return false; } };
+
+// Before a delete or an overwrite: the folder is a real directory, not a link, and its parent is the target itself (CWK-137).
+function containedDirWhy(p, dest) {
+  let st;
+  try { st = fs.lstatSync(p); } catch { return 'it could not be read'; }
+  if (st.isSymbolicLink() || !st.isDirectory()) return 'it is a link or a file';
+  let destReal;
+  try { destReal = fs.realpathSync.native(dest); } catch { return 'the target could not be resolved'; }
+  let parent;
+  try { parent = fs.realpathSync.native(path.dirname(p)); } catch { return 'its parent could not be resolved'; }
+  return parent === destReal ? null : 'its parent is not the target folder';
+}
+
+let shippedMemo;
+function shippedHashes() { if (shippedMemo === undefined) shippedMemo = folderHashes(skillSrc); return shippedMemo; }
+
+function pluginVersion() {
+  try { return JSON.parse(readConfigBounded(path.join(repo, '.claude-plugin', 'plugin.json'))).version; } catch { return 'unknown'; }
+}
+
+const isRecordEntry = (e) => e !== null && typeof e === 'object' && e.skills !== null && typeof e.skills === 'object' && !Array.isArray(e.skills);
+let newerNoted = false;
+// This target's record, read once per call. `key` is the target's real path, null while the folder does not exist yet.
+// A record this CoalTipple cannot use (newer, or unreadable) gives the target no entry: the folder is judged by its contents.
+function targetRecord(dest) {
+  const loaded = loadInstallRecord(os.homedir());
+  if (loaded.state === 'newer' && !newerNoted) {
+    newerNoted = true;
+    console.warn('  [CoalTipple] the install record was written by a newer CoalTipple and was left alone; this run judges the folder by its contents and does not record what it installs.');
+  }
+  let key = null;
+  try { key = fs.realpathSync.native(dest); } catch { /* not created yet: nothing is recorded for it */ }
+  const raw = loaded.state === 'ok' && key !== null && Object.hasOwn(loaded.record.targets, key) ? loaded.record.targets[key] : undefined;
+  return { state: loaded.state, record: loaded.record, key, entry: isRecordEntry(raw) ? raw : undefined };
+}
+
+// The verdict for `<dest>/coaltipple`: { owned: true, via } or { owned: false, reason }. `entry` is this target's record entry, or
+// undefined when the target has none. `purpose` is 'install' or 'delete': a byte match authorizes an install only, never a delete.
+function ownership(dest, entry, purpose) {
+  const p = path.join(dest, SKILL);
+  let st;
+  try { st = fs.lstatSync(p); }
+  catch (e) { return e && e.code === 'ENOENT' ? { owned: true, via: 'absent' } : { owned: false, reason: 'it could not be read' }; }
+  if (st.isSymbolicLink() || !st.isDirectory()) return { owned: false, reason: 'it is a link or a file, not a folder CoalTipple wrote' };
+  let entries;
+  try { entries = fs.readdirSync(p); }
+  catch { return { owned: false, reason: 'it could not be read' }; }
+  if (entries.length === 0) return { owned: true, via: 'empty' };
+  const have = folderHashes(p);
+  if (have === null) return { owned: false, reason: 'it holds a link, a non-file, or a file that could not be read' };
+  if (entry && Object.hasOwn(entry.skills, SKILL)) {
+    return sameHashes(have, entry.skills[SKILL]) ? { owned: true, via: 'record' } : { owned: false, reason: 'its contents differ from what CoalTipple recorded' };
+  }
+  if (!entry && sameHashes(have, shippedHashes())) {
+    if (purpose === 'install') return { owned: true, via: 'adopt' };
+    // identical bytes do not show whose copy this is, so they never authorize a delete
+    return { owned: false, reason: 'the record does not name it, and identical bytes do not show whose copy it is' };
+  }
+  return { owned: false, reason: 'the record does not name it, and its contents are not the shipped files' };
+}
+
+// Writes this target's entry after the run. A run that installed the folder records the hashes it now has. A run that KEPT the folder
+// keeps the hashes the record already named for it: a recomputed hash would bless the very edit that made the run keep it. A newer
+// record is left alone.
+function recordInstall(dest, installed, tr) {
+  if (tr.state === 'newer') return;
+  let key;
+  try { key = fs.realpathSync.native(dest); } catch { return; }
+  const skills = {};
+  if (installed) { const h = folderHashes(path.join(dest, SKILL)); if (h) skills[SKILL] = h; }
+  else if (tr.entry && Object.hasOwn(tr.entry.skills, SKILL) && lexists(path.join(dest, SKILL))) skills[SKILL] = tr.entry.skills[SKILL];
+  const next = tr.record;
+  if (!Object.keys(skills).length && !Object.hasOwn(next.targets, key)) return; // nothing recorded, nothing to change
+  if (Object.keys(skills).length) next.targets[key] = { version: installed || !tr.entry ? pluginVersion() : tr.entry.version, skills };
+  else delete next.targets[key];
+  try { saveInstallRecord(os.homedir(), next); }
+  catch (e) { console.warn(`  [warn] could not write the install record: ${e.message}`); process.exitCode = 1; }
+}
+
 function installSkill(dest) {
   const to = path.join(dest, 'coaltipple');
+  // 29ah: the verdict comes first. A folder CoalTipple cannot prove it wrote is kept, named, and left alone; the run exits 1 and no other step is skipped.
+  const tr = targetRecord(dest);
+  const v = ownership(dest, tr.entry, 'install');
+  let refusal = v.owned ? null : v.reason;
+  if (refusal === null && v.via !== 'absent') { const why = containedDirWhy(to, dest); if (why) refusal = `it could not be removed safely (${why})`; }
+  if (refusal !== null) { console.warn(keepMessage(to, refusal)); process.exitCode = 1; recordInstall(dest, false, tr); return; }
   // Stage into a temp sibling then atomically swap, so an interrupt / disk-full during the
   // copy can never destroy an existing install (the old delete-then-write had NO rollback: a
   // crash mid-copy left a corrupt, backup-less target). The new copy is built BEFORE the old
   // install is moved aside; a swap failure restores the old install; the source is never the
   // delete target. Same "temp sibling + atomic rename" idiom as the conductor's update stamp.
   // pid-less names are swept at the top of every run so a crashed run self-heals (Phoenix #1).
+  // Divergence from CoalMine 3.25.1: the staging names are fixed (`.new`, `.bak`), not pid-marked, because the sweep below already clears
+  // a killed run's leftovers on every run, so a pid in the name would add nothing.
   const staging = `${to}.new`;
   const backup = `${to}.bak`;
   fs.rmSync(staging, { recursive: true, force: true });
@@ -90,6 +196,7 @@ function installSkill(dest) {
     }
     if (movedAside) { fs.rmSync(backup, { recursive: true, force: true }); } // 4. drop old
     console.log(`  installed skill -> ${to}`);
+    recordInstall(dest, true, tr);
   } finally {
     // Never leave staging behind (Phoenix #1). NEVER touch backup here — if a rollback itself
     // failed, backup still holds the only copy of the old install; recovery owns it, not cleanup.
@@ -242,9 +349,25 @@ function pathTargetRoot(dest) {
   return fs.existsSync(path.join(gitRoot, '.git')) ? gitRoot : path.dirname(dest);
 }
 
+// 29ah: the folder goes only on a verdict that proves it ours (a record, or an empty folder); a byte match never authorizes a delete.
+// Afterwards this target's record drops `coaltipple` once the folder is gone, and the entry once it names nothing. A newer record is untouched.
 function uninstall(dest) {
-  try { fs.rmSync(path.join(dest, 'coaltipple'), { recursive: true, force: true }); console.log(`  removed skill from ${dest}`); }
-  catch (e) { console.warn(`  [warn] ${e.message}`); }
+  const tr = targetRecord(dest);
+  const to = path.join(dest, SKILL);
+  const v = ownership(dest, tr.entry, 'delete');
+  let refusal = v.owned ? null : v.reason;
+  if (refusal === null && v.via !== 'absent') { const why = containedDirWhy(to, dest); if (why) refusal = `it could not be removed safely (${why})`; }
+  if (refusal !== null) { console.warn(keepMessage(to, refusal)); process.exitCode = 1; }
+  else if (v.via !== 'absent') {
+    try { fs.rmSync(to, { recursive: true, force: true }); console.log(`  removed skill from ${dest}`); }
+    catch (e) { console.warn(keepMessage(to, `it could not be removed safely (${e.message})`)); process.exitCode = 1; }
+  }
+  if (tr.state === 'ok' && tr.key !== null && tr.entry && !lexists(to)) {
+    delete tr.entry.skills[SKILL];
+    if (Object.keys(tr.entry.skills).length === 0) delete tr.record.targets[tr.key];
+    try { saveInstallRecord(os.homedir(), tr.record); }
+    catch (e) { console.warn(`  [warn] could not write the install record: ${e.message}`); process.exitCode = 1; }
+  }
 }
 
 // ─── Main ───
@@ -339,7 +462,7 @@ if (isUninstall) {
   console.log(`\nUninstalling CoalTipple from: ${targetArg}`);
   uninstall(dest);
   console.log('\nDone.');
-  process.exit(0);
+  process.exit(process.exitCode || 0);
 }
 
 // An explicitly named agent that cannot actuate routing still installs (the transitional behaviour), but says so once, on stderr.
