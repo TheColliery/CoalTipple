@@ -2,6 +2,18 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.8.5] - 2026-11-07
+
+each delegation gets its own proposal path; where grade 5 starts
+
+The skill now tells the agent to give each delegation its own proposal path when it writes the task contract. It also says where a grade-5 route starts: at the top rung only on a jump, and otherwise it climbs to that rung.
+
+### Security
+- **The skill now has the agent assign each delegation its own proposal path when it writes the task contract.** The unique-path rule sat only in the damage-control reference, which is read on failure paths, so parallel workers could be handed one path at spawn time. This is instruction the agent follows, not a code check. Test: none (instruction text)
+
+### Changed
+- **The skill now says where a grade-5 route starts.** The grade table's top tier is a ceiling: a grade-5 route starts at the top rung only when it jumps there, because a cheaper rung's check could not catch the failure, and otherwise climbs to it. Test: none (instruction text)
+
 ## [1.8.4] - 2026-11-07
 
 the shared journal outlives sibling delegations; proof read by meaning
