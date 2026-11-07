@@ -2,6 +2,19 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.8.3] - 2026-11-07
+
+a death in a delegation with no journal of its own is redone, not resumed
+
+The skill now tells the agent which proposal files a delegation may resume from: the paths its task contract named for the worker, or the ones the worker's return names. A delegation that finds a leftover journal or proposal it did not write reports it and writes no journal of its own, so a death in that delegation is redone.
+
+### Security
+- **The skill now names the proposal paths a delegation may resume from.** A worker that died returns nothing, so its return could not name its partial proposal. The task contract now names the proposal path, and the damage-control reference and the skill take resume and merge paths from that contract or the worker's return only. A delegation that found a leftover file it did not write reports it and journals nothing, so a later death is redone rather than resumed; this is instruction the agent follows, not a code check. Test: none (instruction text)
+
+### Repo tooling
+- The canon release-notes, wave-run and verify-release-shape pairs are re-copied at `182731b`, with no change to the plugin.
+- The test runner prints one `SKIPPED <file>: <name>` line per skipped test, so a skip is named where it happens.
+
 ## [1.8.2] - 2026-11-07
 
 a recovery journal this run did not write is reported, never acted on
