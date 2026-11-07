@@ -9,10 +9,10 @@ each delegation gets its own proposal path; where grade 5 starts
 The skill now tells the agent to give each delegation its own proposal path when it writes the task contract. It also says where a grade-5 route starts: at the top rung only on a jump, and otherwise it climbs to that rung.
 
 ### Security
-- **The skill now has the agent assign each delegation its own proposal path when it writes the task contract.** The unique-path rule sat only in the damage-control reference, which is read on failure paths, so parallel workers could be handed one path at spawn time. This is instruction the agent follows, not a code check. Test: none (instruction text)
+- **The skill now has the agent assign each delegation its own proposal path when it writes the task contract.** The unique-path rule sat only in the damage-control reference, which is read on failure paths, so parallel workers could be handed one path at spawn time. The path must also be one where no file exists yet; a file already there is reported, never overwritten. This is instruction the agent follows, not a code check. Test: none (instruction text)
 
 ### Changed
-- **The skill now says where a grade-5 route starts.** The grade table's top tier is a ceiling: a grade-5 route starts at the top rung only when it jumps there, because a cheaper rung's check could not catch the failure, and otherwise climbs to it. Test: none (instruction text)
+- **The skill now says where a grade-5 route starts.** The grade table's top tier is a ceiling: a grade-5 route starts at the top rung only when it jumps there, because a cheaper rung's check could not catch the failure, and otherwise climbs to it. A sensitive task never starts below its safe floor. Test: none (instruction text)
 
 ## [1.8.4] - 2026-11-07
 
