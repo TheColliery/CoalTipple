@@ -2,6 +2,18 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.8.4] - 2026-11-07
+
+the shared journal outlives sibling delegations; proof read by meaning
+
+A run's journal is now deleted only once no other delegation of that run still uses it, and the proposal files a delegation returns are deleted with its own. A task that asks for a proof is graded at the top rung in any language, by its meaning.
+
+### Security
+- **The skill now keeps the shared journal until every delegation of the run has finished with it.** Parallel delegations of one run share one journal, and the first to complete could delete it while the others still needed it. The skill now deletes the journal only once no other delegation of the run still uses it, and deletes the proposal files at the paths the task contract assigned or the worker's return named. This is instruction the agent follows, not a code check. Test: none (instruction text)
+
+### Changed
+- **The grade-5 `proof` signal is read by meaning in any language.** A task that asks for a proof, or promises provable non-breakage, is graded at the top rung whatever language it is written in. Test: none (instruction text)
+
 ## [1.8.3] - 2026-11-07
 
 a death in a delegation with no journal of its own is redone, not resumed
