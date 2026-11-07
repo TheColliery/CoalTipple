@@ -1,4 +1,5 @@
 // Single source of truth for every .coaltipple.json key.
+import { isSafeModelName, showName } from './model-name.mjs';
 // verify.mjs validates the factory config against it — a key added here is
 // automatically validated and documented. The `flags`/`help` fields keep the
 // schema CLI-ready for the `configure` command (`scripts/configure.mjs`).
@@ -98,6 +99,9 @@ export function validateValue(spec, v) {
 // visibly at spawn). Reject an unrecognized tier at the config boundary, same as the
 // value-shape check above.
 const VALID_MODEL_TIERS = new Set(['low', 'mid', 'heavy', 'reasoning']);
+// 29cy: a pin is text from a config file (a project config arrives with a cloned repo) that is later put on a `--model` line, so a name outside the safe
+// charset (lib/model-name.mjs) fails here, naming the tier and showing the name escaped. applyPins() drops such a name too, for a file this check never saw.
+const unsafeName = (tier, name) => `pin '${tier}' holds a model name with characters outside the allowed set (letters, digits, . _ : @ / [ ] -; first a letter or digit): ${showName(name)}`;
 function validateModelTiers(pins) {
   for (const tier of Object.keys(pins)) {
     if (!VALID_MODEL_TIERS.has(tier)) return `unknown tier '${tier}'; expected one of: ${[...VALID_MODEL_TIERS].join(', ')}`;
@@ -105,11 +109,14 @@ function validateModelTiers(pins) {
     // a pin that names no model validates and then does nothing (applyPins leaves the tier at its floor): reject it here
     if (typeof v === 'string') {
       if (!v.trim()) return `pin '${tier}' must not be blank`;
+      if (!isSafeModelName(v.trim())) return unsafeName(tier, v);
       continue;
     }
     if (Array.isArray(v) && v.every((m) => typeof m === 'string')) {
       if (v.length === 0) return `pin '${tier}' must name at least one model`;
       if (v.some((m) => !m.trim())) return `pin '${tier}' must not hold a blank model name`;
+      const bad = v.find((m) => !isSafeModelName(m.trim()));
+      if (bad !== undefined) return unsafeName(tier, bad);
       continue;
     }
     return `pin '${tier}' must be a model name (string) or an array of model names`;

@@ -12,6 +12,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { renameWithRetry } from './rename-retry.mjs';
+import { isSafeModelName, showName } from './model-name.mjs';
 
 export const SCHEMA_VER = 1;
 export const TIERS = ['local', 'low', 'mid', 'heavy', 'reasoning'];
@@ -53,6 +54,14 @@ export function validateRanking(ranking, currentHash) {
   // empty-string entry is no model. Either would read GREEN while resolveWorker returns null.
   if (!ESCALATION_LADDER.some((t) => Array.isArray(tiers[t]) && tiers[t].some((m) => m && String(m).trim()))) {
     return 'no routable tier has a usable model (routing would be dead)';
+  }
+  // A model name is later put on a `--model` line. A ranking written by an older version (or planted) may hold one outside the safe charset (lib/model-name.mjs):
+  // fail it with a named reason so the agent rebuilds the floor instead of routing from it. Blank entries are skipped here (the routable check above owns them).
+  for (const t of TIERS) {
+    for (const m of tiers[t]) {
+      if (m == null || (typeof m === 'string' && !m.trim())) continue;
+      if (!isSafeModelName(m)) return `tier '${t}' holds a model name outside the safe characters: ${showName(m)}`;
+    }
   }
   if (currentHash && ranking.listHash !== currentHash) return 'stale (model list changed)';
   return null;
@@ -199,14 +208,22 @@ export function resolveWorker(ranking, desiredTier, { blocked = [], floorTier = 
 // released after the model's training cutoff) or correct a misclassification. Pins
 // are the one source that beats auto-classification — the introspection blind-spot
 // override. Deterministic + pure (Phoenix #8): same input, same output.
-export function applyPins(tiers, modelTiers = {}) {
+// A pin comes from a config file, and a project config arrives with a cloned repo, so a name outside the safe charset (lib/model-name.mjs) is DROPPED, never
+// carried into the ranking. The drop is named: the optional `onRefuse({ tier, name })` callback is called once per refused name (a caller that prints a notice
+// passes one; the return shape is unchanged for every caller that passes none).
+export function applyPins(tiers, modelTiers = {}, onRefuse = null) {
   const out = {};
   for (const t of TIERS) out[t] = Array.isArray(tiers && tiers[t]) ? tiers[t].slice() : [];
   if (!modelTiers || typeof modelTiers !== 'object') return out;
   for (const t of TIERS) {
     const pin = modelTiers[t];
     if (!pin) continue;
-    const names = (Array.isArray(pin) ? pin : [pin]).map((x) => String(x).trim()).filter(Boolean);
+    const trimmed = (Array.isArray(pin) ? pin : [pin]).map((x) => String(x).trim()).filter(Boolean);
+    const names = trimmed.filter((n) => {
+      if (isSafeModelName(n)) return true;
+      if (typeof onRefuse === 'function') onRefuse({ tier: t, name: n });
+      return false;
+    });
     if (!names.length) continue;
     for (const t2 of TIERS) out[t2] = out[t2].filter((m) => !names.includes(m)); // de-dup across tiers
     out[t] = [...names, ...out[t]];                                              // pinned models win = front
@@ -222,9 +239,9 @@ export function applyPins(tiers, modelTiers = {}) {
 // introspection cannot see). `models` is accepted only to stamp the `listHash`
 // (the freshness fingerprint) — it does NOT shape the tiers: routing rides the
 // tier STRUCTURE + unknown->heavy + the spawn-fail-fall, not an exact model list.
-export function buildFloorRanking(models = [], modelTiers = {}) {
+export function buildFloorRanking(models = [], modelTiers = {}, onRefuse = null) {
   const tiers = aliasDefaults();
   if (!tiers.reasoning || !tiers.reasoning.length) tiers.reasoning = tiers.heavy.slice(); // safety net: reasoning must never be empty
-  const pinned = applyPins(tiers, modelTiers);
+  const pinned = applyPins(tiers, modelTiers, onRefuse);
   return { schemaVer: SCHEMA_VER, listHash: modelListHash(models), complete: true, source: 'alias-floor', tiers: pinned };
 }
