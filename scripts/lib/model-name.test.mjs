@@ -12,7 +12,7 @@ import { CONFIG_SCHEMA, validateValue } from './config-schema.mjs';
 import { MODEL_NAME_RE, isSafeModelName, showName } from './model-name.mjs';
 
 const BACKTICK = String.fromCharCode(96);
-const HOSTILE = ['haiku$(touch ct-pwn)', 'haiku opus', `haiku${BACKTICK}id${BACKTICK}`, 'haiku;id', 'haiku|id', 'haiku\nid', '-haiku', '', ' ', 'haiku"x', "haiku'x", 'haiku&id', 'haiku>x', 'haiku\\x'];
+const HOSTILE = ['haiku$(touch ct-pwn)', 'haiku opus', `haiku${BACKTICK}id${BACKTICK}`, 'haiku;id', 'haiku|id', 'haiku\nid', '-haiku', '', ' ', 'haiku"x', "haiku'x", 'haiku&id', 'haiku>x', 'haiku$(id)', 'a$b', 'a(b)', 'a{b}', 'a*b', 'a?b', 'a~b', 'haiku\\x'];
 const ORDINARY = ['haiku', 'sonnet', 'fable', 'claude-sonnet-5-5', 'claude-opus-5-5[1m]', 'us.anthropic.claude-opus-5-5', 'mythos-6', 'a', 'gpt-oss-120b-medium', 'anthropic/claude-haiku-5-5:beta', 'name@v1'];
 const BASE = () => ({ local: [], low: ['haiku'], mid: ['sonnet'], heavy: ['opus'], reasoning: ['fable'] });
 const modelTiersSpec = CONFIG_SCHEMA.find((s) => s.key === 'modelTiers');

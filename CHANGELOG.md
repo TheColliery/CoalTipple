@@ -6,10 +6,10 @@ All notable changes to CoalTipple are documented here. Format follows [Keep a Ch
 
 model names in pins are checked against one safe character set
 
-A `modelTiers` pin's model name is now held to one character set everywhere it is read. A name outside that set is refused by `configure`, dropped when the ranking is built, and a stored ranking holding one is rebuilt. The spawn guidance also says a model name reaches a command line only as one quoted argument.
+A `modelTiers` pin's model name is now held to one character set. In the plugin, the skill tells the agent to refuse a name outside it and to put a model name on a command line only as one quoted argument. In a source checkout, the scripts also refuse, drop or rebuild around such a name.
 
 ### Security
-- **A model name a project config sets is refused outside a safe character set, so it cannot reach a command line.** A project's `modelTiers` pin could carry a name with shell metacharacters; a worker spawned through a `claude -p` command line would have passed that name on unquoted. Names now use letters, digits and `._:@/[]-` only, with a letter or digit first. Affected: a project that pins a name outside that set; the ranking it built is rebuilt from the alias floor on the next run, and the pin is dropped silently. — test: `scripts/lib/model-name.test.mjs`
+- **A model name a project config sets is now held to a safe character set.** A project's `modelTiers` pin could carry a name with shell metacharacters, and a worker spawned through a `claude -p` command line would have passed that name on unquoted. Names now use letters, digits and `._:@/[]-` only, with a letter or digit first. In the plugin, the skill and its lock reference tell the agent to refuse such a name and to pass a model name to a command line only as one quoted argument; this is instruction the agent follows, not a code check. In a source checkout, `configure` refuses the name and names it, the ranking builder drops it, and a stored ranking holding one is rebuilt from the alias floor. Affected: a project that pins a name outside that set. — test: `scripts/lib/model-name.test.mjs` (the source-checkout check; the instruction text has no test)
 
 ### Changed
 - **The effort guidance names the case where effort cannot be set.** On a worker with no effort control (the `haiku` alias resolving to Haiku 4.5 off the Anthropic API), only the tier moves. — test: none (instruction text)

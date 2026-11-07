@@ -3,7 +3,7 @@
 // `claude --model <name>` line by the agent, so a name that holds shell text must never get that far. The rule is an allowlist of characters
 // (coding-style.md, Input Validation: allowlist over denylist; reject, never sanitize): letters, digits, dot, underscore, colon, at,
 // slash, square brackets and hyphen, the first character a letter or digit. That covers every id the platform and the cloud hosts use
-// (`haiku`, `claude-sonnet-5-5`, `claude-opus-5-5[1m]`, `us.anthropic.claude-opus-5-5`) and nothing a shell reads as syntax.
+// (`haiku`, `claude-sonnet-5-5`, `claude-opus-5-5[1m]`, `us.anthropic.claude-opus-5-5`) and no character a shell reads as syntax except `[` and `]`, which bash can expand as a glob, so a name still goes onto a command line only as one quoted argument.
 // Node built-ins only; imports nothing, so config-schema.mjs and classify.mjs can both depend on it.
 
 export const MODEL_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._:@/[\]-]*$/;
