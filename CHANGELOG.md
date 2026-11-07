@@ -6,10 +6,10 @@ All notable changes to CoalTipple are documented here. Format follows [Keep a Ch
 
 a recovery journal this run did not write is reported, never acted on
 
-Resuming a delegation that died mid-run now uses only the journal and proposal that this run wrote. One that a cloned repository or an earlier session left behind is reported to the user instead.
+The skill now tells the agent to resume a delegation that died mid-run only from the journal and proposal that this run wrote, and to report one that a cloned repository or an earlier session left behind to the user instead.
 
 ### Security
-- **A recovery journal or proposal the session did not write is no longer resumed from or merged.** A repository could ship a `.claude/.coaltipple/state.json` or a file under `proposed/`, and an agent resuming a failed delegation could act on it. The agent now resumes from and merges only what the current run recorded, and reports any other file to the user. Test: none (instruction text)
+- **The skill now tells the agent to leave alone a recovery journal or proposal the session did not write.** A repository could ship a `.claude/.coaltipple/state.json` or a file under `proposed/`, and an agent resuming a failed delegation could act on it. The skill and its damage-control reference now tell the agent to resume from and merge only what the current run recorded, and to report any other file to the user, acting on it only when the user says so after seeing the list; this is instruction the agent follows, not a code check. Test: none (instruction text)
 
 ## [1.8.1] - 2026-11-07
 
