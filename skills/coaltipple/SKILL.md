@@ -65,7 +65,7 @@ A recovery move inside a Step or a reference and not listed here is that step's 
 - **F7** — fable consent-declined ("no") → do NOT climb into fable: STAY at the current tier (a climb case), or land on the rung below fable (a grade-5 `reasoning` start — the same `resolveWorker` fall, blocking the RESOLVED name); the cap holds even if `qualityBar` is unmet. An UNAVAILABLE fable is not a decline — it just falls (F1), no ask (Step 2).
 - **F8** — ranking missing / corrupt / incomplete → rebuild on the spot per `references/lock.md`; genuinely unbuildable → routing OFF, work normally (Step 0).
 - **F9** — near a session/quota limit BEFORE spawning → collapse to inline-self (the proactive budget gate; `resolveWorker` is the reactive fall once a spawn is blocked) (Step 2).
-- **F10** — a delegation dies mid-run → the worker's proposal is in `proposed/`, finished subtasks in `state.json` → resume the remainder, never redo done work (damage-control).
+- **F10** — a delegation dies mid-run → the worker's proposal is in `proposed/`, finished subtasks in `state.json` → resume the remainder, never redo done work (damage-control). Resume from or merge ONLY a journal or proposal THIS delegation wrote; one found at session start that this run did not write is reported to the user, never resumed from, never merged.
 - **F11** — you KNOW from the start the task exceeds your ceiling → escalate immediately, don't burn an attempt (Step 3.4).
 
 ### Files — the on-disk set (a near-twin pair, declared once)

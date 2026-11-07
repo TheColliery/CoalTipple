@@ -2,6 +2,15 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.8.2] - 2026-11-07
+
+a recovery journal this run did not write is reported, never acted on
+
+Resuming a delegation that died mid-run now uses only the journal and proposal that this run wrote. One that a cloned repository or an earlier session left behind is reported to the user instead.
+
+### Security
+- **A recovery journal or proposal the session did not write is no longer resumed from or merged.** A repository could ship a `.claude/.coaltipple/state.json` or a file under `proposed/`, and an agent resuming a failed delegation could act on it. The agent now resumes from and merges only what the current run recorded, and reports any other file to the user. Test: none (instruction text)
+
 ## [1.8.1] - 2026-11-07
 
 model names in pins are checked against one safe character set
