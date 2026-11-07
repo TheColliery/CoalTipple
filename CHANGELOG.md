@@ -6,13 +6,13 @@ All notable changes to CoalTipple are documented here. Format follows [Keep a Ch
 
 the shared journal outlives sibling delegations; proof read by meaning
 
-A run's journal is now deleted only once no other delegation of that run still uses it, and the proposal files a delegation returns are deleted with its own. A task that asks for a proof is graded at the top rung in any language, by its meaning.
+The skill now tells the agent to delete a run's journal only once no other delegation of that run still needs it, and to delete the proposal files a delegation returned along with its own. It also tells the agent to grade a task that asks for a formal proof at the top rung in any language, by its meaning.
 
 ### Security
 - **The skill now keeps the shared journal until every delegation of the run has finished with it.** Parallel delegations of one run share one journal, and the first to complete could delete it while the others still needed it. The skill now deletes the journal only once no other delegation of the run still uses it, and deletes the proposal files at the paths the task contract assigned or the worker's return named. This is instruction the agent follows, not a code check. Test: none (instruction text)
 
 ### Changed
-- **The grade-5 `proof` signal is read by meaning in any language.** A task that asks for a proof, or promises provable non-breakage, is graded at the top rung whatever language it is written in. Test: none (instruction text)
+- **The grade-5 `proof` signal is read by meaning in any language.** A task that asks for a formal proof, or for a guarantee that a change provably cannot break something, is graded at the top rung whatever language it is written in; asking for tests is not a proof. Test: none (instruction text)
 
 ## [1.8.3] - 2026-11-07
 
