@@ -2,6 +2,21 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.8.1] - 2026-11-07
+
+model names in pins are checked against one safe character set
+
+A `modelTiers` pin's model name is now held to one character set everywhere it is read. A name outside that set is refused by `configure`, dropped when the ranking is built, and a stored ranking holding one is rebuilt. The spawn guidance also says a model name reaches a command line only as one quoted argument.
+
+### Security
+- **A model name a project config sets is refused outside a safe character set, so it cannot reach a command line.** A project's `modelTiers` pin could carry a name with shell metacharacters; a worker spawned through a `claude -p` command line would have passed that name on unquoted. Names now use letters, digits and `._:@/[]-` only, with a letter or digit first. Affected: a project that pins a name outside that set; the ranking it built is rebuilt from the alias floor on the next run, and the pin is dropped silently. — test: `scripts/lib/model-name.test.mjs`
+
+### Changed
+- **The effort guidance names the case where effort cannot be set.** On a worker with no effort control (the `haiku` alias resolving to Haiku 4.5 off the Anthropic API), only the tier moves. — test: none (instruction text)
+
+### Notes
+CoalTipple's effort ladder stays `low` to `max` by design. The platform's ladder also has `xhigh`, a named divergence rather than a leak. Entries 1.0.x (around lines 248 and 304 of this file's history) called it a "vocabulary leak"; they are not rewritten.
+
 ## [1.8.0] - 2026-11-02
 
 installer keeps folders it cannot prove it wrote
