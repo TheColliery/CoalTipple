@@ -10,6 +10,7 @@ The skill now tells the agent which proposal files a delegation may resume from:
 
 ### Security
 - **The skill now names the proposal paths a delegation may resume from.** A worker that died returns nothing, so its return could not name its partial proposal. The task contract now names the proposal path, and the damage-control reference and the skill take resume and merge paths from that contract or the worker's return only. A delegation that found a leftover file it did not write reports it and journals nothing, so a later death is redone rather than resumed; this is instruction the agent follows, not a code check. Test: none (instruction text)
+- **The skill now tells the agent to delete its own journal and proposal when a delegation completes.** Without this, a completed delegation's files stayed in `.claude/.coaltipple/`, and every later delegation in the project read them as not its own, journaled nothing and lost its resume. Only the files the run wrote are deleted, never a reported one; this is instruction the agent follows, not a code check. Test: none (instruction text)
 
 ### Repo tooling
 - The canon release-notes, wave-run and verify-release-shape pairs are re-copied at `182731b`, with no change to the plugin.
