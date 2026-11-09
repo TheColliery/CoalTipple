@@ -263,32 +263,39 @@ export const PENDING_POINTERS = [
 // CHECK-IGNORE CLASSIFIER (CWK-090 fix 1, ported from CoalMine), pure -- takes the exact
 // shape a `spawnSync('git', ['check-ignore', '--stdin'], {...})` result carries and answers
 // ONE question: did this run actually tell us anything? Exit 0 and exit 1 both SUCCEED (1 =
-// "none of the fed paths are ignored", not an error); a spawn error or any OTHER status (128
+// "none of the fed paths are ignored", not an error); a failed spawn or any OTHER status (128
 // included -- a bad pattern, an unreadable `.gitignore`, a broken worktree) means the run
-// answered NOTHING, and the caller must not treat an empty stdout as "zero ignored". Exported
+// answered NOTHING, a 0 or 1 that arrives with a broken stdin write answered only PART, and the
+// caller must not treat an empty stdout as "zero ignored" in any of them. Exported
 // and kept pure so this classification is unit-testable without a real git child for the
 // non-0/1 branch specifically (the 0/1 cases ARE driven through a real git process in the
 // test file -- only a genuine non-0/1 exit needs a synthetic `ci` shape, per this room's own
 // measurement that git 2.55 tolerates every malformed-input fixture tried down to exit 1).
-// r24c (CWK2-060) -- THE PIPE RACE, one answer in two forms. When git exits BEFORE it reads stdin (a core.bare=true
-// repo refuses at once with 128), a spawnSync still writing `input` gets the pipe error AND the real status: EPIPE
-// on POSIX, EOF on Windows (measured 2026-10-24: EOF beside 128 at 65,550 bytes, 4 MB and 16 MB). The child
-// answered, so its exit is the verdict, not a spawn failure. Only that pairing (a pipe code, an integer status other
-// than 0 or 1) is read that way: a pipe error beside status 0 or 1 may mean git never saw all of its input, and a
-// non-pipe error beside any status is a real spawn failure. Both stay fail-closed. Keyed on error.code, never on
-// error.message (node/runtime.md §7). Ported from CoalHearth 6f39694 (CoalBoard af07b9c, CoalLedger 0fd838b).
-const STDIN_CLOSED_CODES = new Set(['EPIPE', 'EOF']);
+// STATUS FIRST (CW-018, 29dv; the shape CoalMine bf50898 and CoalFace 888fa04 carry): the status a run PRODUCED is read before its error.
+// A spawnSync result can carry a real status AND an error: EPIPE on POSIX, EOF on Windows, when a stdin write loses the race to git's
+// early exit (a core.bare repository exits 128 before it reads stdin; measured 2026-10-24: EOF beside 128 at 65,550 bytes, 4 MB and 16 MB).
+// Reading the error first called a git that RAN and ANSWERED "failed to spawn", and read a 0 or 1 that arrived with an error as clean,
+// although the write had broken and the answer may cover only part of the fed paths. So: no status = the spawn itself failed; another
+// status = git's own answer, whatever error rode with it; a 0 or 1 beside an error = a PARTIAL answer, which fails closed; a 0 or 1
+// alone = clean. Nothing is keyed on an error code or message (node/runtime.md section 7). Difference from the exemplar: none in the
+// logic; the r24c error-code table (CWK2-060, CWK2-061) it replaces is gone, so no set of pipe words is kept here.
 export function classifyCheckIgnoreResult(ci) {
-  const childExitedFirst = Boolean(ci.error) && STDIN_CLOSED_CODES.has(ci.error.code)
-    && Number.isInteger(ci.status) && ci.status !== 0 && ci.status !== 1;
-  if (ci.error && !childExitedFirst) {
-    return { ok: false, message: `git check-ignore --stdin failed to spawn: ${ci.error.message}` };
+  if (ci.status === null || ci.status === undefined) {
+    const signal = ci.signal ? ` (killed by ${ci.signal})` : '';
+    const detail = ci.error ? `: ${ci.error.message}` : '';
+    return { ok: false, message: `git check-ignore --stdin failed to spawn${signal}${detail}` };
   }
   if (ci.status !== 0 && ci.status !== 1) {
     const stderrLine = typeof ci.stderr === 'string' ? ci.stderr.split('\n')[0].trim() : '';
     return {
       ok: false,
       message: `git check-ignore --stdin exited ${ci.status}${stderrLine ? ` -- ${stderrLine}` : ''} -- cannot tell which cited roots are gitignored`,
+    };
+  }
+  if (ci.error) {
+    return {
+      ok: false,
+      message: `git check-ignore --stdin exited ${ci.status}, but its stdin write failed (${ci.error.message}): the answer may be partial, so no path is trusted`,
     };
   }
   return { ok: true, stdout: typeof ci.stdout === 'string' ? ci.stdout : '' };
