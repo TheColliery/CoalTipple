@@ -40,7 +40,7 @@ The pre-commit and pre-push hooks run the secret scan, then `verify.mjs`, then `
 
 ## 🖥️ Supported Platforms
 
-CoalTipple is **Claude Code only**. Routing actuates only where an agent can pick a spawned worker's model and effort—Claude Code's `Agent`/`Task` `model` parameter. Antigravity's `invoke_subagent` DOES take a per-spawn `Model` field (proven live 2026-08-04), but it selects a GOOGLE model regardless of the Claude parent's vendor and carries no effort knob—CT's never-down gate, qualityBar staircase, and Claude alias floor don't map onto that shape, so it is not supported. Cursor, Codex, Gemini CLI, Cline, and Windsurf are unverified and under monthly review.
+CoalTipple is **Claude Code only**. Routing actuates only where an agent can pick a spawned worker's model and effort—Claude Code's `Agent`/`Task` `model` parameter. On Antigravity, measured on agy 1.5.6 on 2026-11-12, a model can be named per spawn and an effort can be set per spawn only through its `swarm` tool, by a model name that carries the effort; `invoke_subagent` has no effort field. CoalTipple has no Antigravity adapter, so Antigravity is not supported. Cursor, Codex, Gemini CLI, Cline, and Windsurf are unverified and under monthly review.
 
 | Platform | Support Status |
 |---|---|

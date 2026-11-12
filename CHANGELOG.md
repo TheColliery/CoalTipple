@@ -2,6 +2,15 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.8.6] - 2026-11-12
+
+the Antigravity note restated as a dated agy 1.5.6 reading
+
+The platform notes now give what agy 1.5.6 measured on 2026-11-12: a model can be named per spawn, and an effort only through its `swarm` tool. Nothing about the routing changes; CoalTipple still supports Claude Code only.
+
+### Changed
+- **The platform gate and the Compatibility notes give the measured agy 1.5.6 reading.** They previously said no effort knob exists anywhere in Antigravity's schema; that is out of date. On agy 1.5.6 an effort can be set per spawn through the `swarm` tool, by a model name that carries it. CoalTipple has no Antigravity adapter and still supports Claude Code only. Test: none (documentation)
+
 ## [1.8.5] - 2026-11-07
 
 each delegation gets its own proposal path; where grade 5 starts
