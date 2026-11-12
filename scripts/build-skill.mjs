@@ -47,8 +47,8 @@ export function applyAdapter(ccText, adapter) {
 // AG scrapped 2026-06-16, re-checked 2026-08-04: Antigravity's invoke_subagent DOES take a
 // per-spawn Model field (proven live) -- a bare spawn-model-param check PASSES it. It still
 // cannot actuate CT's routing: the Model field selects a GOOGLE tier regardless of the Claude
-// parent's vendor (a cross-vendor handoff, not a cheaper same-family worker), and no effort
-// knob exists anywhere in the schema. CT's never-down gate, qualityBar staircase, and Claude
+// parent's vendor (a cross-vendor handoff, not a cheaper same-family worker), and on agy 1.4.11 no effort
+// knob existed (agy 1.5.6, measured 2026-11-12: only its `swarm` tool sets an effort per spawn, by a model name that carries it; `swarm` can name Claude Opus 5.5 or Sonnet 5.5 but has no Haiku or Fable rung and no `max` level). CT's never-down gate, qualityBar staircase, and Claude
 // alias floor don't map onto that shape. The transform ENGINE (applyAdapter) is PARKED here
 // for the first platform that passes BOTH checks. Add a platform entry here ONLY after
 // verifying its spawn tool takes a SAME-VENDOR worker model param AND a separate effort knob --

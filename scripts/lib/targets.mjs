@@ -5,9 +5,12 @@
 // CoalTipple ACTUATES routing only where an agent can pick a SAME-VENDOR spawned
 // worker's model + effort. Confirmed: Claude Code (Agent/Task `model`). Candidate:
 // Cursor (Task tool `model` -- verify its spawn schema before trusting). A platform
-// whose spawn tool can't produce that shape -- e.g. Antigravity: invoke_subagent DOES
-// take a per-spawn Model field (proven live 2026-08-04), but it selects a cross-vendor
-// GOOGLE tier with no effort knob anywhere in the schema, so CT's never-down gate,
+// whose spawn tool can't produce that shape -- e.g. Antigravity: invoke_subagent takes a
+// per-spawn Model field (proven live 2026-08-04) that selects a cross-vendor GOOGLE tier with
+// no effort field; on agy 1.5.6 (measured 2026-11-12) its `swarm` tool can pin a named model,
+// Claude Opus 5.5 and Sonnet 5.5 included, with the effort carried in the model name, but it
+// has no Haiku or Fable rung, no `max` level and no separate effort knob, and CoalTipple has no
+// adapter for it -- so CT's never-down gate,
 // qualityBar staircase, and Claude alias floor don't map onto it -- does NOT cleanly
 // self-degrade: a weak main HALLUCINATES a delegate-down it cannot perform (observed
 // live 2026-06-16). So do NOT install broadly; the SKILL.md platform-gate warning is
