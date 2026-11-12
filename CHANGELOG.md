@@ -2,6 +2,15 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.8.7] - 2026-11-12
+
+the platform gate stated first and as an action
+
+SKILL.md now opens with the platform gate: a main that is not on Claude Code does the work itself and spawns nothing, by any tool. The dated Antigravity measurement moved out of SKILL.md and stays in the README and CONTRIBUTING.
+
+### Fixed
+- **On Antigravity, a weak model no longer takes the skill's dated tool note as a spawn path.** On v1.8.6 a weak model (`gpt-oss-120b-medium`) reading SKILL.md on Antigravity failed the platform gate in 3 of 3 rounds: in two it applied the always-on line first, routed, and planned a worker through the tool the dated sentence named; in the third it answered for another skill and never applied the gate. The gate now comes before the always-on line, P14 reads "Not on Claude Code, never route and never spawn: do the work yourself, inline", and the skill names no other platform's tool. The conductor's injected routing line now says it applies on Claude Code only and that elsewhere the work is done without a spawn. Test: none (skill text); the witness is a walk with the same weak model, which on v1.8.7 applied the gate and planned no spawn in 3 of 3 rounds
+
 ## [1.8.6] - 2026-11-12
 
 the Antigravity note restated as a dated agy 1.5.6 reading
