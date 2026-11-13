@@ -2,6 +2,8 @@
 name: coaltipple
 description: >-
   Claude Code ONLY: on any other platform routing is OFF, so do the work yourself and spawn nothing. Model/effort router, ALWAYS-ON on Claude Code via its conductor hook: every prompt is routed, and routing returns exactly one of THREE outcomes — SELF (do it yourself at a pinned tier/effort; the routine result — routing that lands on self is still routing), delegate-DOWN (a large cheap mechanical task goes to a cheaper tier to save tokens), or escalate-UP (a task beyond the current model's competence goes to a stronger tier for quality). Sensitive/security work is NEVER delegated down, whatever its size. Invoke manually when weighing where a task should run. Support reviewed monthly.
+metadata:
+  author: HetCreep <info@thecolliery.org>
 ---
 
 # CoalTipple
