@@ -2,6 +2,16 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.8.8] - 2026-11-14
+
+advisory skill checks on pull requests, and the skill names its author
+
+The skill-checks workflow runs the NVIDIA SkillEvaluator Tier 1 checks on pull requests and by hand, advisory only. The skill's frontmatter now names its author.
+
+### Changed
+- **Advisory `skill-checks` workflow.** NVIDIA SkillEvaluator v0.9.0, Tier 1, runs on pull requests and by hand, not on a push to `main`. A named divergence from NVIDIA's upstream bundle (the `push` trigger removed), with its reason in the workflow file. Not a required check.
+- **The skill names its author.** `metadata.author` in the SKILL.md frontmatter of both copies.
+
 ## [1.8.7] - 2026-11-12
 
 the platform gate stated first and as an action
