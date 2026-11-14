@@ -54,7 +54,7 @@ The primary security assurance is structural. The `coaltipple-conductor.js` hook
 * **Fail-Silent:** Exits 0 on any error, preventing execution blockages in the host agent.
 * **No Secrets:** Never reads, logs, or stores hardcoded API keys or credentials.
 
-**Installer ownership (v1.8.0).** Since 1.8.0 the user-run `scripts/install.mjs` writes or removes its skill folder only on the proof of its install record, or on a byte match the record does not yet name for installs; a byte match never authorizes an uninstall.
+**Installer ownership (v1.8.0).** Since 1.8.0 the user-run `scripts/install.mjs` writes or removes its skill folder only on the proof of its install record, or on a byte match the record does not yet name for installs; a byte match never authorizes an uninstall. Since 1.8.9 its staging and backup live in a work folder it creates under a fresh name (recorded in the install record before it exists when the record can be written, and created only if nothing holds the name) and removes at the end of the run; earlier versions deleted `<dest>/coaltipple.new` and `<dest>/coaltipple.bak` at the start of every install, whoever owned them.
 
 **Damage Control is a main-agent workflow, not the hook's.** The hook itself only reads the config and prompt locally and emits an advisory routing hint—it never writes a proposal. When `SKILL.md` routes a task carrying an external side effect, the main agent writes proposals to a local `.claude/.coaltipple/proposed/` sandbox or isolates the change in a git worktree before merging (see README's [Damage Control](README.md#damage-control) section).
 

@@ -2,6 +2,16 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.8.9] - 2026-11-14
+
+the installer deletes only what it can show is its own
+
+A user-run install no longer deletes folders it did not make, and the empty old state folder is removed as intended.
+
+### Fixed
+- **A folder of yours named `coaltipple.new` or `coaltipple.bak` in the install target is no longer deleted.** Through 1.8.8, `scripts/install.mjs` removed both names at the start of every install, so a folder you kept under either name there was lost with everything in it. The installer now stages in a folder it creates itself under a fresh name (`.coaltipple-install-<16 hex>`), recorded in the install record before it exists (when the record can be written), and removes it when the run ends; the next run clears one an interrupted run left behind, after putting back the earlier install it held, and keeps (with a `[kept]` line and exit 1) one that holds anything else. The two old names are never touched. — test: scripts/lib/install-ownership.test.mjs (9 to 13)
+- **The empty old state folder `~/.claude/.coaltipple` is removed after the ranking migration.** The removal never ran (a non-recursive `rmSync` refuses a directory); it now removes the folder only when empty and leaves a folder that holds anything, with its contents. — test: scripts/lib/install.test.mjs
+
 ## [1.8.8] - 2026-11-14
 
 advisory skill checks on pull requests, and the skill names its author
