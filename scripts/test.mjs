@@ -33,6 +33,7 @@ const TESTS = [
   'scripts/lib/install-ownership.test.mjs',
   'scripts/lib/install-lock.test.mjs',
   'scripts/lib/install-race.test.mjs',
+  'scripts/lib/install-takeover.test.mjs',
   'scripts/lib/jsonc.test.mjs',
   'scripts/lib/jsonc-linear.test.mjs',
   'scripts/lib/grade-task.test.mjs',

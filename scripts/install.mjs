@@ -174,6 +174,27 @@ function recordInstall(dest, installed, tr) {
 // re-checks that the lock is still its own, so a paused holder whose lock was taken over (the age backstop) stops instead of writing.
 let held = null; // { lockPath, token, lost } while this run holds a lock
 class LockLost extends Error {}
+// TEST-ONLY seam (29gl): COALTIPPLE_INSTALL_TEST_PAUSE=<point>:<absolute folder> makes a run stop at the named point so a test can take its lock over while it is
+// paused: the run writes <folder>/<point>.reached, then sleeps (Atomics.wait, no busy loop) until <folder>/<point>.go exists, for at most 60 s, after which it says
+// so on stderr and goes on. Nothing is loaded or run from the variable, and with it unset (or naming another point) this returns at once: the default path is unchanged.
+function testPause(point) {
+  const spec = process.env.COALTIPPLE_INSTALL_TEST_PAUSE;
+  if (!spec) return;
+  const i = spec.indexOf(':'); // point names hold no colon, so the first one ends the name even when the folder starts with a drive letter
+  if (i < 0 || spec.slice(0, i) !== point) return;
+  const dir = spec.slice(i + 1);
+  if (!path.isAbsolute(dir)) return;
+  try {
+    fs.writeFileSync(path.join(dir, `${point}.reached`), '');
+    const go = path.join(dir, `${point}.go`);
+    const cell = new Int32Array(new SharedArrayBuffer(4));
+    const started = Date.now();
+    while (!fs.existsSync(go)) {
+      if (Date.now() - started > 60000) { console.error(`  [test-seam] ${point}: no ${point}.go within 60 s, continuing`); return; }
+      Atomics.wait(cell, 0, 0, 50);
+    }
+  } catch { /* a seam that cannot run is the real call */ }
+}
 function assertHeld() {
   if (held === null) return;
   let ok = false;
@@ -246,6 +267,7 @@ function addPending(tr, holder) {
 function dropPending(tr, holder) {
   const list = pendingList(tr.record);
   if (!list.includes(holder)) return;
+  testPause('pending-drop');
   setPending(tr.record, list.filter((p) => p !== holder));
   saveQuiet(tr);
 }
@@ -345,6 +367,7 @@ function installSkillLocked(dest) {
   try {
     cpDir(skillSrc, staging);                                    // 1. build the new copy (source untouched)
     let movedAside = false;
+    testPause('before-swap');
     assertHeld(); // a holder whose lock was taken over must not swap
     if (fs.existsSync(to)) { fs.renameSync(to, backup); movedAside = true; } // 2. old install aside (atomic)
     try {
