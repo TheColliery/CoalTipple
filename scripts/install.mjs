@@ -14,6 +14,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { TARGETS, ACTUATING, detectPresentAgents } from './lib/targets.mjs';
 import { loadInstallRecord, saveInstallRecord, folderHashes, sameHashes } from './lib/install-record.mjs';
@@ -164,29 +165,129 @@ function recordInstall(dest, installed, tr) {
   catch (e) { console.warn(`  [warn] could not write the install record: ${e.message}`); process.exitCode = 1; }
 }
 
+// ─── The work folder (29gi) ──────────────────────────────────────────────────
+// Stage-then-swap needs two scratch folders next to the install. They used to be `coaltipple.new` and `coaltipple.bak`, removed at the top of every
+// run, so a user's own folder with either name in the target was deleted. Now one WORK folder per run holds both: `<dest>/.coaltipple-install-<16 hex>`
+// with `new/` (the staged copy) and `old/` (the install moved aside). Its path is written to the record's top-level `pending` array BEFORE the folder
+// exists (the record sits under the user's home, so a cloned project cannot plant an entry), and the folder is created with a non-recursive mkdir, so
+// it fails if anything already holds the name and is never a folder the user made. A later run sweeps a recorded folder only when it holds nothing but
+// `new` and `old`; a folder holding anything else is kept and named. The legacy `coaltipple.new` and `coaltipple.bak` are never touched again: 1.8.8
+// and earlier removed them at the start of every run, so one of ours can exist only after a run killed mid-install, and nothing proves such a folder ours
+// (identical bytes never authorize a delete, 29ah). `pending` is a top-level field: 1.8.0 to 1.8.8 rewrite only the target entry and save the parsed
+// record whole, so the field survives them. A record this CoalTipple cannot use (newer, or unwritable) gets an UNRECORDED work folder, made the same
+// exclusive way and removed at the end of the run; only a killed run can leave one, and then it stays, because nothing proves it ours.
+const WORK_PREFIX = '.coaltipple-install-';
+const WORK_RE = /^\.coaltipple-install-[0-9a-f]{16}$/;
+const pendingList = (rec) => (Array.isArray(rec.pending) ? rec.pending.filter((p) => typeof p === 'string') : []);
+function setPending(rec, list) { if (list.length) rec.pending = list; else delete rec.pending; }
+function saveQuiet(tr) {
+  try { saveInstallRecord(os.homedir(), tr.record); return true; }
+  catch (e) { console.warn(`  [warn] could not write the install record: ${e.message}`); process.exitCode = 1; return false; }
+}
+// Adds `holder` to pending and saves. false (and nothing kept in memory) when the record cannot be written.
+function addPending(tr, holder) {
+  const list = pendingList(tr.record);
+  setPending(tr.record, [...list, holder]);
+  try { saveInstallRecord(os.homedir(), tr.record); return true; }
+  catch { setPending(tr.record, list); return false; }
+}
+function dropPending(tr, holder) {
+  const list = pendingList(tr.record);
+  if (!list.includes(holder)) return;
+  setPending(tr.record, list.filter((p) => p !== holder));
+  saveQuiet(tr);
+}
+
+// The sweep of an earlier run's work folders under THIS target. A record entry is acted on only when its parent is this target's real path and its
+// name has the work-folder shape; an entry for another target is left for that target's own run.
+function sweepWorkFolders(dest, tr) {
+  if (tr.state === 'newer') return;
+  const list = pendingList(tr.record);
+  if (!list.length) return;
+  let destReal;
+  try { destReal = fs.realpathSync.native(dest); } catch { return; }
+  const to = path.join(dest, SKILL);
+  let changed = false;
+  const next = [];
+  for (const p of list) {
+    let parent;
+    try { parent = fs.realpathSync.native(path.dirname(p)); } catch { next.push(p); continue; }
+    if (parent !== destReal) { next.push(p); continue; }
+    let st;
+    try { st = fs.lstatSync(p); } catch (e) { if (e && e.code === 'ENOENT') changed = true; else next.push(p); continue; }
+    // not what this installer made (a name of another shape, a link, a file): the entry is dropped and nothing is touched
+    if (!WORK_RE.test(path.basename(p)) || st.isSymbolicLink() || !st.isDirectory()) { changed = true; continue; }
+    let names;
+    try { names = fs.readdirSync(p); } catch { next.push(p); continue; }
+    const foreign = names.filter((n) => n !== 'new' && n !== 'old');
+    if (foreign.length) {
+      console.warn(`  [kept] ${p}: not removed, because it holds ${foreign.join(', ')}, which the CoalTipple installer never puts there. Move your files out and re-run; the folder is then swept.`);
+      process.exitCode = 1;
+      next.push(p);
+      continue;
+    }
+    const old = path.join(p, 'old');
+    let oldKind = null; // null: no old/ in the folder
+    if (names.includes('old')) { try { const s = fs.lstatSync(old); oldKind = s.isSymbolicLink() ? 'a link' : s.isDirectory() ? 'dir' : 'a file'; } catch { oldKind = 'unreadable'; } }
+    if (oldKind !== null && oldKind !== 'dir') {
+      console.warn(`  [kept] ${p}: not removed, because its old/ is ${oldKind}, not the folder the CoalTipple installer moves aside. Move it out and re-run; the folder is then swept.`);
+      process.exitCode = 1;
+      next.push(p);
+      continue;
+    }
+    try {
+      if (oldKind === 'dir' && !lexists(to)) { fs.renameSync(old, to); console.log(`  restored the earlier install from ${old} -> ${to}`); }
+      fs.rmSync(p, { recursive: true, force: true });
+      changed = true;
+    } catch (e) {
+      console.warn(`  [warn] could not clear the earlier run's work folder ${p}: ${e.message}`);
+      process.exitCode = 1;
+      next.push(p);
+    }
+  }
+  if (changed) { setPending(tr.record, next); saveQuiet(tr); }
+}
+
+// Makes this run's work folder under `dest` (which exists). Returns { holder, recorded }, or null after 5 name collisions.
+function makeWorkFolder(dest, tr) {
+  const destReal = fs.realpathSync.native(dest);
+  for (let i = 0; i < 5; i++) {
+    const holder = path.join(destReal, WORK_PREFIX + randomBytes(8).toString('hex'));
+    const recorded = tr.state !== 'newer' && addPending(tr, holder);
+    try { fs.mkdirSync(holder); return { holder, recorded }; }
+    catch (e) {
+      if (recorded) dropPending(tr, holder);
+      if (!e || e.code !== 'EEXIST') throw e; // anything but "the name is taken" is a real failure; a taken name is never deleted
+    }
+  }
+  return null;
+}
+
 function installSkill(dest) {
   const to = path.join(dest, 'coaltipple');
-  // 29ah: the verdict comes first. A folder CoalTipple cannot prove it wrote is kept, named, and left alone; the run exits 1 and no other step is skipped.
   const tr = targetRecord(dest);
+  // 29gi: an earlier run's work folder is swept first, because it may hold the old install that must come back before the verdict reads `to`.
+  sweepWorkFolders(dest, tr);
+  // 29ah: the verdict comes next. A folder CoalTipple cannot prove it wrote is kept, named, and left alone; the run exits 1 and no other step is skipped.
   const v = ownership(dest, tr.entry, 'install');
   let refusal = v.owned ? null : v.reason;
   if (refusal === null && v.via !== 'absent') { const why = containedDirWhy(to, dest); if (why) refusal = `it could not be removed safely (${why})`; }
   if (refusal !== null) { console.warn(keepMessage(to, refusal)); process.exitCode = 1; recordInstall(dest, false, tr); return; }
-  // Stage into a temp sibling then atomically swap, so an interrupt / disk-full during the
-  // copy can never destroy an existing install (the old delete-then-write had NO rollback: a
-  // crash mid-copy left a corrupt, backup-less target). The new copy is built BEFORE the old
-  // install is moved aside; a swap failure restores the old install; the source is never the
-  // delete target. Same "temp sibling + atomic rename" idiom as the conductor's update stamp.
-  // pid-less names are swept at the top of every run so a crashed run self-heals (Phoenix #1).
-  // Divergence from CoalMine 3.25.1: the staging names are fixed (`.new`, `.bak`), not pid-marked, because the sweep below already clears
-  // a killed run's leftovers on every run, so a pid in the name would add nothing.
-  const staging = `${to}.new`;
-  const backup = `${to}.bak`;
-  fs.rmSync(staging, { recursive: true, force: true });
-  fs.rmSync(backup, { recursive: true, force: true });
-  let movedAside = false;
+  // Stage into the work folder then atomically swap, so an interrupt / disk-full during the copy can never destroy an existing install (the old
+  // delete-then-write had NO rollback: a crash mid-copy left a corrupt, backup-less target). The new copy is built BEFORE the old install is moved
+  // aside; a swap failure restores the old install; the source is never the delete target. Same "temp sibling + atomic rename" idiom as the
+  // conductor's update stamp. The work folder is swept at the top of every run, so a crashed run self-heals (Phoenix #1).
+  // Divergence from CoalMine 3.25.1: one work folder per run, named by randomBytes, instead of pid-marked siblings; the record's `pending` is what
+  // lets a later run prove the folder was ours.
+  fs.mkdirSync(dest, { recursive: true });
+  const work = makeWorkFolder(dest, tr);
+  if (work === null) { console.warn(`  [warn] could not make a work folder under ${dest}: five names were all taken. Nothing was installed.`); process.exitCode = 1; return; }
+  const staging = path.join(work.holder, 'new');
+  const backup = path.join(work.holder, 'old');
+  let installed = false;
   try {
     cpDir(skillSrc, staging);                                    // 1. build the new copy (source untouched)
+    let movedAside = false;
     if (fs.existsSync(to)) { fs.renameSync(to, backup); movedAside = true; } // 2. old install aside (atomic)
     try {
       fs.renameSync(staging, to);                               // 3. swap in the new copy (atomic)
@@ -194,14 +295,21 @@ function installSkill(dest) {
       if (movedAside) { fs.renameSync(backup, to); } // rollback: restore the old install
       throw e;
     }
-    if (movedAside) { fs.rmSync(backup, { recursive: true, force: true }); } // 4. drop old
+    installed = true;                                           // 4. the work folder, old install included, goes in the finally
     console.log(`  installed skill -> ${to}`);
-    recordInstall(dest, true, tr);
   } finally {
-    // Never leave staging behind (Phoenix #1). NEVER touch backup here — if a rollback itself
-    // failed, backup still holds the only copy of the old install; recovery owns it, not cleanup.
-    fs.rmSync(staging, { recursive: true, force: true });
+    // Never leave the work folder behind (Phoenix #1), unless the rollback itself failed: then `old/` holds the only copy of the old install, the
+    // folder and its `pending` entry stay, and the next run restores it (sweepWorkFolders).
+    if (lexists(backup) && !lexists(to)) {
+      console.warn(`  [kept] ${work.holder}: it holds the earlier install (old/), which could not be put back. ${work.recorded ? 'The next run restores it.' : `The install record could not be written, so no later run will restore it: move ${backup} back to ${to} by hand.`}`);
+      process.exitCode = 1;
+    } else {
+      let gone = false;
+      try { fs.rmSync(work.holder, { recursive: true, force: true }); gone = true; } catch (e) { console.warn(`  [warn] could not remove ${work.holder}: ${e.message}`); }
+      if (gone && work.recorded) dropPending(tr, work.holder);
+    }
   }
+  if (installed) recordInstall(dest, true, tr);
 }
 
 // The factory template carries repo-build machinery in its keywords section (the keyword-sync
@@ -242,12 +350,14 @@ function seedGlobalConfig(force = false) {
 // (force) also best-effort drops any old-location file, so a reset doesn't leave a
 // stale old-format copy sitting around.
 // Best-effort: drop an old-location file, then the dir itself if that leaves it
-// empty. Non-recursive rmSync on the dir throws ENOTEMPTY (silently swallowed) if
-// anything else is in there -- never force-recurse a dir that might hold unrelated
-// content (INSPECT Finding 4, 2026-08-08).
+// empty. rmdirSync removes a folder only when it is empty and throws ENOTEMPTY
+// (swallowed here) when anything else is in it, so nothing inside a non-empty
+// folder is ever deleted (INSPECT Finding 4, 2026-08-08). The earlier rmSync with
+// recursive:false threw EISDIR on a directory, so an empty old folder was never
+// removed (29gi).
 function dropOldRankingFileAndDir(oldRankingPath) {
   try { fs.rmSync(oldRankingPath, { force: true }); } catch {}
-  try { fs.rmSync(oldGlobalStateDir(), { recursive: false, force: true }); } catch {}
+  try { fs.rmdirSync(oldGlobalStateDir()); } catch {}
 }
 
 function seedGlobalRanking(force = false) {

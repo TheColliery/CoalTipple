@@ -196,3 +196,114 @@ test('7. a record from a newer schema is left byte-identical; one line says so; 
   assert.equal(r2.status, 1, r2.stdout + r2.stderr);
   assert.equal(fs.readFileSync(recordPath(sb), 'utf8'), newer, 'still byte-identical after the kept run');
 });
+
+// 29gi: the installer works in ONE folder per run, named so no user folder can already hold it, and the path is recorded (top-level
+// `pending` in the record, under the user's home) before the folder exists. A user folder named coaltipple.new or coaltipple.bak is
+// never touched; an earlier run's work folder is swept only when the record names it and it holds nothing but `new` and `old`.
+const WORK = '.coaltipple-install-0123456789abcdef';
+const workDirs = (dest) => fs.readdirSync(dest).filter((n) => n.startsWith('.coaltipple-install-'));
+const pendingOf = (sb) => { const r = readRecord(sb); return Array.isArray(r.pending) ? r.pending : []; };
+// Plants an interrupted run's work folder under `dest` and records its real path in `pending`; returns that path.
+function plantPending(sb, dest) {
+  const holder = path.join(realDest(dest), WORK);
+  fs.mkdirSync(holder, { recursive: true });
+  const rec = readRecord(sb);
+  rec.pending = [...(Array.isArray(rec.pending) ? rec.pending : []), holder];
+  fs.writeFileSync(recordPath(sb), JSON.stringify(rec, null, 2) + '\n', 'utf8');
+  return holder;
+}
+
+test('9. a folder the user keeps named coaltipple.bak or coaltipple.new in the target survives an install and a re-install, byte for byte', (t) => {
+  const sb = sandbox(t);
+  const dest = path.join(sb.root, 'skills');
+  const bak = path.join(dest, 'coaltipple.bak');
+  const neu = path.join(dest, 'coaltipple.new');
+  fs.mkdirSync(bak, { recursive: true });
+  fs.mkdirSync(neu, { recursive: true });
+  fs.writeFileSync(path.join(bak, 'keep.txt'), 'my own backup, not CoalTipple\'s\n', 'utf8');
+  fs.writeFileSync(path.join(neu, 'keep.txt'), 'my own staging folder, not CoalTipple\'s\n', 'utf8');
+  const before = { bak: hashFolder(bak), neu: hashFolder(neu) };
+  for (const label of ['install', 're-install']) {
+    const r = run(sb, dest);
+    assert.equal(r.status, 0, `${label}: ${r.stdout}${r.stderr}`);
+    assert.deepEqual(hashFolder(bak), before.bak, `${label}: coaltipple.bak is byte-identical`);
+    assert.deepEqual(hashFolder(neu), before.neu, `${label}: coaltipple.new is byte-identical`);
+    assert.deepEqual(hashFolder(path.join(dest, 'coaltipple')), hashFolder(SKILL_SRC), `${label}: the skill is installed`);
+  }
+});
+
+test('10. an earlier run work folder the record names and that holds only new/ is removed on the next install, and pending no longer names it', (t) => {
+  const sb = sandbox(t);
+  const dest = path.join(sb.root, 'skills');
+  assert.equal(run(sb, dest).status, 0);
+  const holder = plantPending(sb, dest);
+  fs.mkdirSync(path.join(holder, 'new'));
+  fs.writeFileSync(path.join(holder, 'new', 'SKILL.md'), 'half-copied\n', 'utf8');
+  const r = run(sb, dest);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.ok(!fs.existsSync(holder), 'the interrupted run work folder is gone');
+  assert.ok(!pendingOf(sb).includes(holder), 'pending no longer names it');
+});
+
+test('11. an interrupted run that had moved the old install aside gets it back: old/ is restored to coaltipple and the work folder is removed', (t) => {
+  const sb = sandbox(t);
+  const dest = path.join(sb.root, 'skills');
+  assert.equal(run(sb, dest).status, 0);
+  const holder = plantPending(sb, dest);
+  fs.renameSync(path.join(dest, 'coaltipple'), path.join(holder, 'old'));
+  assert.ok(!fs.existsSync(path.join(dest, 'coaltipple')), 'the interrupted state: coaltipple is missing');
+  const r = run(sb, dest);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /restored the earlier install/, 'the run says it restored old/');
+  assert.deepEqual(hashFolder(path.join(dest, 'coaltipple')), hashFolder(SKILL_SRC), 'coaltipple is installed again');
+  assert.ok(!fs.existsSync(holder), 'the work folder is gone');
+  assert.ok(!pendingOf(sb).includes(holder), 'pending no longer names it');
+});
+
+test('11b. a recorded work folder whose old is a FILE is kept with one [kept] line and exit 1; nothing is moved to coaltipple and no restore is claimed', (t) => {
+  const sb = sandbox(t);
+  const dest = path.join(sb.root, 'skills');
+  assert.equal(run(sb, dest).status, 0);
+  const holder = plantPending(sb, dest);
+  const oldFile = path.join(holder, 'old');
+  fs.writeFileSync(oldFile, 'A-FILE-NAMED-OLD\n', 'utf8');
+  fs.rmSync(path.join(dest, 'coaltipple'), { recursive: true, force: true });
+  const r = run(sb, dest);
+  const out = r.stdout + r.stderr;
+  assert.equal(r.status, 1, out);
+  assert.doesNotMatch(out, /restored the earlier install/, 'no restore is claimed for a file');
+  const kept = out.split(/\r?\n/).filter((l) => l.includes('[kept]'));
+  assert.equal(kept.length, 1, `exactly one [kept] line: ${kept.join(' | ')}`);
+  assert.ok(kept[0].includes(WORK) && kept[0].includes('a file'), 'the [kept] line names the folder and says old/ is a file');
+  assert.equal(fs.readFileSync(oldFile, 'utf8'), 'A-FILE-NAMED-OLD\n', 'the file named old is untouched, byte for byte');
+  assert.ok(fs.lstatSync(path.join(dest, 'coaltipple')).isDirectory(), 'coaltipple is a folder, not the moved file');
+  assert.ok(pendingOf(sb).includes(holder), 'pending still names the kept folder');
+});
+
+test('12. a recorded work-folder path the user filled with their own file is kept with one [kept] line naming it, and the run exits 1', (t) => {
+  const sb = sandbox(t);
+  const dest = path.join(sb.root, 'skills');
+  assert.equal(run(sb, dest).status, 0);
+  const holder = plantPending(sb, dest);
+  const notes = path.join(holder, 'notes.txt');
+  fs.writeFileSync(notes, 'my notes\n', 'utf8');
+  const r = run(sb, dest);
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  const kept = (r.stdout + r.stderr).split(/\r?\n/).filter((l) => l.includes('[kept]'));
+  assert.equal(kept.length, 1, `exactly one [kept] line: ${kept.join(' | ')}`);
+  assert.ok(kept[0].includes(WORK), 'the [kept] line names the folder');
+  assert.equal(fs.readFileSync(notes, 'utf8'), 'my notes\n', 'the user file survives');
+  assert.deepEqual(hashFolder(path.join(dest, 'coaltipple')), hashFolder(SKILL_SRC), 'the skill itself is still installed');
+});
+
+test('13. a successful install leaves no work folder in the target and an empty or absent pending in the record', (t) => {
+  const sb = sandbox(t);
+  const dest = path.join(sb.root, 'skills');
+  const r = run(sb, dest);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.deepEqual(workDirs(dest), [], 'no work folder is left behind');
+  assert.deepEqual(pendingOf(sb), [], 'pending is empty or absent');
+  assert.equal(run(sb, dest).status, 0);
+  assert.deepEqual(workDirs(dest), [], 'still none after a re-install');
+  assert.deepEqual(pendingOf(sb), []);
+});

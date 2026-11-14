@@ -156,6 +156,39 @@ test('ranking migration: a NEW-location ranking already present is left untouche
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); }
 });
 
+// 29gi: the old state folder is removed only when the migration left it EMPTY; anything else in it stays, byte for byte.
+const oldRankingBody = () => JSON.stringify({ schemaVer: 1, complete: true, listHash: 'x', tiers: { local: [], low: ['haiku'], mid: ['sonnet'], heavy: ['opus'], reasoning: ['fable'] }, source: 'old-format' });
+
+test('ranking migration: the OLD state folder is removed once the migration leaves it empty', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-global-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const home = mkHome();
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const oldDir = path.dirname(oldGlobalRanking(home));
+  fs.mkdirSync(oldDir, { recursive: true });
+  fs.writeFileSync(oldGlobalRanking(home), oldRankingBody(), 'utf8');
+  const r = run(tmp, home, '--global', path.join(home, '.claude', 'skills'));
+  assert.equal(r.status, 0, `global install must pass:\n${r.stdout}${r.stderr}`);
+  assert.equal(JSON.parse(fs.readFileSync(globalRanking(home), 'utf8')).source, 'old-format', 'the migration ran');
+  assert.ok(!fs.existsSync(oldDir), 'the emptied OLD state folder is gone');
+});
+
+test('ranking migration: the OLD state folder stays with a file of the user\'s in it, which is untouched', (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-global-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const home = mkHome();
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const oldDir = path.dirname(oldGlobalRanking(home));
+  fs.mkdirSync(oldDir, { recursive: true });
+  fs.writeFileSync(oldGlobalRanking(home), oldRankingBody(), 'utf8');
+  fs.writeFileSync(path.join(oldDir, 'mine.txt'), 'not CoalTipple\'s\n', 'utf8');
+  const r = run(tmp, home, '--global', path.join(home, '.claude', 'skills'));
+  assert.equal(r.status, 0, `global install must pass:\n${r.stdout}${r.stderr}`);
+  assert.equal(JSON.parse(fs.readFileSync(globalRanking(home), 'utf8')).source, 'old-format', 'the migration ran');
+  assert.ok(!fs.existsSync(oldGlobalRanking(home)), 'the migrated old ranking file is gone');
+  assert.equal(fs.readFileSync(path.join(oldDir, 'mine.txt'), 'utf8'), 'not CoalTipple\'s\n', 'the user file remains, byte for byte');
+});
+
 test('GLOBAL config preservation: reinstall keeps a customized global config; --reset --global restores factory', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-gpreserve-'));
   const home = mkHome();
