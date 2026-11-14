@@ -31,6 +31,8 @@ const TESTS = [
   'scripts/lib/conductor-update.test.mjs',
   'scripts/lib/install.test.mjs',
   'scripts/lib/install-ownership.test.mjs',
+  'scripts/lib/install-lock.test.mjs',
+  'scripts/lib/install-race.test.mjs',
   'scripts/lib/jsonc.test.mjs',
   'scripts/lib/jsonc-linear.test.mjs',
   'scripts/lib/grade-task.test.mjs',

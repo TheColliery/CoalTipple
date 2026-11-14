@@ -18,6 +18,7 @@ import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { TARGETS, ACTUATING, detectPresentAgents } from './lib/targets.mjs';
 import { loadInstallRecord, saveInstallRecord, folderHashes, sameHashes } from './lib/install-record.mjs';
+import { takeLock, holdsLock, releaseLock, lockPathFor } from './lib/install-lock.mjs';
 import { readConfigBounded } from './lib/config-bound.mjs';
 import { buildFloorRanking, writeRankingAtomic, loadRanking } from './lib/classify.mjs';
 import { globalConfigPath, projectConfigPath, projectWriteTarget, moveLegacyAside, writeConfigAtomic, containedProjectPath, globalStateDir, oldGlobalStateDir, projectStateDir, findGitRoot } from './lib/config-load.mjs';
@@ -161,8 +162,57 @@ function recordInstall(dest, installed, tr) {
   if (!Object.keys(skills).length && !Object.hasOwn(next.targets, key)) return; // nothing recorded, nothing to change
   if (Object.keys(skills).length) next.targets[key] = { version: installed || !tr.entry ? pluginVersion() : tr.entry.version, skills };
   else delete next.targets[key];
+  assertHeld();
   try { saveInstallRecord(os.homedir(), next); }
   catch (e) { console.warn(`  [warn] could not write the install record: ${e.message}`); process.exitCode = 1; }
+}
+
+// ─── The per-target lock (29gj) ──────────────────────────────────────────────
+// Two installs (or an install and an uninstall) on one target at once used to race: one run's sweep could remove or move another run's live work folder,
+// and both read-modify-wrote the record's `pending`. The whole install or uninstall now runs under an exclusive lock under the user's home
+// (lib/install-lock.mjs), keyed by the target's real path. A live lock refuses the run; before each write to the record or the target the holder
+// re-checks that the lock is still its own, so a paused holder whose lock was taken over (the age backstop) stops instead of writing.
+let held = null; // { lockPath, token, lost } while this run holds a lock
+class LockLost extends Error {}
+function assertHeld() {
+  if (held === null) return;
+  let ok = false;
+  try { ok = holdsLock(held.lockPath, held.token); } catch { ok = false; }
+  if (!ok) { held.lost = true; throw new LockLost('the install lock was taken over'); }
+}
+// Runs fn under the lock for `dest`. 'busy' when another run holds it (nothing was changed) or when the lock was taken over mid-run; 'ok' otherwise.
+// A target that cannot be resolved takes no lock and runs as before; a lock folder that cannot be written warns and runs unlocked.
+function withTargetLock(dest, fn) {
+  let destReal;
+  try { destReal = fs.realpathSync.native(dest); } catch { fn(); return 'ok'; }
+  const lockPath = lockPathFor(os.homedir(), destReal);
+  let got;
+  try { got = takeLock(lockPath); }
+  catch (e) { console.warn(`  [warn] could not take the install lock ${lockPath}: ${e.message}. Continuing without it.`); process.exitCode = 1; fn(); return 'ok'; }
+  if (!got.ok) {
+    const who = got.busy.pid === null ? 'unknown process' : `process ${got.busy.pid}`;
+    if (got.busy.unreadable) {
+      console.error(`  [busy] the install lock ${lockPath} for ${dest} cannot be read (it may be a folder or a link, or not readable by you), so this run cannot tell whether another one holds it. Nothing was changed. If it is still there when you run the command again, remove it by hand.`);
+    } else {
+      console.error(`  [busy] another CoalTipple install or uninstall is running on ${dest} (${who}, started ${got.busy.startedAt ?? 'at an unknown time'}). Nothing was changed. Wait for it to finish, then run the command again. If no install is running, the lock ${lockPath} is released on its own after 30 minutes, or you can delete that file.`);
+    }
+    process.exitCode = 1;
+    return 'busy';
+  }
+  held = { lockPath, token: got.token, lost: false };
+  let result = 'ok';
+  try { fn(); }
+  catch (e) {
+    if (!(e instanceof LockLost)) throw e;
+    console.error(`  [busy] the install lock on ${dest} was taken over by another run while this one was working, so this run stopped. Any work folder it made is recorded and a later run sweeps it. Run the command again.`);
+    process.exitCode = 1;
+    result = 'busy';
+  } finally {
+    try { releaseLock(lockPath, got.token); }
+    catch (e) { console.warn(`  [warn] could not release the install lock ${lockPath}: ${e.message}`); process.exitCode = 1; }
+    held = null;
+  }
+  return result;
 }
 
 // ─── The work folder (29gi) ──────────────────────────────────────────────────
@@ -181,11 +231,13 @@ const WORK_RE = /^\.coaltipple-install-[0-9a-f]{16}$/;
 const pendingList = (rec) => (Array.isArray(rec.pending) ? rec.pending.filter((p) => typeof p === 'string') : []);
 function setPending(rec, list) { if (list.length) rec.pending = list; else delete rec.pending; }
 function saveQuiet(tr) {
+  assertHeld();
   try { saveInstallRecord(os.homedir(), tr.record); return true; }
   catch (e) { console.warn(`  [warn] could not write the install record: ${e.message}`); process.exitCode = 1; return false; }
 }
 // Adds `holder` to pending and saves. false (and nothing kept in memory) when the record cannot be written.
 function addPending(tr, holder) {
+  assertHeld();
   const list = pendingList(tr.record);
   setPending(tr.record, [...list, holder]);
   try { saveInstallRecord(os.homedir(), tr.record); return true; }
@@ -235,6 +287,7 @@ function sweepWorkFolders(dest, tr) {
       next.push(p);
       continue;
     }
+    assertHeld(); // a holder whose lock was taken over must not move or remove anything
     try {
       if (oldKind === 'dir' && !lexists(to)) { fs.renameSync(old, to); console.log(`  restored the earlier install from ${old} -> ${to}`); }
       fs.rmSync(p, { recursive: true, force: true });
@@ -263,7 +316,12 @@ function makeWorkFolder(dest, tr) {
   return null;
 }
 
+// 29gj: the dest exists before the lock is taken (the lock is keyed by its real path); the whole install runs under it.
 function installSkill(dest) {
+  fs.mkdirSync(dest, { recursive: true });
+  return withTargetLock(dest, () => installSkillLocked(dest));
+}
+function installSkillLocked(dest) {
   const to = path.join(dest, 'coaltipple');
   const tr = targetRecord(dest);
   // 29gi: an earlier run's work folder is swept first, because it may hold the old install that must come back before the verdict reads `to`.
@@ -279,7 +337,6 @@ function installSkill(dest) {
   // conductor's update stamp. The work folder is swept at the top of every run, so a crashed run self-heals (Phoenix #1).
   // Divergence from CoalMine 3.25.1: one work folder per run, named by randomBytes, instead of pid-marked siblings; the record's `pending` is what
   // lets a later run prove the folder was ours.
-  fs.mkdirSync(dest, { recursive: true });
   const work = makeWorkFolder(dest, tr);
   if (work === null) { console.warn(`  [warn] could not make a work folder under ${dest}: five names were all taken. Nothing was installed.`); process.exitCode = 1; return; }
   const staging = path.join(work.holder, 'new');
@@ -288,6 +345,7 @@ function installSkill(dest) {
   try {
     cpDir(skillSrc, staging);                                    // 1. build the new copy (source untouched)
     let movedAside = false;
+    assertHeld(); // a holder whose lock was taken over must not swap
     if (fs.existsSync(to)) { fs.renameSync(to, backup); movedAside = true; } // 2. old install aside (atomic)
     try {
       fs.renameSync(staging, to);                               // 3. swap in the new copy (atomic)
@@ -300,7 +358,9 @@ function installSkill(dest) {
   } finally {
     // Never leave the work folder behind (Phoenix #1), unless the rollback itself failed: then `old/` holds the only copy of the old install, the
     // folder and its `pending` entry stay, and the next run restores it (sweepWorkFolders).
-    if (lexists(backup) && !lexists(to)) {
+    if (held && held.lost) {
+      // the lock was taken over: the work folder stays, recorded, and a later run sweeps it
+    } else if (lexists(backup) && !lexists(to)) {
       console.warn(`  [kept] ${work.holder}: it holds the earlier install (old/), which could not be put back. ${work.recorded ? 'The next run restores it.' : `The install record could not be written, so no later run will restore it: move ${backup} back to ${to} by hand.`}`);
       process.exitCode = 1;
     } else {
@@ -462,6 +522,9 @@ function pathTargetRoot(dest) {
 // 29ah: the folder goes only on a verdict that proves it ours (a record, or an empty folder); a byte match never authorizes a delete.
 // Afterwards this target's record drops `coaltipple` once the folder is gone, and the entry once it names nothing. A newer record is untouched.
 function uninstall(dest) {
+  return withTargetLock(dest, () => uninstallLocked(dest));
+}
+function uninstallLocked(dest) {
   const tr = targetRecord(dest);
   const to = path.join(dest, SKILL);
   const v = ownership(dest, tr.entry, 'delete');
@@ -469,10 +532,12 @@ function uninstall(dest) {
   if (refusal === null && v.via !== 'absent') { const why = containedDirWhy(to, dest); if (why) refusal = `it could not be removed safely (${why})`; }
   if (refusal !== null) { console.warn(keepMessage(to, refusal)); process.exitCode = 1; }
   else if (v.via !== 'absent') {
+    assertHeld();
     try { fs.rmSync(to, { recursive: true, force: true }); console.log(`  removed skill from ${dest}`); }
     catch (e) { console.warn(keepMessage(to, `it could not be removed safely (${e.message})`)); process.exitCode = 1; }
   }
   if (tr.state === 'ok' && tr.key !== null && tr.entry && !lexists(to)) {
+    assertHeld();
     delete tr.entry.skills[SKILL];
     if (Object.keys(tr.entry.skills).length === 0) delete tr.record.targets[tr.key];
     try { saveInstallRecord(os.homedir(), tr.record); }
@@ -542,7 +607,9 @@ if (key === 'all') {
   }
   console.log(`\nCoalTipple 'all' — detected: ${present.join(', ')}${absent.length ? `  ·  skipped: ${absent.join(', ')}` : ''}`);
   const seen = new Set();
-  for (const a of present) { const d = TARGETS[a]; if (!seen.has(d)) { seen.add(d); installSkill(d); } }
+  let busyAny = false;
+  for (const a of present) { const d = TARGETS[a]; if (!seen.has(d)) { seen.add(d); if (installSkill(d) === 'busy') busyAny = true; } }
+  if (busyAny) process.exit(1); // a target was busy: nothing was changed there, and the seeding below is not run
   console.log('\nSeeding shared ranking + project files...');
   seedGlobalRanking();
   seedProjectFiles();
@@ -570,7 +637,7 @@ if (!physTarget || !physSrc || within(physTarget, physSrc) || within(physSrc, ph
 
 if (isUninstall) {
   console.log(`\nUninstalling CoalTipple from: ${targetArg}`);
-  uninstall(dest);
+  if (uninstall(dest) === 'busy') process.exit(1);
   console.log('\nDone.');
   process.exit(process.exitCode || 0);
 }
@@ -581,7 +648,7 @@ if (key in TARGETS && !ACTUATING.has(key)) {
 }
 
 console.log(`\nInstalling CoalTipple -> ${dest}`);
-installSkill(dest);
+if (installSkill(dest) === 'busy') process.exit(1); // nothing was changed: the seeding below is not run
 // GLOBAL install (claude / --global / a ~/.claude dest) seeds the GLOBAL config +
 // shared ranking — no project file. A NAMED-AGENT install seeds project files at the
 // invoker's cwd (its skills dir is under cwd). A bare PATH install seeds them at the
