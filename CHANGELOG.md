@@ -2,6 +2,15 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.8.10] - 2026-11-14
+
+two installs on one target at the same time no longer race
+
+Two runs of the user-run installer on the same target no longer interfere with each other.
+
+### Fixed
+- **Two installs, or an install and an uninstall, run at the same time on one target no longer interfere.** Through 1.8.9 the second run could clear the first run's work folder or put an earlier install back while the first was still copying, so a run failed or the target was left with the earlier install. Each run now takes a lock for its target under `~/.claude/coal/coaltipple/locks/`; a run that finds another one still running changes nothing, prints a `[busy]` line naming that run and what to do, and exits 1. A lock left by a run that was killed on this machine is cleared by the next run; a lock whose run cannot be checked is released 30 minutes after it was written; a lock the installer cannot read, such as a folder, is never released on its own, and the `[busy]` line says to remove it. — test: scripts/lib/install-lock.test.mjs, scripts/lib/install-race.test.mjs
+
 ## [1.8.9] - 2026-11-14
 
 the installer deletes only what it can show is its own
