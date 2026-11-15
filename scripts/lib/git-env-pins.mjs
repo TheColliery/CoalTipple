@@ -10,7 +10,8 @@
 // 09b: scripts/secret-scan.test.mjs left it when Bankfire's source (bd328f2) and the canon rebuilt its env from named keys (a0319dcd); the census passes it with no pin.
 // 25a: scripts/secret-gate.mjs re-copied from the canon (eecd5f9, blob 6b452f2f) and re-pinned to that blob; the census still finds its lines 57 and 60.
 // 29gp: scripts/secret-gate.mjs re-copied from the canon (blob 4bf97717, the CWE-426 NoDefaultCurrentDirectoryInExePath fix) and re-pinned to that blob.
+// 29hk: scripts/secret-gate.mjs re-copied from the canon (commit 609d86b, blob 175f0a52, the UTF-16 and UTF-32 scanner) and re-pinned to that blob; the census names its line 66, and its gitEnv() (line 56) is still a strip filter.
 export const CENSUS_PINS = [
   { rel: "scripts/lib/git-env.test.mjs", blob: "be246755d951ebbc523849dab880da8efbab350c", why: "plants GIT_DIR in poisonedEnv on purpose (lines 97 and 104 hand it to a git spawn), and a lower-case git_dir copied from process.env (the probed 16e leg at the end of the file), to reproduce the CWK-133 hazard; KEEP while the test reproduces the hazard" },
-  { rel: "scripts/secret-gate.mjs", blob: "4bf977178dffc6045af9ff2bae4ed78273fcc80c", why: "canon gate, byte-equal by skeleton-check; its gitEnv() copies process.env minus GIT_* but keeps GIT_INDEX_FILE and GIT_CEILING_DIRECTORIES by design (lines 62 and 67 are the findings); DELETE when the census rule accepts a GIT_*-stripping copy of process.env or the canon builds its env from named keys" },
+  { rel: "scripts/secret-gate.mjs", blob: "175f0a52e7d2b48f2c6fce7d46e70739decb1a53", why: "canon gate, byte-equal by skeleton-check; its gitEnv() copies process.env minus GIT_* but keeps GIT_INDEX_FILE and GIT_CEILING_DIRECTORIES by design (line 66, the gitIn spawn, is the finding; gitEnv() itself is line 56); DELETE when the census rule accepts a GIT_*-stripping copy of process.env or the canon builds its env from named keys" },
 ];

@@ -22,7 +22,7 @@
 # whose value is a scheme and a token (Authorization: Bearer <key>, X-Api-Token: Bearer <key>) unless that token is provider-shaped,
 # or a key split across lines. git hands
 # only pre-push the ref lines on stdin, so only pre-push passes --pre-push (every pushed commit, message and tag);
-# pre-commit scans the tracked tree. One file, two hook names, identical bytes: the branch is on the name git invoked.
+# pre-commit scans the staged tree (every blob in the index, what the commit records). One file, two hook names, identical bytes: the branch is on the name git invoked.
 if [ "$(basename "$0")" = "pre-push" ]; then
   node scripts/secret-gate.mjs --pre-push "--remote=$1" || exit 1
 else
