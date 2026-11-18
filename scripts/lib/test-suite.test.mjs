@@ -47,14 +47,22 @@ test('test-suite: the limits are finite, the roster follows the double dash, and
   for (const flag of ['--heap-mb', '--file-timeout-ms', '--file-clock-ms', '--deadline-ms']) assert.ok(args.includes(flag), flag);
 });
 
-// 29is: on Node 22 --test-timeout is per FILE, so fileTimeoutMs must hold the slowest file with headroom. The slowest is scripts/secret-gate.test.mjs (56 tests). CI measurement:
-// draft PR #37 at cdfc335, every Node 22 gate leg cut at the 120000 ms clock (jobs 134787156001 Windows after 44 tests, 134787155737 ubuntu after 43, 134787155800 macOS after 43),
-// so its true Node 22 time is unmeasured and above 120 s. 156000 ms is a PROJECTION by test count (120 s x 56/43, the slowest leg), an estimate and not a reading.
-const CI_NODE22_SLOWEST_FILE_MS = 156000;
-const CLOCK_HEADROOM = 1.5; // the projection is a linear estimate over tests of very different cost and CI legs vary run to run (CoalMine's 240 s clock was cut once and passed on re-run), so 1.5x, not the 1.8x the old 66.4 s sizing held
+// 29iw: on Node 22 --test-timeout is per FILE, so fileTimeoutMs must hold the slowest file with headroom. The slowest is scripts/secret-gate.test.mjs (56 tests, canon blob 18842d601963).
+// READINGS on GitHub's Node 22 runners, from two rooms running the same canon blob: CoalBoard PR run 44311491675 (Windows file 185.4 s, step 211 s; its worst Node 22 file 224.9 s on macOS; an
+// earlier run there took a 294 s step on Windows); CoalLedger 4f7459f on main (Windows 187.8 s, macOS 174.1 s, Ubuntu 152.0 s). Cuts at 240 s on Windows Node 22: CoalLedger (job 134775496122),
+// CoalMine once (job 134735905795, green on re-run), this room at 459aa46 (job 134809803395), so the true worst is above 240 s. 224900 ms is the worst READING, a floor on the real worst, not a ceiling.
+// This room's own whole-run reading: macOS Node 22 test step 398 s at 459aa46 (job 134809803476). The 29is figure (156000) was a projection by test count and was cut at 240 s.
+const CI_NODE22_WORST_FILE_READING_MS = 224900;
+const CLOCK_HEADROOM = 1.8; // the readings span 152 to 225 s between legs and runs and a Windows run was cut above 240 s, so the clock sits well over the worst reading; the same 1.8x the old serial sizing held, and about what CoalBoard, CoalLedger, CoalGob and CoalWash set (400 to 420 s)
+const CI_NODE22_WHOLE_RUN_STEP_MS = 398000;
+const RUN_HEADROOM = 1.25; // the whole-run deadline holds this room's own measured step with 25%; the CI gate job (10 minutes) caps it, since the deadline plus the backstop margin must end before the job does
 
-test('test-suite: the per-file test clock holds the slowest file measured on CI Node 22 with headroom (29is)', () => {
-  assert.ok(LIMITS.fileTimeoutMs >= CI_NODE22_SLOWEST_FILE_MS * CLOCK_HEADROOM, 'fileTimeoutMs ' + LIMITS.fileTimeoutMs + ' < ' + CI_NODE22_SLOWEST_FILE_MS * CLOCK_HEADROOM);
+test('test-suite: the per-file test clock holds the worst file reading on CI Node 22 with headroom (29iw)', () => {
+  assert.ok(LIMITS.fileTimeoutMs >= CI_NODE22_WORST_FILE_READING_MS * CLOCK_HEADROOM, 'fileTimeoutMs ' + LIMITS.fileTimeoutMs + ' < ' + CI_NODE22_WORST_FILE_READING_MS * CLOCK_HEADROOM);
+});
+
+test('test-suite: the whole-run deadline holds the measured CI whole-run step with headroom (29iw)', () => {
+  assert.ok(LIMITS.deadlineMs >= CI_NODE22_WHOLE_RUN_STEP_MS * RUN_HEADROOM, 'deadlineMs ' + LIMITS.deadlineMs + ' < ' + CI_NODE22_WHOLE_RUN_STEP_MS * RUN_HEADROOM);
 });
 
 test('test-suite: a green roster ends 0 and the summary says GREEN', async (t) => {
