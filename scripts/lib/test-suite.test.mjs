@@ -47,6 +47,16 @@ test('test-suite: the limits are finite, the roster follows the double dash, and
   for (const flag of ['--heap-mb', '--file-timeout-ms', '--file-clock-ms', '--deadline-ms']) assert.ok(args.includes(flag), flag);
 });
 
+// 29is: on Node 22 --test-timeout is per FILE, so fileTimeoutMs must hold the slowest file with headroom. The slowest is scripts/secret-gate.test.mjs (56 tests). CI measurement:
+// draft PR #37 at cdfc335, every Node 22 gate leg cut at the 120000 ms clock (jobs 134787156001 Windows after 44 tests, 134787155737 ubuntu after 43, 134787155800 macOS after 43),
+// so its true Node 22 time is unmeasured and above 120 s. 156000 ms is a PROJECTION by test count (120 s x 56/43, the slowest leg), an estimate and not a reading.
+const CI_NODE22_SLOWEST_FILE_MS = 156000;
+const CLOCK_HEADROOM = 1.5; // the projection is a linear estimate over tests of very different cost and CI legs vary run to run (CoalMine's 240 s clock was cut once and passed on re-run), so 1.5x, not the 1.8x the old 66.4 s sizing held
+
+test('test-suite: the per-file test clock holds the slowest file measured on CI Node 22 with headroom (29is)', () => {
+  assert.ok(LIMITS.fileTimeoutMs >= CI_NODE22_SLOWEST_FILE_MS * CLOCK_HEADROOM, 'fileTimeoutMs ' + LIMITS.fileTimeoutMs + ' < ' + CI_NODE22_SLOWEST_FILE_MS * CLOCK_HEADROOM);
+});
+
 test('test-suite: a green roster ends 0 and the summary says GREEN', async (t) => {
   const { dir, tests } = tree(t, { a: 'green', b: 'green' });
   const r = await runSuite({ repo: dir, tests, limits: TINY, quiet: true });

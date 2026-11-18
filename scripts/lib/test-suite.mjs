@@ -16,14 +16,18 @@ import { spawn, spawnSync } from 'node:child_process';
 // slowest file scripts/verify.test.mjs 66.4 s, then wave-run.test.mjs 27.3 s, secret-scan.test.mjs 26.0 s, secret-gate.test.mjs 25.3 s, test-suite.test.mjs 15.6 s; the serial total 223.0 s, every file exit 0.
 // (The 2026-10-09 measurement on 28 files read 262.9 s with another seat's wave running beside, slowest file 57.4 s; a box that is busy stretches every figure, which is why the multiples below are taken against this newer, quieter reading and the old one is only history.)
 // The worst case a wave can reach is the serial total, because a box that never breathes admits one file at a time.
-//  - fileTimeoutMs 120000: on Node 22 the clock of --test-timeout is per FILE (nodejs/node PR #57672 landed in v24, where it is per test), so it must hold the slowest FILE
-//    with headroom: 120 s is 1.8x the 66.4 s slowest, the value CoalHearth and CoalWash use.
-//  - fileClockMs 240000: the wall clock of one file in a wave that shares the box, 3.6x the slowest serial file; it ends a hang before the first test, which
-//    --test-timeout never reaches, without waiting for the whole-run deadline.
+//  - fileTimeoutMs 240000 (29is; 120000 on the 2026-10-16 serial reading above, where it was 1.8x the 66.4 s slowest): on Node 22 the clock of --test-timeout is per FILE
+//    (nodejs/node PR #57672 landed in v24, where it is per test), so it must hold the slowest FILE with headroom. The slowest file is now scripts/secret-gate.test.mjs (56 tests).
+//    CI measurement, draft PR #37 at cdfc335: every Node 22 gate leg was cut at the 120 s clock (jobs 134787156001 Windows after 44 tests, 134787155737 ubuntu after 43, 134787155800
+//    macOS after 43), so its Node 22 CI time is above 120 s and unmeasured; the projection by test count is about 156 s (120 s x 56/43), an estimate. Local alone: 134.7 s and 153 s
+//    (Node 26). 1.5x the 156 s projection is 234 s, rounded up to 240 s (scripts/lib/test-suite.test.mjs holds the 1.5x as a leg). The old file (50 tests) passed every leg at 8427b50.
+//  - fileClockMs 300000 (29is; 240000 before, 3.6x the 66.4 s slowest): the wall clock of one file in a wave that shares the box; it ends a hang before the first test, which
+//    --test-timeout never reaches, without waiting for the whole-run deadline. It must stay above fileTimeoutMs (240 s), so it moved; 300 s is 1.9x the 156 s projection, and
+//    CoalMine's 240 s clock was cut once on CI and passed on re-run, which is why this one does not sit at the projection's edge.
 //  - deadlineMs 420000: 1.9x the 223.0 s serial total (the worst case; the waves wait for BREATHE, so a busy box stretches the run);
 //    with the 60 s backstop margin the runner is gone by 8 minutes, under the CI gate job's timeout-minutes (10, ci.yml) with the job's checkout, setup and verify around it. The CI legs
 //    (run 37928363807 at 02b8c20, a 28-file roster) ran the suite in 49 to 86 s, 4.9x under the deadline at the slowest; a CI runner is a quieter box than this one.
-export const LIMITS = Object.freeze({ heapMb: 2048, fileTimeoutMs: 120000, fileClockMs: 240000, deadlineMs: 420000, backstopMarginMs: 60000 });
+export const LIMITS = Object.freeze({ heapMb: 2048, fileTimeoutMs: 240000, fileClockMs: 300000, deadlineMs: 420000, backstopMarginMs: 60000 });
 
 export function waveRunArgs(tests, limits = LIMITS) {
   return [
