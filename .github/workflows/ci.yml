@@ -139,7 +139,7 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
         node: [22, 24]  # supported LTS only (24 Active, 22 Maintenance); 18/20 are EOL — bump as the Node LTS schedule moves
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 10 # basis (re-measured 2026-10-09, REST, run 37928363807 at 02b8c20, the first run with every file in the wave runner): slowest leg macos node 22 1.63 min (test step 86 s), windows node 22 1.48, ubuntu node 22 1.23, macos node 24 1.27, windows node 24 1.12, ubuntu node 24 0.92; 10 min is ~6.1x the max and the runner is gone by 8 min at its own backstop (scripts/lib/test-suite.mjs); the serial plan read 1.15 min and ~8.7x on 2026-10-08
+    timeout-minutes: 10 # basis (re-measured 2026-11-18, REST, run 44330142973 at 25ed3ed, jobs 134892117058 134892117154 134892117034): node 22 gate jobs macos 377 s (the slowest), windows 257 s, ubuntu 184 s; 10 min is about 1.6x the slowest and the runner is gone by 560 s at its own backstop (deadline 500 s plus margin 60 s, scripts/lib/test-suite.mjs), leaving about 40 s of the job for checkout, setup and verify; the 2026-10-09 reading (run 37928363807, slowest 1.63 min, ~6.1x) predates the larger gate test
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
