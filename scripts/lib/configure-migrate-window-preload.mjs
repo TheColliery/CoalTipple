@@ -11,6 +11,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+// 29li: both sides of the rename match are compared by their REAL path (macOS /var and /private/var, a runner's 8.3 and long
+// TEMP spellings name one file); a path that does not exist yet falls back to path.resolve.
+const real = (p) => { try { return fs.realpathSync.native(p); } catch { return path.resolve(p); } };
 const target = process.env.CT_WINDOW_TARGET ? path.resolve(process.env.CT_WINDOW_TARGET) : null;
 const legacy = process.env.CT_WINDOW_LEGACY ? path.resolve(process.env.CT_WINDOW_LEGACY) : null;
 const mode = process.env.CT_WINDOW_MODE || 'none';
@@ -38,7 +41,7 @@ function changeLegacy() {
 
 fs.renameSync = function renameSyncWindow(from, to) {
   const r = realRename(from, to);
-  if (!fired && mode !== 'none' && target && legacy && path.resolve(String(to)) === target) {
+  if (!fired && mode !== 'none' && target && legacy && real(String(to)) === real(target)) {
     fired = true;
     changeLegacy();
   }

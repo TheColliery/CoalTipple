@@ -28,7 +28,10 @@ const PREFIX = 'ct-29kl-';
 const LEGACY_TEXT = '{\n  "mode": "off",\n  "qualityBar": 90\n}\n';
 
 function makeWork() {
-  const work = fs.mkdtempSync(path.join(os.tmpdir(), PREFIX));
+  // 29li: the work folder is taken by its REAL path. The child's own cwd is the real spelling (macOS /var is /private/var,
+  // and a runner's 8.3 TEMP has a long form), so the rename target the preload watches and the legacy path configure prints
+  // are real paths; a lexical os.tmpdir() spelling would never match either of them.
+  const work = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), PREFIX)));
   const dir = path.join(work, 'proj');
   const home = path.join(work, 'home');
   fs.mkdirSync(path.join(dir, '.git'), { recursive: true }); // findGitRoot anchor
