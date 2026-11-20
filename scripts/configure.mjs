@@ -35,6 +35,28 @@ import { setKeyInText, assertEffective } from './lib/config-edit.mjs';
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const factoryCfg = path.join(repo, 'platform-configs', '.coaltipple.json');
 
+// 29kl: the identity a file had at one moment (device, inode, size, mtime), or null when it cannot be read.
+function identityOf(p) {
+  try {
+    const s = fs.lstatSync(p);
+    return `${s.dev}:${s.ino}:${s.size}:${s.mtimeMs}`;
+  } catch {
+    return null;
+  }
+}
+
+// 29kl: true only when the legacy file still holds the bytes the seeding read returned AND still has the identity it had
+// then (a same-size replace changes the inode or the mtime, so the bytes alone are not enough). Any failure to re-read
+// counts as changed. This is a re-check, not a lock: see the residual-window note at the delete.
+function legacyUnchanged(p, bytes, identity) {
+  if (bytes === null || identity === null) return false;
+  try {
+    return readConfigBounded(p) === bytes && identityOf(p) === identity;
+  } catch {
+    return false;
+  }
+}
+
 // Namespace campaign (#69+#39): write-new-then-drop-old. Unlike CoalWash (no
 // project-config writer at all, read-only migration), CT DOES write per-project
 // config here -- so this is the room's real move-on-write implementation. Target
@@ -254,6 +276,8 @@ function main() {
   // project) -> seed from factory, unchanged from before.
   let text;
   let seededFrom = null; // the legacy file whose contents this run actually read into the target
+  let seedBytes = null; // 29kl: the exact text that seeding read returned, and the file's identity right after it, kept for the check before the delete
+  let seedIdentity = null;
   try {
     try {
       text = readConfigBounded(configPath);
@@ -262,6 +286,8 @@ function main() {
       if (readErr.code !== 'ENOENT') throw readErr; // real read/parse failure -> fail loud below
       if (toProject && writeTarget.legacyToRemove) {
         text = readConfigBounded(writeTarget.legacyToRemove);
+        seedBytes = text; // before the BOM strip below, so the re-read compares like with like
+        seedIdentity = identityOf(writeTarget.legacyToRemove);
         parseConfig(text); // same parse-before-touch guarantee as the normal path
         seededFrom = writeTarget.legacyToRemove;
         console.log(`Migrating ${writeTarget.legacyToRemove} -> ${configPath}, applying your edits.`);
@@ -315,9 +341,17 @@ function main() {
       for (const legacy of [writeTarget.legacyToRemove, ...writeTarget.legacyAlso]) {
         if (!legacy) continue;
         try {
-          if (legacy === seededFrom) {
+          // 29kl: the delete rests on the seeding read, so the legacy file must still be what that read saw. An edit made
+          // after it is in neither file; a changed or replaced legacy file is kept, the run exits 1, the new config stands.
+          // RESIDUAL WINDOW: this check narrows the window, it does not close it. A change between the check and the
+          // rmSync below can still be lost.
+          const changedSinceSeed = legacy === seededFrom && !legacyUnchanged(legacy, seedBytes, seedIdentity);
+          if (changedSinceSeed) {
+            process.exitCode = 1;
+            console.warn(`Warning: ${legacy} changed while migrating; kept it. The new config at ${configPath} does not include that change; merge it by hand, then delete ${legacy}.`);
+          } else if (legacy === seededFrom) {
             fs.rmSync(legacy, { force: true }); // read + carried into the target -> genuinely superseded
-            console.log(`Removed ${legacy} (its contents were migrated into ${configPath}).`);
+            if (!fs.existsSync(legacy)) console.log(`Removed ${legacy} (its contents were migrated into ${configPath}).`);
           } else {
             const to = moveLegacyAside(legacy); // never opened -> keep it, just stop it being a config path
             console.log(`Moved ${legacy} -> ${to} (not read this run; it is no longer a config path and its contents are kept).`);
