@@ -5,6 +5,8 @@
 // into place, i.e. after the seeding read and before the legacy delete.
 // Leg A: an append, and a same-size replace by another file. The legacy file must be kept, the exit non-zero, and a line
 //        must name the legacy file as kept.
+// Leg R (29ky): the legacy file is removed by another program inside the window. Exit 1, the new config is written, and the
+//        warning says it was removed, never that anything was kept.
 // Leg B: no change. The migration still removes the legacy file and exits 0.
 // Zero-dep: node:test + node:assert. Each case works in ONE folder it makes under the OS temp root and removes only that
 // folder, by name, after checking its real path sits under the real temp root.
@@ -78,6 +80,26 @@ for (const mode of ['append', 'samesize']) {
     } finally { removeWork(w.work); }
   });
 }
+
+// 29ky (F2): the legacy file taken away by another program inside the window. Nothing is left at that path to keep, so the
+// warning says it was removed, never "kept"; the run still exits 1 (the file changed during the migration) and the new
+// config holds what the seeding read returned.
+test('a legacy config removed by another program inside the window is reported as removed, not kept, and the run exits 1', () => {
+  const w = makeWork();
+  try {
+    const r = migrate(w, 'remove');
+    assert.equal(r.error, undefined, `spawn failed: ${r.error && r.error.code}`);
+    assert.ok(fs.existsSync(w.mark), 'the preload must have removed the legacy file inside the window (else this leg proves nothing)');
+    assert.ok(!fs.existsSync(w.legacy), 'the preload moved the legacy file away; nothing may be at its path');
+    assert.equal(r.status, 1, `exit ${r.status}; stdout: ${r.stdout.trim()}; stderr: ${r.stderr.trim()}`);
+    const migrated = JSON.parse(fs.readFileSync(w.target, 'utf8'));
+    assert.equal(migrated.qualityBar, 85);
+    assert.equal(migrated.mode, 'off', 'the new config holds what the seeding read returned');
+    const out = `${r.stdout}\n${r.stderr}`;
+    assert.ok(out.split(/\r?\n/).some((l) => l.includes(w.legacy) && /removed/i.test(l)), `a line must name ${w.legacy} as removed; got:\n${out.trim()}`);
+    assert.ok(!/kept/i.test(out), `nothing was kept at ${w.legacy}, so no line may say so; got:\n${out.trim()}`);
+  } finally { removeWork(w.work); }
+});
 
 test('an unchanged legacy config is still migrated: the legacy file is removed and the run exits 0', () => {
   const w = makeWork();

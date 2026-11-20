@@ -5,7 +5,7 @@
 // sees this change; a fix that checks before the write, or not at all, does not.
 // Env: CT_WINDOW_TARGET  absolute path of the new config (the rename destination to wait for)
 //      CT_WINDOW_LEGACY  absolute path of the legacy config to change
-//      CT_WINDOW_MODE    'append' | 'samesize' | 'none'
+//      CT_WINDOW_MODE    'append' | 'samesize' | 'remove' | 'none'
 //      CT_WINDOW_MARK    absolute path of a marker file written when the change was made (so a green run is never vacuous)
 // It fires once. It never deletes anything; the same-size replace renames a file of its own making over the legacy name.
 import fs from 'node:fs';
@@ -29,6 +29,9 @@ function changeLegacy() {
     const side = `${legacy}.window-replace`;
     fs.writeFileSync(side, after, { encoding: 'utf8', flag: 'wx' });
     realRename(side, legacy);
+  } else if (mode === 'remove') {
+    // Another program takes the legacy file away inside the window: it is renamed to a name of this fixture's own, never deleted.
+    realRename(legacy, `${legacy}.moved-away`);
   }
   if (mark) fs.writeFileSync(mark, `${mode}\n`, 'utf8');
 }

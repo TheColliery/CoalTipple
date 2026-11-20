@@ -29,31 +29,20 @@ import { fileURLToPath } from 'node:url';
 import { CONFIG_SCHEMA, validateValue } from './lib/config-schema.mjs';
 import { loadMergedConfig, globalConfigPath, projectConfigPath, projectWriteTarget, moveLegacyAside, writeConfigAtomic, containedProjectPath } from './lib/config-load.mjs';
 import { stripJsonc } from './lib/jsonc.mjs';
-import { readConfigBounded, MAX_CONFIG_BYTES } from './lib/config-bound.mjs';
+import { readConfigBounded, readConfigBoundedWithIdentity, recheckConfigIdentity, MAX_CONFIG_BYTES } from './lib/config-bound.mjs';
 import { setKeyInText, assertEffective } from './lib/config-edit.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const factoryCfg = path.join(repo, 'platform-configs', '.coaltipple.json');
 
-// 29kl: the identity a file had at one moment (device, inode, size, mtime), or null when it cannot be read.
-function identityOf(p) {
+// 29ky: true unless the NAME is provably gone (ENOENT). Any other answer, including a stat that fails for another reason,
+// counts as present, so the warning below never claims a removal it cannot show.
+function presentByName(p) {
   try {
-    const s = fs.lstatSync(p);
-    return `${s.dev}:${s.ino}:${s.size}:${s.mtimeMs}`;
-  } catch {
-    return null;
-  }
-}
-
-// 29kl: true only when the legacy file still holds the bytes the seeding read returned AND still has the identity it had
-// then (a same-size replace changes the inode or the mtime, so the bytes alone are not enough). Any failure to re-read
-// counts as changed. This is a re-check, not a lock: see the residual-window note at the delete.
-function legacyUnchanged(p, bytes, identity) {
-  if (bytes === null || identity === null) return false;
-  try {
-    return readConfigBounded(p) === bytes && identityOf(p) === identity;
-  } catch {
-    return false;
+    fs.lstatSync(p);
+    return true;
+  } catch (e) {
+    return e.code !== 'ENOENT';
   }
 }
 
@@ -276,8 +265,7 @@ function main() {
   // project) -> seed from factory, unchanged from before.
   let text;
   let seededFrom = null; // the legacy file whose contents this run actually read into the target
-  let seedBytes = null; // 29kl: the exact text that seeding read returned, and the file's identity right after it, kept for the check before the delete
-  let seedIdentity = null;
+  let seedSnapshot = null; // 29ky: the text the seeding read returned and the identity of the ONE descriptor it read, kept for the check before the delete
   try {
     try {
       text = readConfigBounded(configPath);
@@ -285,9 +273,9 @@ function main() {
     } catch (readErr) {
       if (readErr.code !== 'ENOENT') throw readErr; // real read/parse failure -> fail loud below
       if (toProject && writeTarget.legacyToRemove) {
-        text = readConfigBounded(writeTarget.legacyToRemove);
-        seedBytes = text; // before the BOM strip below, so the re-read compares like with like
-        seedIdentity = identityOf(writeTarget.legacyToRemove);
+        const seed = readConfigBoundedWithIdentity(writeTarget.legacyToRemove);
+        text = seed.text;
+        seedSnapshot = seed; // the text before the BOM strip below, so the re-read compares like with like
         parseConfig(text); // same parse-before-touch guarantee as the normal path
         seededFrom = writeTarget.legacyToRemove;
         console.log(`Migrating ${writeTarget.legacyToRemove} -> ${configPath}, applying your edits.`);
@@ -341,14 +329,24 @@ function main() {
       for (const legacy of [writeTarget.legacyToRemove, ...writeTarget.legacyAlso]) {
         if (!legacy) continue;
         try {
-          // 29kl: the delete rests on the seeding read, so the legacy file must still be what that read saw. An edit made
+          // 29kl, 29ky: the delete rests on the seeding read, so the legacy file must still be what that read saw. An edit made
           // after it is in neither file; a changed or replaced legacy file is kept, the run exits 1, the new config stands.
-          // RESIDUAL WINDOW: this check narrows the window, it does not close it. A change between the check and the
-          // rmSync below can still be lost.
-          const changedSinceSeed = legacy === seededFrom && !legacyUnchanged(legacy, seedBytes, seedIdentity);
+          // The re-check reads through ONE descriptor (recheckConfigIdentity: fstat identity, then the text, on the same
+          // open), and the NAME's lstat must then be that same regular file (same device and inode), so a link at the name
+          // or a different file is kept. RESIDUAL WINDOW: this narrows the window, it does not close it. Node has no delete
+          // by descriptor, so a change between that lstat and the rmSync below can still be lost.
+          const rechecked = legacy === seededFrom ? recheckConfigIdentity(legacy, seedSnapshot) : null;
+          let named = null;
+          if (rechecked) { try { named = fs.lstatSync(legacy); } catch { /* the name is gone: not the same file */ } }
+          const sameFileByName = !!(rechecked && named && named.isFile() && named.dev === rechecked.dev && named.ino === rechecked.ino);
+          const changedSinceSeed = legacy === seededFrom && !sameFileByName;
           if (changedSinceSeed) {
             process.exitCode = 1;
-            console.warn(`Warning: ${legacy} changed while migrating; kept it. The new config at ${configPath} does not include that change; merge it by hand, then delete ${legacy}.`);
+            if (presentByName(legacy)) {
+              console.warn(`Warning: ${legacy} changed while migrating; kept it. The new config at ${configPath} does not include that change; merge it by hand, then delete ${legacy}.`);
+            } else {
+              console.warn(`Warning: ${legacy} was removed by another program while migrating, after it was read. There is nothing left at that path to merge; the new config at ${configPath} holds what was read.`);
+            }
           } else if (legacy === seededFrom) {
             fs.rmSync(legacy, { force: true }); // read + carried into the target -> genuinely superseded
             if (!fs.existsSync(legacy)) console.log(`Removed ${legacy} (its contents were migrated into ${configPath}).`);
