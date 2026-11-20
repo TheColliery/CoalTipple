@@ -9,7 +9,7 @@ a changed legacy config is kept during the migration
 Moving a project config from its old location no longer deletes an edit made to the old file while the move ran.
 
 ### Fixed
-- **Severity HIGH: one edit to a setting, lost silently, inside a migration that runs once.** Through 1.8.10, `configure.mjs --project` read the legacy project config, wrote the new one, then deleted the legacy file without looking at it again, so an edit made to the legacy file in between was in neither file and the run reported success. The legacy file is now deleted only if it still holds what the migration read; otherwise it is kept, one warning line says the new config does not include that change, and the run exits 1. The check narrows the window; it does not close it. — test: `scripts/lib/configure-migrate.test.mjs`
+- **Severity HIGH: one edit to a setting, lost silently, inside a migration that runs once.** Through 1.8.10, `configure.mjs --project` read the legacy project config, wrote the new one, then deleted the legacy file without looking at it again, so an edit made to the legacy file in between was in neither file and the run reported success. The legacy file is now deleted only if it still holds what the migration read; otherwise it is kept, one warning line says the new config does not include that change, and the run exits 1; if another program removed the legacy file after it was read, the warning says so and that the new config holds what was read, and the run still exits 1. The check narrows the window; it does not close it. — test: `scripts/lib/configure-migrate.test.mjs`
 
 ## [1.8.10] - 2026-11-14
 
