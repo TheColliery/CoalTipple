@@ -8,7 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { sandboxEnv } from './test-env.mjs';
+import { sandboxEnv, namesPath } from './test-env.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -38,3 +38,14 @@ for (const file of OWNERS) {
     assert.doesNotMatch(src, /\.\.\.process\.env,\s*(USERPROFILE|HOME)\b/, `${file} still builds a HOME-only env inline`);
   });
 }
+
+// 29mj (T-29lv-1): namesPath names a path as a WHOLE path. The macOS accident: /var/x is a substring of /private/var/x, so includes() passed there by accident.
+test('namesPath: a path ending a longer path is not named by it, the real spelling is, and a path at the start or after a space or a quote is', () => {
+  assert.equal(namesPath('Wrote /private/var/folders/T/x/cfg.json (factory)', '/var/folders/T/x/cfg.json'), false, 'the lexical /var spelling is not the real /private/var one');
+  assert.equal(namesPath('Wrote /private/var/folders/T/x/cfg.json (factory)', '/private/var/folders/T/x/cfg.json'), true);
+  assert.equal(namesPath('/a/b.json moved', '/a/b.json'), true, 'at the start');
+  assert.equal(namesPath("kept as '/a/b.json'", '/a/b.json'), true, 'after a quote');
+  assert.equal(namesPath('C:\\Users\\u\\a.json', 'Users\\u\\a.json'), false, 'after a backslash it is the tail of a longer path');
+  assert.equal(namesPath('see /x/a.json.bak', '/x/a.json'), true, 'a longer path that BEGINS with p still names p (the end is the caller\'s business)');
+  assert.equal(namesPath('', '/a'), false);
+});

@@ -6,12 +6,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { sandboxEnv } from './test-env.mjs';
+import { sandboxEnv, namesPath } from './test-env.mjs';
 
 const INSTALL = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'install.mjs');
 // Sandbox HOME too: a throwaway home so the GLOBAL-config code path (the ~/.claude
 // global-dest check AND the shared ranking) can never read or write the real config.
-function mkHome() { return fs.mkdtempSync(path.join(os.tmpdir(), 'ct-install-home-')); }
+function mkHome() { return fs.realpathSync.native(fs.mkdtempSync(path.join(fs.realpathSync.native(os.tmpdir()), 'ct-install-home-'))); }
 const run = (cwd, home, ...a) =>
   spawnSync(process.execPath, [INSTALL, ...a],
     { cwd, env: sandboxEnv(home), encoding: 'utf8', timeout: 30000 });
@@ -338,7 +338,9 @@ test('H10: a failed reinstall (unreadable source) leaves the existing install in
 // deletes it), and prints the RESOLVED path.
 // ---------------------------------------------------------------------------
 function mkResetProject(layout) {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-reset-'));
+  // 29mj (T-29lv-1): the project is taken by its REAL path. install.mjs prints paths from its own cwd, which is the real spelling (macOS spells the temp
+  // folder /var/... and its real path is /private/var/...), and the legs below compare those printed paths with these.
+  const tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(fs.realpathSync.native(os.tmpdir()), 'ct-reset-')));
   fs.mkdirSync(path.join(tmp, '.git')); // findGitRoot anchor
   for (const [rel, body] of Object.entries(layout)) {
     const f = path.join(tmp, ...rel.split('/'));
@@ -366,9 +368,9 @@ for (const [label, rel, canonAlso] of [
       assert.match(fs.readFileSync(canon, 'utf8'), /"concurrency":/, 'the factory template is at the CANONICAL path');
       assert.ok(!fs.existsSync(legacy), '--reset must NEVER leave the factory template at (or keep) a deprecated path');
       assert.equal(fs.readFileSync(legacy + '.superseded', 'utf8'), '{ "qualityBar": 42, "userOnly": "KEEP-ME" }', 'the legacy is moved aside byte-for-byte, never deleted');
-      assert.ok(r.stdout.includes(canon), `stdout names the canonical path actually written:\n${r.stdout}`);
+      assert.ok(namesPath(r.stdout, canon), `stdout names the canonical path actually written:\n${r.stdout}`);
       assert.doesNotMatch(r.stdout, /OVERWRITES \.claude\/\.coaltipple\.json/, 'the hard-coded legacy path is gone from the printed line');
-      assert.ok(r.stdout.includes(legacy), 'the moved-aside legacy is named too');
+      assert.ok(namesPath(r.stdout, legacy), 'the moved-aside legacy is named too');
     } finally { fs.rmSync(tmp, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); }
   });
 }
@@ -382,7 +384,7 @@ test('UMB-133 B1 M2: --reset on a fresh project and on a canonical-only project 
       const r = run(tmp, home, '--reset');
       assert.equal(r.status, 0, r.stderr);
       assert.match(fs.readFileSync(canon, 'utf8'), /"concurrency":/);
-      assert.ok(r.stdout.includes(canon));
+      assert.ok(namesPath(r.stdout, canon));
       assert.doesNotMatch(r.stdout, /OVERWRITES \.claude\/\.coaltipple\.json/);
       const litter = fs.readdirSync(tmp, { recursive: true }).filter((n) => String(n).includes('.superseded'));
       assert.deepEqual(litter, [], 'nothing to move aside -> nothing moved');

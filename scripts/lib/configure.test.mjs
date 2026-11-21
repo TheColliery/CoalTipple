@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { sandboxEnv } from './test-env.mjs';
+import { sandboxEnv, namesPath } from './test-env.mjs';
 import { CONFIG_SCHEMA } from './config-schema.mjs';
 import { stripJsonc as stripJsoncText } from './jsonc.mjs';
 
@@ -28,14 +28,6 @@ function freshProject() {
   fs.mkdirSync(path.join(dir, '.git')); // findGitRoot anchor
   const home = fs.realpathSync.native(fs.mkdtempSync(path.join(tmp, 'ct-cfg-home-')));
   return { dir, home };
-}
-// True when out names the path p as a whole path: the character before the match is not a path character, so a longer path that
-// merely ends with p (/private/var/x ends with /var/x) does not count. includes() alone cannot tell the two apart.
-function namesPath(out, p) {
-  for (let i = out.indexOf(p); i !== -1; i = out.indexOf(p, i + 1)) {
-    if (i === 0 || !/[A-Za-z0-9_.~/\\-]/.test(out[i - 1])) return true;
-  }
-  return false;
 }
 const globalPath = (home) => path.join(home, '.claude', '.coaltipple.json');
 // Namespace campaign (#69+#39): on a fresh sandbox (nothing on disk yet), --project
