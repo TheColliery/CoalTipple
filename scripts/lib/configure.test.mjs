@@ -19,11 +19,23 @@ const stripJsonc = (raw) => JSON.parse(stripJsoncText(raw));
 // A sandboxed project (cwd, with a .git anchor) AND a sandboxed home (whose
 // .claude/.coaltipple.json is the GLOBAL target). USERPROFILE/HOME point at the
 // sandbox home so the configurator NEVER writes the real ~/.claude.
+// 29lv: both folders are taken by their REAL path. The child's cwd, and so every path configure prints, is the real spelling
+// (macOS spells the temp folder /var/... and its real path is /private/var/...), so a lexical os.tmpdir() spelling here let a
+// substring compare pass on macOS by accident (T-29li-1, the class 29li fixed in configure-migrate.test.mjs).
 function freshProject() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-cfg-'));
+  const tmp = fs.realpathSync.native(os.tmpdir());
+  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(tmp, 'ct-cfg-')));
   fs.mkdirSync(path.join(dir, '.git')); // findGitRoot anchor
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-cfg-home-'));
+  const home = fs.realpathSync.native(fs.mkdtempSync(path.join(tmp, 'ct-cfg-home-')));
   return { dir, home };
+}
+// True when out names the path p as a whole path: the character before the match is not a path character, so a longer path that
+// merely ends with p (/private/var/x ends with /var/x) does not count. includes() alone cannot tell the two apart.
+function namesPath(out, p) {
+  for (let i = out.indexOf(p); i !== -1; i = out.indexOf(p, i + 1)) {
+    if (i === 0 || !/[A-Za-z0-9_.~/\\-]/.test(out[i - 1])) return true;
+  }
+  return false;
 }
 const globalPath = (home) => path.join(home, '.claude', '.coaltipple.json');
 // Namespace campaign (#69+#39): on a fresh sandbox (nothing on disk yet), --project
@@ -426,7 +438,7 @@ test('UMB-133 B1 M1 case C (both legacies, no canonical): the UNREAD LEGACY-2 su
     assert.equal(fs.readFileSync(L2(p.dir) + '.superseded', 'utf8'), l2Bytes, 'its contents survive byte-for-byte -- the tool never read it, so it may not destroy it');
     assert.ok(!fs.existsSync(L1(p.dir)), 'LEGACY-1 was the migration seed: its contents live in the target, so it is removed');
     assert.match(r.stdout, /\.coaltipple\.json\.superseded/, 'stdout names where the moved-aside file went');
-    assert.ok(r.stdout.includes(L1(p.dir)), 'stdout names the removed seed legacy too (it was silent before)');
+    assert.ok(namesPath(r.stdout, L1(p.dir)), 'stdout names the removed seed legacy too (it was silent before)');
     assert.equal(stripJsonc(fs.readFileSync(projectPath(p.dir), 'utf8')).onlyInLegacy1, 'ALPHA', 'the seed content still migrated');
   } finally { cleanup(p); }
 });
@@ -442,7 +454,7 @@ test('UMB-133 B1 M1 case D (canonical + both legacies): NOTHING is deleted, both
     assert.ok(!fs.existsSync(L1(p.dir)) && !fs.existsSync(L2(p.dir)), 'neither is a candidate any more');
     assert.equal(JSON.parse(fs.readFileSync(L1(p.dir) + '.superseded', 'utf8')).onlyInLegacy1, 'ALPHA', 'LEGACY-1 was never read this run (canonical existed) -> kept, not deleted');
     assert.equal(JSON.parse(fs.readFileSync(L2(p.dir) + '.superseded', 'utf8')).onlyInLegacy2, 'BETA');
-    assert.ok(r.stdout.includes(L1(p.dir)) && r.stdout.includes(L2(p.dir)), `stdout must name both paths:\n${r.stdout}`);
+    assert.ok(namesPath(r.stdout, L1(p.dir)) && namesPath(r.stdout, L2(p.dir)), `stdout must name both paths:\n${r.stdout}`);
   } finally { cleanup(p); }
 });
 
@@ -453,7 +465,7 @@ test('UMB-133 B1 M1 case B (root-only legacy = the seed): removed, and the remov
     const r = run(p, '--project', '--updateCheckDays', '30');
     assert.equal(r.status, 0, r.stderr);
     assert.ok(!fs.existsSync(L2(p.dir)) && !fs.existsSync(L2(p.dir) + '.superseded'), 'seeded -> its contents are in the target -> plain removal, no .superseded litter');
-    assert.ok(r.stdout.includes(L2(p.dir)), 'the removal names the path (it was only implied by the Migrating line for LEGACY-1, and silent for the drop)');
+    assert.ok(namesPath(r.stdout, L2(p.dir)), 'the removal names the path (it was only implied by the Migrating line for LEGACY-1, and silent for the drop)');
     assert.match(r.stdout, /Removed/);
   } finally { cleanup(p); }
 });
