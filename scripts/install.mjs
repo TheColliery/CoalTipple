@@ -176,7 +176,7 @@ let held = null; // { lockPath, token, lost } while this run holds a lock
 class LockLost extends Error {}
 // TEST-ONLY seam (29gl): COALTIPPLE_INSTALL_TEST_PAUSE=<point>:<absolute folder> makes a run stop at the named point so a test can take its lock over while it is
 // paused: the run writes <folder>/<point>.reached, then sleeps (Atomics.wait, no busy loop) until <folder>/<point>.go exists, for at most 60 s, after which it says
-// so on stderr and goes on. Nothing is loaded or run from the variable, and with it unset (or naming another point) this returns at once: the default path is unchanged.
+// so on stderr and goes on. The marker is created exclusively, so a name that is already taken (a stale marker, a planted link) makes the seam do nothing and the run is the real call. Nothing is loaded or run from the variable, and with it unset (or naming another point) this returns at once: the default path is unchanged.
 function testPause(point) {
   const spec = process.env.COALTIPPLE_INSTALL_TEST_PAUSE;
   if (!spec) return;
@@ -185,7 +185,7 @@ function testPause(point) {
   const dir = spec.slice(i + 1);
   if (!path.isAbsolute(dir)) return;
   try {
-    fs.writeFileSync(path.join(dir, `${point}.reached`), '');
+    fs.writeFileSync(path.join(dir, `${point}.reached`), '', { flag: 'wx' }); // exclusive (T-29lv-2): an entry already at this name, a planted link included, is refused, never written through
     const go = path.join(dir, `${point}.go`);
     const cell = new Int32Array(new SharedArrayBuffer(4));
     const started = Date.now();

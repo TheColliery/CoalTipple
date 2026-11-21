@@ -144,3 +144,26 @@ test('the seam is inert with the variable unset or naming another point: an inst
   assert.equal(other.status, 0, other.stdout + other.stderr);
   assert.deepEqual(fs.readdirSync(sb.pauses), [], 'no marker file was written');
 });
+
+// T-29lv-2: the seam wrote <point>.reached with a plain writeFileSync, which FOLLOWS a link planted at that name and truncates what it points at. It now
+// creates the marker exclusively (the 'wx' flag), so any entry already there (a file, a link, a hard link) is refused and the seam runs as the real call.
+// A HARD link is the portable plant (a symbolic link needs a privilege on Windows); it shares the victim's data, so a write through it changes the victim.
+// A positive control proves the seam point is reached at all, so a clean pass is never vacuous.
+test('the seam creates its marker exclusively: a link planted at <point>.reached is never written through, and an unplanted run still writes it (T-29lv-2)', (t) => {
+  const planted = sandbox(t);
+  const victim = path.join(planted.root, 'victim.txt');
+  fs.writeFileSync(victim, 'PRECIOUS\n');
+  try { fs.linkSync(victim, path.join(planted.pauses, 'before-swap.reached')); } catch (e) { t.skip('cannot make a hard link here (' + (e.code || e.message) + ')'); return; }
+  fs.writeFileSync(path.join(planted.pauses, 'before-swap.go'), ''); // so a seam that does run does not wait for it
+  const run = (sb) => spawnSync(process.execPath, [...ARGS, path.join(sb.root, 'skills')], {
+    cwd: sb.cwd, env: sandboxEnv(sb.home, { COALTIPPLE_INSTALL_TEST_PAUSE: `before-swap:${sb.pauses}` }), encoding: 'utf8', timeout: 60000, killSignal: 'SIGKILL',
+  });
+  const a = run(planted);
+  assert.equal(a.status, 0, a.stdout + a.stderr);
+  assert.equal(fs.readFileSync(victim, 'utf8'), 'PRECIOUS\n', 'a link planted at the marker name must not be written through');
+  const clean = sandbox(t);
+  fs.writeFileSync(path.join(clean.pauses, 'before-swap.go'), '');
+  const b = run(clean);
+  assert.equal(b.status, 0, b.stdout + b.stderr);
+  assert.ok(fs.existsSync(path.join(clean.pauses, 'before-swap.reached')), 'control: with nothing planted the seam point is reached and writes its marker');
+});
