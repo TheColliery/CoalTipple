@@ -27,28 +27,19 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CONFIG_SCHEMA, validateValue } from './lib/config-schema.mjs';
-import { loadMergedConfig, globalConfigPath, projectConfigPath, projectWriteTarget, moveLegacyAside, writeConfigAtomic, containedProjectPath } from './lib/config-load.mjs';
+import { loadMergedConfig, globalConfigPath, projectConfigPath, projectWriteTarget, moveLegacyAside, writeConfigAtomic, containedProjectPath, findGitRoot } from './lib/config-load.mjs';
 import { stripJsonc } from './lib/jsonc.mjs';
-import { readConfigBounded, readConfigBoundedWithIdentity, recheckConfigIdentity, MAX_CONFIG_BYTES } from './lib/config-bound.mjs';
+import { readConfigBounded, MAX_CONFIG_BYTES } from './lib/config-bound.mjs';
+import { retireSeededLegacy } from './lib/legacy-backup.mjs';
 import { setKeyInText, assertEffective } from './lib/config-edit.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const factoryCfg = path.join(repo, 'platform-configs', '.coaltipple.json');
 
-// 29ky: true unless the NAME is provably gone (ENOENT). Any other answer, including a stat that fails for another reason,
-// counts as present, so the warning below never claims a removal it cannot show.
-function presentByName(p) {
-  try {
-    fs.lstatSync(p);
-    return true;
-  } catch (e) {
-    return e.code !== 'ENOENT';
-  }
-}
-
-// Namespace campaign (#69+#39): write-new-then-drop-old. Unlike CoalWash (no
+// Namespace campaign (#69+#39): write-new-then-retire-old. Unlike CoalWash (no
 // project-config writer at all, read-only migration), CT DOES write per-project
-// config here -- so this is the room's real move-on-write implementation. Target
+// config here -- so this is the room's real move-on-write implementation. 29mj (card BB-533): the old file
+// is RETIRED by one rename to <legacy>.bak (scripts/lib/legacy-backup.mjs), never deleted. Target
 // = the first candidate that already EXISTS among the new-shape dirs, else
 // own-dir. legacyToRemove fires WHENEVER the legacy file exists at write time --
 // not only in the legacy-only case: a shadowed legacy (new-shape AND legacy both
@@ -59,8 +50,8 @@ function presentByName(p) {
 // UMB-133: there are now TWO legacy shapes, and the target rule lives in ONE shared helper
 // (config-load.mjs projectWriteTarget, also used by install.mjs --reset). The old local copy
 // found "the" legacy as the LAST candidate by position, which a second trailing entry broke.
-// A legacy this run READ as the migration seed is removed (its contents now live in the
-// target); every other existing legacy was never opened, so it is MOVED ASIDE to
+// A legacy this run READ as the migration seed is moved to <path>.bak (its contents now live in the
+// target, and every byte it held stays with the user); every other existing legacy was never opened, so it is MOVED ASIDE to
 // <path>.superseded, never deleted -- and every path removed or moved is named on stdout
 // (UMB-133 bounce 1, MEDIUM-1: the old code deleted an unread user file in silence).
 
@@ -265,7 +256,7 @@ function main() {
   // project) -> seed from factory, unchanged from before.
   let text;
   let seededFrom = null; // the legacy file whose contents this run actually read into the target
-  let seedSnapshot = null; // 29ky: the text the seeding read returned and the identity of the ONE descriptor it read, kept for the check before the delete
+  let seedSnapshot = null; // 29mj: the text the seeding read returned, BEFORE the BOM strip below; the backup is compared with it after the move
   try {
     try {
       text = readConfigBounded(configPath);
@@ -273,9 +264,9 @@ function main() {
     } catch (readErr) {
       if (readErr.code !== 'ENOENT') throw readErr; // real read/parse failure -> fail loud below
       if (toProject && writeTarget.legacyToRemove) {
-        const seed = readConfigBoundedWithIdentity(writeTarget.legacyToRemove);
-        text = seed.text;
-        seedSnapshot = seed; // the text before the BOM strip below, so the re-read compares like with like
+        const seed = readConfigBounded(writeTarget.legacyToRemove);
+        text = seed;
+        seedSnapshot = seed; // the text before the BOM strip below, so the comparison after the move compares like with like
         parseConfig(text); // same parse-before-touch guarantee as the normal path
         seededFrom = writeTarget.legacyToRemove;
         console.log(`Migrating ${writeTarget.legacyToRemove} -> ${configPath}, applying your edits.`);
@@ -326,35 +317,20 @@ function main() {
     // only after that succeeds do we best-effort drop the legacy one -- a failed
     // delete never undoes a successful write (CoalWash's writeUpdateStamp idiom).
     if (toProject) {
+      const ceilingDir = path.dirname(findGitRoot(process.cwd())); // the folder the git probe is never allowed to walk up into
       for (const legacy of [writeTarget.legacyToRemove, ...writeTarget.legacyAlso]) {
         if (!legacy) continue;
         try {
-          // 29kl, 29ky: the delete rests on the seeding read, so the legacy file must still be what that read saw. An edit made
-          // after it is in neither file; a changed or replaced legacy file is kept, the run exits 1, the new config stands.
-          // The re-check reads through ONE descriptor (recheckConfigIdentity: fstat identity, then the text, on the same
-          // open), and the NAME's lstat must then be that same regular file (same device and inode), so a link at the name
-          // or a different file is kept. RESIDUAL WINDOW: this narrows the window, it does not close it. Node has no delete
-          // by descriptor, so a change between that lstat and the rmSync below can still be lost.
-          const rechecked = legacy === seededFrom ? recheckConfigIdentity(legacy, seedSnapshot) : null;
-          let named = null;
-          if (rechecked) { try { named = fs.lstatSync(legacy); } catch { /* the name is gone: not the same file */ } }
-          const sameFileByName = !!(rechecked && named && named.isFile() && named.dev === rechecked.dev && named.ino === rechecked.ino);
-          const changedSinceSeed = legacy === seededFrom && !sameFileByName;
-          if (changedSinceSeed) {
-            process.exitCode = 1;
-            if (presentByName(legacy)) {
-              console.warn(`Warning: ${legacy} changed while migrating; kept it. The new config at ${configPath} does not include that change; merge it by hand, then delete ${legacy}.`);
-            } else {
-              console.warn(`Warning: ${legacy} was removed by another program while migrating, after it was read. There is nothing left at that path to merge; the new config at ${configPath} holds what was read.`);
-            }
-          } else if (legacy === seededFrom) {
-            fs.rmSync(legacy, { force: true }); // read + carried into the target -> genuinely superseded
-            if (!fs.existsSync(legacy)) console.log(`Removed ${legacy} (its contents were migrated into ${configPath}).`);
+          if (legacy === seededFrom) {
+            // 29mj: read + carried into the target -> retired by ONE rename to <legacy>.bak; nothing is deleted, so an edit made to it in
+            // any window rides into the backup. A step that did not happen is said, and the exit code says it (false = said why).
+            const retired = retireSeededLegacy({ legacy, snapshot: seedSnapshot, configPath, ceilingDir, log: (m) => console.log(m), warn: (m) => console.warn(m) });
+            if (!retired) process.exitCode = 1;
           } else {
             const to = moveLegacyAside(legacy); // never opened -> keep it, just stop it being a config path
             console.log(`Moved ${legacy} -> ${to} (not read this run; it is no longer a config path and its contents are kept).`);
           }
-        } catch (e) { console.warn(`  [warn] could not retire legacy ${legacy}: ${e.message}`); }
+        } catch (e) { process.exitCode = 1; console.warn(`  [warn] could not retire legacy ${legacy}: ${e.message}`); }
       }
     }
     // Echo back the parsed effective config so the user sees the result.
