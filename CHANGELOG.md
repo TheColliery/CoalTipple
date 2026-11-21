@@ -2,6 +2,19 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.8.13] - 2026-11-22
+
+a read-only config is refused by name, never replaced
+
+A config the user made read-only is no longer replaced by a write: the run names the file, writes nothing and exits 1.
+
+### Fixed
+- **A config made read-only is refused by name, never replaced.** On POSIX a rename replaces a read-only file, so `configure.mjs`, `install.mjs --reset` and the config and ranking writers replaced a file the user had protected, without a word. Each writer now checks the target first: a file with no write bit is refused with `read-only; nothing was written`, its bytes and mode stay as they were, and the run exits 1. The migration's `<legacy>.bak` path is checked before anything is written, and a backup made read-only after that check is refused before its rename. — test: `scripts/lib/configure-readonly.test.mjs`
+
+### Changed
+- The plugin icon sits at the plugin root: `.claude-plugin/plugin.json` names `./icon.png` (it named `./.claude-plugin/icon.png` in 1.8.12). The manifest folder holds the manifest alone.
+- **Exit code, from 1.8.12:** `configure.mjs` exits 1 when a legacy file this run did not read cannot be moved aside, where it exited 0 before, and on every failure of the seeded legacy file's move. A script that runs `configure.mjs` may see a new non-zero exit.
+
 ## [1.8.12] - 2026-11-21
 
 the legacy config is kept as a backup, never removed
