@@ -25,6 +25,7 @@ import os from 'node:os';
 import { parseJsonc } from './jsonc.mjs';
 import { readConfigBounded } from './config-bound.mjs';
 import { containedPath } from './contain.mjs';
+import { refuseIfReadOnly } from './readonly-refusal.mjs'; // T-29mj-2: a target with no write bit is refused by name before any temp file exists
 import { renameWithRetry } from './rename-retry.mjs'; // the one bounded rename retry (also used by classify.mjs writeRankingAtomic)
 
 // Read one JSONC file into an object. Returns {} for any failure mode
@@ -221,6 +222,7 @@ export function moveLegacyAside(file) {
 // by monkey-patching fs.renameSync/fs.writeFileSync/fs.openSync, without spawning
 // configure.mjs as a child process and without its own main() running against test argv.
 export function writeConfigAtomic(configPath, text) {
+  refuseIfReadOnly(configPath); // 29mr: FIRST, before the temp file exists; throws EREADONLY or EINSPECT (see readonly-refusal.mjs for the residual window)
   let tmpConfigPath;
   let fd;
   for (let n = 0; ; n++) {

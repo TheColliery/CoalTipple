@@ -21,6 +21,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { gitEnv } from './git-env.mjs';
 import { readConfigBounded } from './config-bound.mjs';
+import { refuseIfReadOnly } from './readonly-refusal.mjs';
 
 const GIT_PROBE_MS = 10000;
 
@@ -53,6 +54,12 @@ export function retireSeededLegacy({ legacy, snapshot, configPath, ceilingDir, l
   const bak = `${legacy}.bak`;
   if (snapshot === null || snapshot === undefined) {
     warn(`Warning: ${legacy} was not read by this run, so nothing was moved. The new config at ${configPath} was written; check ${legacy} by hand.`);
+    return false;
+  }
+  // 29mr (T-29mj-2): configure.mjs checked this path before it wrote the new home; checked again here for a backup made read-only since. A rename over a read-only
+  // .bak would replace it on POSIX, so it is refused by name and the legacy file stays where it is.
+  try { refuseIfReadOnly(bak); } catch (e) {
+    warn(`${e.message}. ${legacy} was not moved; the new config at ${configPath} was written.`);
     return false;
   }
   const tracked = trackedByGit(legacy, ceilingDir); // before the move: afterwards the name is gone and git would answer for nothing

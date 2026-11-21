@@ -31,6 +31,7 @@ import { loadMergedConfig, globalConfigPath, projectConfigPath, projectWriteTarg
 import { stripJsonc } from './lib/jsonc.mjs';
 import { readConfigBounded, MAX_CONFIG_BYTES } from './lib/config-bound.mjs';
 import { retireSeededLegacy } from './lib/legacy-backup.mjs';
+import { refuseIfReadOnly, isRefusal } from './lib/readonly-refusal.mjs';
 import { setKeyInText, assertEffective } from './lib/config-edit.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -310,6 +311,16 @@ function main() {
     console.error(`Error: the edited config would not parse: ${e.message}`); process.exitCode = 1; return;
   }
 
+  // 29mr (T-29mj-2): a read-only config, or a read-only backup path, is refused BY NAME before anything is written: no folder, no temp file, no new home. The
+  // backup path comes first, so a refusal never follows a partial write (the new home written, then the move refused). Residual window: see readonly-refusal.mjs.
+  try {
+    if (toProject && seededFrom) refuseIfReadOnly(`${seededFrom}.bak`);
+    refuseIfReadOnly(configPath);
+  } catch (e) {
+    if (isRefusal(e)) { console.error(e.message); process.exitCode = 1; return; }
+    throw e;
+  }
+
   try {
     fs.mkdirSync(path.dirname(configPath), { recursive: true }); // global target: ensure ~/.claude exists
     writeConfigAtomic(configPath, text);
@@ -339,7 +350,7 @@ function main() {
     for (const [key] of edits) console.log(`  ${key} = ${JSON.stringify(eff[key])}`);
     if (listAfter) console.log(JSON.stringify(loadMergedConfig(), null, 2));
   } catch (e) {
-    console.error(`Error: failed to write config: ${e.message}`); process.exitCode = 1; return;
+    console.error(isRefusal(e) ? e.message : `Error: failed to write config: ${e.message}`); process.exitCode = 1; return;
   }
 }
 

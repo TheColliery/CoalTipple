@@ -12,6 +12,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { renameWithRetry } from './rename-retry.mjs';
+import { refuseIfReadOnly } from './readonly-refusal.mjs';
 import { isSafeModelName, showName } from './model-name.mjs';
 
 export const SCHEMA_VER = 1;
@@ -82,8 +83,9 @@ export function loadRanking(stateDir, currentHash) {
 // Atomic write (temp + rename) — a killed mid-write never leaves a half ranking
 // that reads as present (the Lock's partial-write guard).
 export function writeRankingAtomic(stateDir, ranking) {
-  fs.mkdirSync(stateDir, { recursive: true });
   const dest = path.join(stateDir, STATE_FILE);
+  refuseIfReadOnly(dest); // 29mr (T-29mj-2): before the state folder or the temp file is made; install.mjs catches the throw and reports it
+  fs.mkdirSync(stateDir, { recursive: true });
   const tmp = `${dest}.${process.pid}.tmp`;
   try {
     fs.writeFileSync(tmp, JSON.stringify(ranking, null, 2) + '\n', 'utf8');
