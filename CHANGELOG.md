@@ -2,6 +2,21 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.8.12] - 2026-11-21
+
+the legacy config is kept as a backup, never removed
+
+A project config moved from its old location is now kept beside it as a backup, and the plugin has an icon for its listing.
+
+### Added
+- **A plugin icon and logo.** `.claude-plugin/plugin.json` names `./.claude-plugin/icon.png` as its icon, and the logo ships as `assets/logo.svg`. Claude Code does not read the `icon` key; the plugin directory reads it when the listing is saved.
+
+### Fixed
+- **The legacy project config is moved to `<legacy>.bak`, never deleted.** Through 1.8.11, `configure.mjs --project` deleted the legacy file it had seeded from, after checking it again. It now moves that file, with one rename, to `<legacy>.bak` beside it; the run says where the backup is and whether it replaced an earlier `.bak`. The migration reads the backup back and compares it with what it read, so an edit made to the legacy file during the move is in the backup, not lost. — test: `scripts/lib/configure-migrate.test.mjs`, `scripts/lib/legacy-backup.test.mjs`
+
+### Changed
+- The 1.8.11 README sentence on the seed file's delete-and-check is superseded by the move to `.bak`.
+
 ## [1.8.11] - 2026-11-20
 
 a changed legacy config is kept during the migration
