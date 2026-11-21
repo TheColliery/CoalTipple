@@ -437,7 +437,7 @@ try {
   // the same way as PC_IGNORED_ROOTS: derive from `git ls-files` every run rather than
   // hand-adding the three missing names, which would only reproduce the defect the next time
   // a tracked top-level dir is added.
-  const PC_OUR_ROOTS_FALLBACK = new Set(['.claude-plugin', '.github', '.githooks', 'commands', 'hooks', 'platform-configs', 'plugin', 'scripts', 'skills']);
+  const PC_OUR_ROOTS_FALLBACK = new Set(['.claude-plugin', '.github', '.githooks', 'assets', 'commands', 'hooks', 'platform-configs', 'plugin', 'scripts', 'skills']);
   let pcOurRootsDerived = false;
   function pcDeriveOurRoots() {
     if (!pcHasGit) return PC_OUR_ROOTS_FALLBACK;
@@ -641,7 +641,7 @@ console.log('plugin/ dist (the clean CC plugin vs source SSoT):');
 try {
   const { checkDist } = await import(pathToFileURL(path.join(repo, 'scripts', 'build-dist.mjs')).href);
   const drift = checkDist();
-  if (!drift.length) ok('plugin/ matches source (skills + hooks + commands + manifest); no scripts/platform-configs leaked');
+  if (!drift.length) ok('plugin/ matches source (skills + hooks + commands + assets + manifest and icon); no scripts/platform-configs leaked');
   else for (const d of drift) fail(d);
 } catch (e) { fail(`plugin/ dist check: ${e.message}`); }
 

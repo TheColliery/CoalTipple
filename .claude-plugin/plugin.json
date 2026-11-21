@@ -5,6 +5,7 @@
   "author": {
     "name": "HetCreep"
   },
+  "icon": "./.claude-plugin/icon.png",
   "homepage": "https://github.com/TheColliery/CoalTipple",
   "repository": "https://github.com/TheColliery/CoalTipple",
   "license": "Apache-2.0",

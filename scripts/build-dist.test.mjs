@@ -8,16 +8,34 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildDist, checkDist, DIST_ITEMS } from './build-dist.mjs';
 
+const repoRootForIcon = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const withTempDist = (fn) => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-dist-'));
   try { return fn(tmp); } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 };
 
-test('buildDist emits ONLY the four plugin items, and checkDist finds them in sync', () => {
+test('buildDist emits ONLY the plugin items (the manifest and icon, assets, skills, hooks, commands), and checkDist finds them in sync', () => {
   withTempDist((tmp) => {
     buildDist(tmp);
-    assert.deepEqual(fs.readdirSync(tmp).sort(), ['.claude-plugin', 'commands', 'hooks', 'skills']);
+    assert.deepEqual(fs.readdirSync(tmp).sort(), ['.claude-plugin', 'assets', 'commands', 'hooks', 'skills']);
+    assert.deepEqual(fs.readdirSync(path.join(tmp, '.claude-plugin')).sort(), ['icon.png', 'plugin.json']);
+    assert.deepEqual(fs.readdirSync(path.join(tmp, 'assets')).sort(), ['logo.svg']);
     assert.deepEqual(checkDist(tmp), []);
+  });
+});
+
+// 29mj B: the icon is a binary. It is carried byte for byte, and one changed byte is stale: a binary is never EOL-normalized.
+test('the dist carries the icon and the logo byte for byte, and a single changed byte of the icon is stale', () => {
+  withTempDist((tmp) => {
+    buildDist(tmp);
+    for (const rel of [path.join('.claude-plugin', 'icon.png'), path.join('assets', 'logo.svg')]) {
+      assert.deepEqual(fs.readFileSync(path.join(tmp, rel)), fs.readFileSync(path.join(repoRootForIcon, rel)), rel + ' must be carried byte for byte');
+    }
+    const icon = path.join(tmp, '.claude-plugin', 'icon.png');
+    const bytes = fs.readFileSync(icon);
+    bytes[bytes.length - 1] ^= 0x01;
+    fs.writeFileSync(icon, bytes);
+    assert.deepEqual(checkDist(tmp), ['stale in plugin/: ' + path.join('.claude-plugin', 'icon.png')]);
   });
 });
 

@@ -505,7 +505,8 @@ test('verify.mjs: an ambient poisoned GIT_DIR never redirects this gate\'s own g
     assert.equal(r.status, 0, `the sandboxed gate must still PASS -- gitEnv() must not have broken its own git use, got:\n${r.stdout}${r.stderr}`);
     assert.doesNotMatch(r.stdout, /\(0 checked/,
       'the poisoned GIT_DIR must not have starved pointer-check down to zero citations checked');
-    assert.doesNotMatch(r.stdout, /0 ourRoots -- git-derived/,
+    // 29mj: the digit guard keeps '10 ourRoots' (the room now has ten top-level roots, assets/ among them) from matching '0 ourRoots'; the assertion still fails on a real zero.
+    assert.doesNotMatch(r.stdout, /(?<![0-9])0 ourRoots -- git-derived/,
       'the poisoned GIT_DIR must not have derived ourRoots from the DECOY repo\'s empty tree');
     assert.match(r.stdout, /\d+ ourRoots -- git-derived/,
       'ourRoots must still be git-derived from the SANDBOX (tmp), not silently degraded to the no-git fallback');
