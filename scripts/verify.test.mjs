@@ -27,7 +27,7 @@ const FALLBACK_ROOTS = (() => {
   if (!roots.length) throw new Error('verify.test.mjs: cannot read PC_OUR_ROOTS_FALLBACK from verify.mjs -- update this extraction');
   return roots;
 })();
-const VERIFY_ITEMS = [...new Set(['skills', 'hooks', 'commands', 'platform-configs', '.claude-plugin', 'plugin', 'scripts', 'CHANGELOG.md', ...FALLBACK_ROOTS])];
+const VERIFY_ITEMS = [...new Set(['skills', 'hooks', 'commands', 'platform-configs', '.claude-plugin', 'plugin', 'scripts', 'CHANGELOG.md', 'icon.png', ...FALLBACK_ROOTS])]; // icon.png (29mr): a DIST_ITEM at the plugin root, so the copy needs its source or the dist check names plugin/icon.png an orphan
 // The four root docs config-keys.mjs declares as mandatory mdFiles/keyTables/
 // pointer-check surfaces (README/SECURITY/CONTRIBUTING/PRIVACY) -- board #64's own
 // VERIFY_ITEMS list omits them (that check never reads them), but PR24 #13 turned an

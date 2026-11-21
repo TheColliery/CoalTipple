@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // CoalTipple dist build — assemble a CLEAN `plugin/` from source so the Claude Code
-// marketplace serves ONLY the plugin (skills + hooks + commands + assets + manifest and icon), never the
+// marketplace serves ONLY the plugin (skills + hooks + commands + assets + manifest and icon at the root), never the
 // repo's scripts/, platform-configs/ (other-agent install templates), .github/, or docs.
 // Mirrors CoalMine's plugin/ dist; the marketplace.json `source` points at ./plugin.
 // Run after editing skills/hooks/commands/plugin.json — `verify.mjs` FAILs on drift.
@@ -21,7 +21,7 @@ const dist = path.join(repo, 'plugin');
 // at the repo root and points here).
 export const DIST_ITEMS = [
   path.join('.claude-plugin', 'plugin.json'),
-  path.join('.claude-plugin', 'icon.png'), // 29mj: the listing icon (a binary: compared byte for byte, never EOL-normalized)
+  'icon.png', // 29mj, moved to the plugin root in 29mr: the listing icon (the manifest key is ./icon.png); a binary, compared byte for byte, never EOL-normalized
   'assets', // 29mj: assets/logo.svg, the same tile as an SVG (no manifest key names it in this room)
   'skills',
   'hooks',

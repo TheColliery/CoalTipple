@@ -14,11 +14,11 @@ const withTempDist = (fn) => {
   try { return fn(tmp); } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 };
 
-test('buildDist emits ONLY the plugin items (the manifest and icon, assets, skills, hooks, commands), and checkDist finds them in sync', () => {
+test('buildDist emits ONLY the plugin items (the manifest, the icon at the root, assets, skills, hooks, commands), and checkDist finds them in sync', () => {
   withTempDist((tmp) => {
     buildDist(tmp);
-    assert.deepEqual(fs.readdirSync(tmp).sort(), ['.claude-plugin', 'assets', 'commands', 'hooks', 'skills']);
-    assert.deepEqual(fs.readdirSync(path.join(tmp, '.claude-plugin')).sort(), ['icon.png', 'plugin.json']);
+    assert.deepEqual(fs.readdirSync(tmp).sort(), ['.claude-plugin', 'assets', 'commands', 'hooks', 'icon.png', 'skills']);
+    assert.deepEqual(fs.readdirSync(path.join(tmp, '.claude-plugin')).sort(), ['plugin.json'], 'nothing but the manifest stays inside .claude-plugin/');
     assert.deepEqual(fs.readdirSync(path.join(tmp, 'assets')).sort(), ['logo.svg']);
     assert.deepEqual(checkDist(tmp), []);
   });
@@ -28,14 +28,14 @@ test('buildDist emits ONLY the plugin items (the manifest and icon, assets, skil
 test('the dist carries the icon and the logo byte for byte, and a single changed byte of the icon is stale', () => {
   withTempDist((tmp) => {
     buildDist(tmp);
-    for (const rel of [path.join('.claude-plugin', 'icon.png'), path.join('assets', 'logo.svg')]) {
+    for (const rel of ['icon.png', path.join('assets', 'logo.svg')]) {
       assert.deepEqual(fs.readFileSync(path.join(tmp, rel)), fs.readFileSync(path.join(repoRootForIcon, rel)), rel + ' must be carried byte for byte');
     }
-    const icon = path.join(tmp, '.claude-plugin', 'icon.png');
+    const icon = path.join(tmp, 'icon.png');
     const bytes = fs.readFileSync(icon);
     bytes[bytes.length - 1] ^= 0x01;
     fs.writeFileSync(icon, bytes);
-    assert.deepEqual(checkDist(tmp), ['stale in plugin/: ' + path.join('.claude-plugin', 'icon.png')]);
+    assert.deepEqual(checkDist(tmp), ['stale in plugin/: icon.png']);
   });
 });
 
