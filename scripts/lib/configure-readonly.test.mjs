@@ -123,7 +123,9 @@ test('writeConfigAtomic refuses a target with no write bit and leaves no temp fi
 
 test('an lstat that fails with anything but ENOENT is said as could-not-be-inspected with file advice, and nothing is written', (t) => {
   const c = makeCase(t);
-  const target = path.join(c.dir, 'cfg.json');
+  // 29mr redfix: the target sits under a folder named "folders" on EVERY platform, as macOS's temp root (/private/var/folders/...) does, so the advice check below
+  // is exercised with that word inside the path everywhere, not only on the one runner where the temp root happens to carry it.
+  const target = path.join(c.dir, 'folders', 'cfg.json');
   c.put(target, 'KEEP\n', 0o644);
   const real = fs.lstatSync;
   fs.lstatSync = function lstatSyncStub(p, ...rest) {
@@ -131,10 +133,11 @@ test('an lstat that fails with anything but ENOENT is said as could-not-be-inspe
     return real.call(fs, p, ...rest);
   };
   try {
-    assert.throws(() => writeConfigAtomic(target, 'NEW\n'), (e) => e.code === 'EINSPECT' && /could not be inspected \(EIO\)/.test(e.message) && e.message.includes(target) && /nothing was written/.test(e.message) && !/folder/i.test(e.message));
+    // the advice is judged WITHOUT the path: a path may contain the word (macOS: /private/var/folders/...), and the check is about the advice text
+    assert.throws(() => writeConfigAtomic(target, 'NEW\n'), (e) => e.code === 'EINSPECT' && /could not be inspected \(EIO\)/.test(e.message) && e.message.includes(target) && /nothing was written/.test(e.message) && !/folder/i.test(e.message.split(target).join('')));
   } finally { fs.lstatSync = real; }
   assert.equal(fs.readFileSync(target, 'utf8'), 'KEEP\n');
-  assert.deepEqual(fs.readdirSync(c.dir).filter((n) => n.includes('.tmp')), []);
+  assert.deepEqual(fs.readdirSync(path.dirname(target)).filter((n) => n.includes('.tmp')), []);
 });
 
 test('an absent target is not refused: ENOENT means nothing to protect, and the config is created', (t) => {
