@@ -267,6 +267,6 @@ test('a read-only legacy config is still moved to .bak, and the one success line
     assert.equal(r.status, 0, `exit ${r.status}; stderr: ${r.stderr.trim()}`);
     const hits = lines(r).filter((l) => l.includes(plain.bak));
     assert.equal(hits.length, 1);
-    assert.ok(!/read-only/i.test(hits[0]), `a writable legacy's line must not say read-only; got:\n${hits[0]}`);
+    assert.ok(!/read-only/i.test(hits[0].split(plain.bak).join('').split(plain.target).join('')), `a writable legacy's line must not say read-only; got:\n${hits[0]}`);
   } finally { removeWork(plain.work); }
 });
