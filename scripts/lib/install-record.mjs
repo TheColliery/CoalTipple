@@ -28,7 +28,8 @@ export function loadInstallRecord(home = os.homedir()) {
   const file = recordFile(home);
   // 29ob (T-29nw-1): the record's own folder is the root, so ONE lstat of the file refuses a link (ELINK) and is the identity the opened handle is compared with
   // (dev and ino, config-bound.mjs openChecked). The separate lstat that used to stand here took its look at a different moment than the read's own identity did, so a name
-  // swapped for a link between the two was followed. Missing, link, swapped or unreadable all read as NONE.
+  // swapped for a link between the two was followed. Missing, link, unreadable and (where the volume reports an inode) swapped all read as NONE; on a volume that reports inode 0
+  // the compare is skipped (openChecked), so that leg is the old check by name and a name swapped after the lstat is read.
   let raw;
   try { raw = readConfigBounded(file, recordDir(home)); } catch { return { state: 'none', record: emptyRecord() }; }
   let parsed;
@@ -62,6 +63,8 @@ export function folderHashes(dir) {
       const key = rel === '' ? name : `${rel}/${name}`;
       const st = fs.lstatSync(child, { bigint: true });
       if (st.isSymbolicLink()) fail();
+      // STATED LIMIT (29ob F-1): a sub-folder that passes the lstat above and is swapped for a junction or directory link before walk() reads it is walked through, and the files
+      // outside are hashed into the proof. Node's fs offers no handle-relative walk on any platform (29np), so this stays; only a writer of the skill folder can race it.
       if (st.isDirectory()) { walk(child, key); continue; }
       if (!st.isFile()) fail();
       // 29ob (T-29nw-2): the check (the lstat above) and the open are in this one function, and the opened handle is compared with that lstat on dev AND ino (bigint): a
