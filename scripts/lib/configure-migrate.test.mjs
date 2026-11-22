@@ -238,3 +238,35 @@ test('a git-tracked legacy config: the run tells the user to commit its removal,
     assert.ok(!fs.existsSync(path.join(w.dir, '.gitignore')), 'nothing is gitignored for the user');
   } finally { removeWork(w.work); }
 });
+
+// 29nf (main's ruling 6, BB-533): a legacy config the user made read-only is still moved to .bak, and the one success line says the old file was read-only,
+// so the user is not surprised to find a protected file gone from its old name. A writable legacy's line carries no such words.
+// The mode is asserted, never EACCES; on Windows the read-only attribute reads as mode 0o444, which the first assert below proves on the running platform.
+test('a read-only legacy config is still moved to .bak, and the one success line says the old file was read-only; a writable one says nothing of it', () => {
+  const w = makeWork();
+  try {
+    fs.chmodSync(w.legacy, 0o444);
+    assert.equal(fs.lstatSync(w.legacy).mode & 0o222, 0, 'precondition: the legacy file has no write bit on this platform');
+    const r = migrate(w, 'none');
+    assert.equal(r.error, undefined, `spawn failed: ${r.error && r.error.code}`);
+    assert.equal(r.status, 0, `exit ${r.status}; stderr: ${r.stderr.trim()}`);
+    assert.equal(fs.existsSync(w.legacy), false, 'the legacy file is moved away');
+    assert.equal(fs.readFileSync(w.bak, 'utf8'), LEGACY_TEXT, 'the .bak holds the legacy file, byte for byte');
+    assert.equal(fs.lstatSync(w.bak).mode & 0o222, 0, 'the move keeps the file read-only, as the line says');
+    const hits = lines(r).filter((l) => l.includes(w.bak));
+    assert.equal(hits.length, 1, `exactly one line names the backup; got:\n${outputOf(r).trim()}`);
+    assert.match(hits[0], /read-only as it was/i, `the line must say the old file was read-only; got:\n${hits[0]}`);
+    assert.match(hits[0], /no earlier backup/i, 'the line keeps its earlier-backup clause');
+  } finally {
+    for (const f of [w.legacy, w.bak]) { try { fs.chmodSync(f, 0o666); } catch { /* not there */ } } // write access back before the temp root goes
+    removeWork(w.work);
+  }
+  const plain = makeWork();
+  try {
+    const r = migrate(plain, 'none');
+    assert.equal(r.status, 0, `exit ${r.status}; stderr: ${r.stderr.trim()}`);
+    const hits = lines(r).filter((l) => l.includes(plain.bak));
+    assert.equal(hits.length, 1);
+    assert.ok(!/read-only/i.test(hits[0]), `a writable legacy's line must not say read-only; got:\n${hits[0]}`);
+  } finally { removeWork(plain.work); }
+});

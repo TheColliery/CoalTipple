@@ -21,7 +21,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { gitEnv } from './git-env.mjs';
 import { readConfigBounded } from './config-bound.mjs';
-import { refuseIfReadOnly } from './readonly-refusal.mjs';
+import { refuseIfReadOnly, isNoWriteFile } from './readonly-refusal.mjs';
 
 const GIT_PROBE_MS = 10000;
 
@@ -62,6 +62,9 @@ export function retireSeededLegacy({ legacy, snapshot, configPath, ceilingDir, l
     warn(`${e.message}. ${legacy} was not moved; the new config at ${configPath} was written.`);
     return false;
   }
+  // 29nf: read before the move, since afterwards the legacy name is gone. An unreadable mode says nothing (false), never a guess.
+  let wasReadOnly = false;
+  try { wasReadOnly = isNoWriteFile(fs.lstatSync(legacy)); } catch { /* the move below reports what it finds */ }
   const tracked = trackedByGit(legacy, ceilingDir); // before the move: afterwards the name is gone and git would answer for nothing
   let hadBak = false;
   try { fs.lstatSync(bak); hadBak = true; } catch { /* absent, or unreadable: the line says "no earlier backup" only when this lstat found none */ }
@@ -91,7 +94,7 @@ export function retireSeededLegacy({ legacy, snapshot, configPath, ceilingDir, l
     trackedLine();
     return false;
   }
-  log(`Migrated the project config to ${configPath}; the old file is kept as ${bak} (${hadBak ? 'replaced an earlier backup' : 'no earlier backup'}). It is yours to keep or delete; nothing sweeps it.`);
+  log(`Migrated the project config to ${configPath}; the old file is kept as ${bak}${wasReadOnly ? ', read-only as it was' : ''} (${hadBak ? 'replaced an earlier backup' : 'no earlier backup'}). It is yours to keep or delete; nothing sweeps it.`);
   trackedLine();
   return true;
 }

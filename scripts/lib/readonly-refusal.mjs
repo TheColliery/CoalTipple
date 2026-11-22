@@ -19,6 +19,11 @@ function refusal(code, message) {
   return e;
 }
 
+// The one write-bit test of this room: a regular file whose mode has no write bit (on Windows the read-only attribute reads as 0o444).
+export function isNoWriteFile(st) {
+  return st.isFile() && (st.mode & 0o222) === 0;
+}
+
 export function refuseIfReadOnly(target) {
   let st;
   try {
@@ -27,7 +32,7 @@ export function refuseIfReadOnly(target) {
     if (e && e.code === 'ENOENT') return;
     throw refusal('EINSPECT', `FAIL ${target}: could not be inspected (${e && e.code ? e.code : 'error'}); nothing was written -- check that this file can be read and that its permissions allow you to change it`);
   }
-  if (st.isFile() && (st.mode & 0o222) === 0) {
+  if (isNoWriteFile(st)) {
     throw refusal('EREADONLY', `FAIL ${target}: read-only; nothing was written -- make the file writable if you mean to change it`);
   }
 }
