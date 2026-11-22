@@ -2,6 +2,15 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.8.15] - 2026-11-22
+
+a folder swap between walk and file check is a stated limit
+
+The one residual of the config read that the code cannot close is now stated as a limit, not as a later fix: Node has no handle-relative walk on any platform.
+
+### Security
+- **The folder-swap residual is a stated limit.** A folder on the way to a project config, swapped for a link after the folder walk and before the file's check, is still read. The code marks it at the open, and the docs say no later release closes it, because Node's fs offers no handle-relative walk on any platform. No behaviour changed; the hook copy changed its comments. The hard-link residual is unchanged.
+
 ## [1.8.14] - 2026-11-22
 
 a config read refuses a file swapped after its check
