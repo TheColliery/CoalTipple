@@ -19,6 +19,10 @@
 // leg is the old check by name, stated here and nowhere hidden.
 // A file link: with a root it is refused (the project's own files are plain files, and containedPath refuses it too); with
 // no root (the global config, which a dotfile manager may link) it is followed by stat, and the compare still binds.
+// TWO RESIDUALS, not closed here (INSPECT 29nn F-1): (1) a folder of the chain swapped for a link AFTER the walk and BEFORE the
+// file's own lstat is still read, because the lstat, the open and the fstat then all agree on the outside file; the closing fix is a
+// handle-relative walk, a later flock-wide unit (the 29nd form's open T-82). (2) A hard link PLANTED BEFORE the check is not seen
+// (the check and the handle see one inode); one swapped in AFTER the check is refused.
 import fs from 'node:fs';
 import path from 'node:path';
 
