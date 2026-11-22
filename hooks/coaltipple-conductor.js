@@ -146,7 +146,8 @@ function stripJsonc(content, counter) {
 const MAX_CONFIG_BYTES = 1024 * 1024;
 // 29nn (T, the check-then-use window): the openChecked block below is scripts/lib/config-bound.mjs's, inlined verbatim (Phoenix #9: the hook cannot import; scripts/verify.mjs fails if the
 // two drift). A PROJECT file is read with its project root: a link in the folder chain, a link at the file, or a file that is not the one lstat checked (dev and ino compared with the
-// opened handle) is REFUSED and reads as ABSENT, silently (Phoenix #4 and #13): nothing of the swapped file is read. The global file passes no root.
+// opened handle) is REFUSED and reads as ABSENT, silently (Phoenix #4 and #13): a file swapped at its own name is never read. ONE exception, a stated limit: a folder of the chain
+// swapped for a link after the walk and before the file's lstat is still read (the comment at the open below; the config-bound.mjs header). The global file passes no root.
 // <identity-read-shared: openChecked> -- the conductor inlines this block verbatim; edit it here, then mirror it there
 function openChecked(file, root) {
   const refuse = (code, why) => { const e = new Error(`${why}: ${file}`); e.code = code; return e; };
@@ -166,6 +167,8 @@ function openChecked(file, root) {
     st = fs.statSync(file, { bigint: true });
   }
   if (st.isDirectory()) throw refuse('EISDIR', 'the config is a folder');
+  // STATED LIMIT (T-82): a folder of the chain swapped for a link AFTER the walk above and BEFORE the lstat of the file is still read: the lstat, this open and the fstat then all
+  // agree on the outside file, so the compare below cannot see it. Node's fs offers no handle-relative walk on Windows or macOS (29np), so this residual stays; it is not a later fix.
   const fd = fs.openSync(file, 'r');
   try {
     const hs = fs.fstatSync(fd, { bigint: true });
