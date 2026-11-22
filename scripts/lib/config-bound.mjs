@@ -21,7 +21,7 @@
 // no root (the global config, which a dotfile manager may link) it is followed by stat, and the compare still binds.
 // TWO RESIDUALS, not closed here (INSPECT 29nn F-1): (1) a folder of the chain swapped for a link AFTER the walk and BEFORE the
 // file's own lstat is still read, because the lstat, the open and the fstat then all agree on the outside file. Node's fs offers no
-// handle-relative walk on Windows or macOS (29np), so this residual (the 29nd form's T-82) is a stated limit, marked at the open below. (2) A hard link PLANTED BEFORE the check is not seen
+// handle-relative walk on any platform (29np), so this residual (the 29nd form's T-82) is a stated limit, marked at the open below. (2) A hard link PLANTED BEFORE the check is not seen
 // (the check and the handle see one inode); one swapped in AFTER the check is refused.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -48,7 +48,8 @@ function openChecked(file, root) {
   }
   if (st.isDirectory()) throw refuse('EISDIR', 'the config is a folder');
   // STATED LIMIT (T-82): a folder of the chain swapped for a link AFTER the walk above and BEFORE the lstat of the file is still read: the lstat, this open and the fstat then all
-  // agree on the outside file, so the compare below cannot see it. Node's fs offers no handle-relative walk on Windows or macOS (29np), so this residual stays; it is not a later fix.
+  // agree on the outside file, so the compare below cannot see it. Node's fs offers no handle-relative walk on any platform (CoalLedger's measurement 29np; Linux's only close, /proc/self/fd,
+  // is not taken), so this residual stays; it is not a later fix.
   const fd = fs.openSync(file, 'r');
   try {
     const hs = fs.fstatSync(fd, { bigint: true });
