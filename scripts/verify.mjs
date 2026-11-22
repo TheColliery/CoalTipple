@@ -309,6 +309,30 @@ try {
   }
 } catch (e) { fail(`containment sync: ${e.message}`); }
 
+// 29nn (T, the check-then-use window): the conductor INLINES scripts/lib/config-bound.mjs's openChecked block (Phoenix #9), the one place the lstat walk, the kind gate and the dev/ino
+// compare of the handle live. A copy that drifts reads green everywhere else, so the block is held byte-equal across the lib, the conductor and its plugin/ mirror.
+console.log('identity-read sync (conductor inline vs config-bound.mjs openChecked):');
+try {
+  const OPEN = '// <identity-read-shared: openChecked>';
+  const CLOSE = '// </identity-read-shared: openChecked>';
+  const region = (text) => {
+    const a = text.indexOf(OPEN);
+    const b = text.indexOf(CLOSE);
+    return a === -1 || b === -1 || b < a ? null : text.slice(a, b + CLOSE.length).replace(/\r\n/g, '\n');
+  };
+  const lib = region(fs.readFileSync(path.join(repo, 'scripts', 'lib', 'config-bound.mjs'), 'utf8'));
+  if (lib === null) fail('scripts/lib/config-bound.mjs lost its <identity-read-shared> markers');
+  for (const rel of [['hooks', 'coaltipple-conductor.js'], ['plugin', 'hooks', 'coaltipple-conductor.js']]) {
+    const file = path.join(repo, ...rel);
+    if (!fs.existsSync(file)) { if (rel[0] === 'hooks') fail(`${rel.join('/')} is missing`); continue; } // the plugin/ mirror is built by build-dist.mjs; the dist check owns its absence
+    const inlined = region(fs.readFileSync(file, 'utf8'));
+    if (lib === null) continue;
+    if (inlined === null) fail(`${rel.join('/')} lost its <identity-read-shared> markers -- the identity-checked read is gone from the hook`);
+    else if (lib !== inlined) fail(`${rel.join('/')} openChecked block DRIFTED from scripts/lib/config-bound.mjs (edit the lib, then mirror it verbatim)`);
+    else ok(`${rel.join('/')} openChecked block == config-bound.mjs (${lib.split('\n').length} lines)`);
+  }
+} catch (e) { fail(`identity-read sync: ${e.message}`); }
+
 // The JSONC strip call (regex AND callback) and the config byte bound live in scripts/lib and are inlined in the conductor (Phoenix #9) and its plugin/ mirror.
 // A copy that drifts reads green everywhere else: jsonc-sync.mjs names it. Also pinned by scripts/lib/jsonc-linear.test.mjs.
 console.log('JSONC strip + byte bound sync (jsonc.mjs, config-bound.mjs vs the conductor and its plugin/ mirror):');

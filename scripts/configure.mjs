@@ -255,17 +255,20 @@ function main() {
   // INSPECT 2026-08-08: mode:"off" came back "auto", fableConsent's
   // always-this-project record was destroyed). Neither exists (genuinely fresh
   // project) -> seed from factory, unchanged from before.
+  // 29nn (T): a project file is read with the project root, so a link swapped in after the containment check above is refused at the open (ECHANGED/ELINK) and
+  // the run stops with nothing written; the global config (and the factory template) take no root.
+  const readRoot = toProject ? findGitRoot(process.cwd()) : null;
   let text;
   let seededFrom = null; // the legacy file whose contents this run actually read into the target
   let seedSnapshot = null; // 29mj: the text the seeding read returned, BEFORE the BOM strip below; the backup is compared with it after the move
   try {
     try {
-      text = readConfigBounded(configPath);
+      text = readConfigBounded(configPath, readRoot);
       parseConfig(text); // validate it parses before we touch it
     } catch (readErr) {
       if (readErr.code !== 'ENOENT') throw readErr; // real read/parse failure -> fail loud below
       if (toProject && writeTarget.legacyToRemove) {
-        const seed = readConfigBounded(writeTarget.legacyToRemove);
+        const seed = readConfigBounded(writeTarget.legacyToRemove, readRoot);
         text = seed;
         seedSnapshot = seed; // the text before the BOM strip below, so the comparison after the move compares like with like
         parseConfig(text); // same parse-before-touch guarantee as the normal path

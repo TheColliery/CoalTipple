@@ -144,16 +144,50 @@ function stripJsonc(content, counter) {
 // A config file over this many bytes is never read whole and never stripped: it is named (too large) and skipped.
 // Held equal with scripts/lib/config-bound.mjs by scripts/lib/jsonc-sync.mjs.
 const MAX_CONFIG_BYTES = 1024 * 1024;
-function readCfgFile(file) {
+// 29nn (T, the check-then-use window): the openChecked block below is scripts/lib/config-bound.mjs's, inlined verbatim (Phoenix #9: the hook cannot import; scripts/verify.mjs fails if the
+// two drift). A PROJECT file is read with its project root: a link in the folder chain, a link at the file, or a file that is not the one lstat checked (dev and ino compared with the
+// opened handle) is REFUSED and reads as ABSENT, silently (Phoenix #4 and #13): nothing of the swapped file is read. The global file passes no root.
+// <identity-read-shared: openChecked> -- the conductor inlines this block verbatim; edit it here, then mirror it there
+function openChecked(file, root) {
+  const refuse = (code, why) => { const e = new Error(`${why}: ${file}`); e.code = code; return e; };
+  if (root != null) {
+    const lexRoot = path.resolve(root);
+    const rel = path.relative(lexRoot, path.dirname(path.resolve(file)));
+    if (rel === '..' || rel.startsWith('..' + path.sep) || path.isAbsolute(rel)) throw refuse('ELINK', 'the config is not under its project root');
+    let cur = lexRoot;
+    for (const seg of rel.split(path.sep).filter(Boolean)) {
+      cur = path.join(cur, seg);
+      if (!fs.lstatSync(cur).isDirectory()) throw refuse('ELINK', 'a folder on the way to the config is a link or not a folder'); // ENOENT propagates: absent
+    }
+  }
+  let st = fs.lstatSync(file, { bigint: true });
+  if (st.isSymbolicLink()) {
+    if (root != null) throw refuse('ELINK', 'the config file is a link');
+    st = fs.statSync(file, { bigint: true });
+  }
+  if (st.isDirectory()) throw refuse('EISDIR', 'the config is a folder');
+  const fd = fs.openSync(file, 'r');
+  try {
+    const hs = fs.fstatSync(fd, { bigint: true });
+    if (st.ino !== 0n && hs.ino !== 0n && (hs.dev !== st.dev || hs.ino !== st.ino)) throw refuse('ECHANGED', 'the config file is not the one that was checked (it changed between the check and the open)');
+    return { fd, size: Number(hs.size) };
+  } catch (e) {
+    fs.closeSync(fd);
+    throw e;
+  }
+}
+// </identity-read-shared: openChecked>
+function readCfgFile(file, root) {
   let content;
   try {
-    const fd = fs.openSync(file, 'r');
+    const { fd, size } = openChecked(file, root);
     try {
-      if (fs.fstatSync(fd).size > MAX_CONFIG_BYTES) return { cfg: null, reason: 'too large' };
+      if (size > MAX_CONFIG_BYTES) return { cfg: null, reason: 'too large' };
       content = fs.readFileSync(fd, 'utf8');
     } finally { fs.closeSync(fd); }
   } catch (e) {
     if (e.code === 'ENOENT') return { cfg: null, reason: null }; // absent -- nothing to report
+    if (e.code === 'ELINK' || e.code === 'ECHANGED') return { cfg: null, reason: null }; // refused (a link, or a file swapped in after the check): read as absent, never reported
     if (e.code === 'EISDIR') return { cfg: null, reason: 'a directory' };
     return { cfg: null, reason: 'unreadable' }; // EACCES / EPERM / any other read failure
   }
@@ -214,7 +248,7 @@ function loadCfg() {
   // A candidate whose chain holds a link is skipped as if it did not exist (never read); the first contained, EXISTING candidate wins.
   const hitIdx = candidates.findIndex((c) => containedPath(root, c) !== null && fs.existsSync(c));
   const projectPath = hitIdx === -1 ? null : candidates[hitIdx];
-  const { cfg: project, reason: projectReason } = projectPath === null ? { cfg: null, reason: null } : readCfgFile(projectPath);
+  const { cfg: project, reason: projectReason } = projectPath === null ? { cfg: null, reason: null } : readCfgFile(projectPath, root);
   _walk = { root, candidates, hitIdx, globalPath, globalReason, projectReason };
   // Merge only when something loaded; keep null (= "no config") if neither did, so
   // the existing `if (cfg && ...)` guards in main() behave exactly as before.

@@ -82,7 +82,7 @@ export function retireSeededLegacy({ legacy, snapshot, configPath, ceilingDir, l
   const trackedLine = () => { if (tracked) log(`${legacy} is tracked by git: commit its removal (git add -A -- ${legacy}). ${bak} is untracked and yours to keep or delete.`); };
   let back = null;
   try {
-    if (fs.lstatSync(bak).isFile()) back = readConfigBounded(bak); // a regular file only: a link planted at the name is never followed
+    if (fs.lstatSync(bak).isFile()) back = readConfigBounded(bak, path.dirname(bak)); // a regular file only: a link planted at the name is never followed; 29nn: the handle is compared with the lstat, so a file swapped in at the name is refused (read as unreadable below)
   } catch { /* back stays null */ }
   if (back === null) {
     warn(`Warning: moved ${legacy} to ${bak}, but could not read the backup back to compare it with what was migrated. The new config at ${configPath} was written; check ${bak} by hand.`);

@@ -27,6 +27,7 @@ const TESTS = [
   'scripts/lib/config-load.test.mjs',
   'scripts/lib/configure.test.mjs',
   'scripts/lib/configure-migrate.test.mjs',
+  'scripts/lib/config-read-toctou.test.mjs',
   'scripts/lib/legacy-backup.test.mjs',
   'scripts/lib/configure-readonly.test.mjs',
   'scripts/lib/config-edit.test.mjs',

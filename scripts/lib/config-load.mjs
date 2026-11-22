@@ -33,9 +33,11 @@ import { renameWithRetry } from './rename-retry.mjs'; // the one bounded rename 
 // An over-size file is never read whole: readConfigBounded refuses it before any content is read (config-bound.mjs).
 // parseJsonc drops __proto__/constructor/prototype at parse (proto-pollution guard,
 // SKILL-REPO-PATTERN.md Layer 3 — flock-canonical; this file was the one room missing it).
-function readJsonc(file) {
+// 29nn (T): a PROJECT file is read with its project root, so a link swapped in after the containment check is refused at the open (ECHANGED/ELINK) and
+// reads as absent here; the global file passes no root (config-bound.mjs).
+function readJsonc(file, root) {
   try {
-    let content = readConfigBounded(file);
+    let content = readConfigBounded(file, root);
     if (content.charCodeAt(0) === 0xfeff) content = content.slice(1); // BOM-safe
     const parsed = parseJsonc(content);
     return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
@@ -357,7 +359,7 @@ function applySaferValueWins(merged, global, project) {
 export function loadMergedConfig({ cwd = process.cwd(), home = os.homedir() } = {}) {
   const global = readJsonc(globalConfigPath(home));
   const projectFile = resolveProjectConfig(cwd).path;
-  const project = projectFile ? readJsonc(projectFile) : {};
+  const project = projectFile ? readJsonc(projectFile, findGitRoot(cwd)) : {};
   const merged = { ...global, ...project };
   if (isPlainObj(global.modelTiers) || isPlainObj(project.modelTiers)) {
     merged.modelTiers = {
