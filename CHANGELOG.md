@@ -2,6 +2,18 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.8.14] - 2026-11-22
+
+a config read refuses a file swapped after its check
+
+A project config file swapped for a link or another file after its check is refused, never read as the other file.
+
+### Fixed
+- **A project config read no longer trusts the name it checked.** Through 1.8.13, the config readers checked a path and then opened it, so a file swapped for a link or another file in between was read as the other file's bytes. Each read now opens the file, compares the opened file's device and inode with the file it checked, and refuses on a mismatch. The conductor reads the project config as absent, with no output, and exits 0; `configure.mjs` prints `Error: cannot read/parse config` with the reason, writes nothing and exits 1. — test: `scripts/lib/config-read-toctou.test.mjs`
+
+### Security
+- **A config file swapped in after its check is refused.** The file's own name is checked, then the opened file is compared with it, so a file swapped in after that check is refused. Two residuals stay, named: a folder on the way to the config swapped for a link after the folder walk is still read (a later unit); and a hard link planted at the config name before the check is not seen (one swapped in after the check is refused). The write window named in SECURITY.md is not changed by this release.
+
 ## [1.8.13] - 2026-11-22
 
 a read-only config is refused by name, never replaced
