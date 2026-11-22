@@ -26,10 +26,11 @@ const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArr
 // { state: 'ok' | 'none' | 'newer', record } . 'none' covers a missing, link, unreadable or malformed file; 'newer' a schema above ours.
 export function loadInstallRecord(home = os.homedir()) {
   const file = recordFile(home);
-  try { if (fs.lstatSync(file).isSymbolicLink()) return { state: 'none', record: emptyRecord() }; }
-  catch { return { state: 'none', record: emptyRecord() }; }
+  // 29ob (T-29nw-1): the record's own folder is the root, so ONE lstat of the file refuses a link (ELINK) and is the identity the opened handle is compared with
+  // (dev and ino, config-bound.mjs openChecked). The separate lstat that used to stand here took its look at a different moment than the read's own identity did, so a name
+  // swapped for a link between the two was followed. Missing, link, swapped or unreadable all read as NONE.
   let raw;
-  try { raw = readConfigBounded(file); } catch { return { state: 'none', record: emptyRecord() }; }
+  try { raw = readConfigBounded(file, recordDir(home)); } catch { return { state: 'none', record: emptyRecord() }; }
   let parsed;
   try { parsed = JSON.parse(raw.startsWith(BOM) ? raw.slice(1) : raw); } catch { return { state: 'none', record: emptyRecord() }; }
   if (!isPlainObject(parsed)) return { state: 'none', record: emptyRecord() };
@@ -46,14 +47,7 @@ export function saveInstallRecord(home, record) {
 }
 
 // Each file is read through an open plus fstat bound of MAX_CONFIG_BYTES; a file over it makes the folder unprovable.
-const MAX_FILE_BYTES = MAX_CONFIG_BYTES;
-function readBounded(file) {
-  const fd = fs.openSync(file, 'r');
-  try {
-    if (fs.fstatSync(fd).size > MAX_FILE_BYTES) return null;
-    return fs.readFileSync(fd);
-  } finally { fs.closeSync(fd); }
-}
+const MAX_FILE_BYTES = BigInt(MAX_CONFIG_BYTES);
 
 // The sha256 of every file under `dir`, keyed by its path inside `dir` with forward slashes. null when anything under it is a link,
 // a non-file, an empty sub-folder, a file over the bound, or cannot be read: a folder with any of those is proven by nothing.
@@ -66,12 +60,20 @@ export function folderHashes(dir) {
     for (const name of entries) {
       const child = path.join(abs, name);
       const key = rel === '' ? name : `${rel}/${name}`;
-      const st = fs.lstatSync(child);
+      const st = fs.lstatSync(child, { bigint: true });
       if (st.isSymbolicLink()) fail();
       if (st.isDirectory()) { walk(child, key); continue; }
       if (!st.isFile()) fail();
-      const bytes = readBounded(child);
-      if (bytes === null) fail();
+      // 29ob (T-29nw-2): the check (the lstat above) and the open are in this one function, and the opened handle is compared with that lstat on dev AND ino (bigint): a
+      // child swapped for another file in between makes the folder unprovable, as a link does. An ino of 0 on either side (a filesystem that reports none) skips the compare.
+      const fd = fs.openSync(child, 'r');
+      let bytes;
+      try {
+        const hs = fs.fstatSync(fd, { bigint: true });
+        if (st.ino !== 0n && hs.ino !== 0n && (hs.dev !== st.dev || hs.ino !== st.ino)) fail();
+        if (hs.size > MAX_FILE_BYTES) fail();
+        bytes = fs.readFileSync(fd);
+      } finally { fs.closeSync(fd); }
       out[key] = createHash('sha256').update(bytes).digest('hex');
     }
   };
