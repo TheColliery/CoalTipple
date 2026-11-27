@@ -110,16 +110,23 @@ test('4. under a record, an unrecorded byte-equal folder is kept by install AND 
   const dest = path.join(sb.root, 'skills');
   fs.mkdirSync(dest, { recursive: true });
   const folder = copyShipped(path.join(dest, 'coaltipple'));
-  const rec = readRecord(sb);
-  rec.targets[realDest(dest)] = { version: '0.0.0', skills: {} }; // an entry for this target that names no coaltipple
-  fs.writeFileSync(recordPath(sb), JSON.stringify(rec, null, 2) + '\n', 'utf8');
+  const plant = () => { // an entry for this target that names no coaltipple
+    const rec = readRecord(sb);
+    rec.targets[realDest(dest)] = { version: '0.0.0', skills: {} };
+    fs.writeFileSync(recordPath(sb), JSON.stringify(rec, null, 2) + '\n', 'utf8');
+  };
+  plant();
   const before = hashFolder(folder);
   const install = run(sb, dest);
   assert.equal(install.status, 1, install.stdout + install.stderr);
   assert.deepEqual(hashFolder(folder), before, 'install left the bytes alone');
+  // T-29ah-1: the install run drops an entry that names nothing, so the uninstall leg plants it again; without this it ran with no entry at all.
+  plant();
+  assert.deepEqual(readRecord(sb).targets[realDest(dest)], { version: '0.0.0', skills: {} }, 'the uninstall leg runs under the planted entry');
   const uninstall = run(sb, '--uninstall', dest);
   assert.equal(uninstall.status, 1, uninstall.stdout + uninstall.stderr);
   assert.deepEqual(hashFolder(folder), before, 'uninstall left the bytes alone');
+  assert.deepEqual(readRecord(sb).targets[realDest(dest)], { version: '0.0.0', skills: {} }, 'a kept folder leaves the planted entry as it was');
 });
 
 test('5. uninstall: a recorded folder is removed and its entry dropped; a byte-equal folder with no record is kept; an empty folder with no record is removed', (t) => {
