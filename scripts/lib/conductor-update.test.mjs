@@ -370,6 +370,9 @@ test('T-29ar-7: a hard link planted at the per-pid temp name is refused -- the o
     assert.equal(r.stderr, '', 'no stderr (Phoenix #13)');
     assert.equal(fs.readFileSync(victim, 'utf8'), 'VICTIM-BYTES', 'the outside file is untouched');
     assert.notEqual(readStamp(home), todayISO(), 'a refused open writes no stamp');
+    // 29sr F-4: the finally branch removes only a temp THIS call created, so the entry someone else planted is still there.
+    const planted = fs.readdirSync(stampDir).filter((n) => n.startsWith('update-check.') && n.endsWith('.tmp') && /^[0-9]+$/.test(n.slice('update-check.'.length, -'.tmp'.length)));
+    assert.equal(planted.length, 1, 'the planted per-pid entry is still there');
   } finally { fs.rmSync(home, { recursive: true, force: true }); fs.rmSync(outside, { recursive: true, force: true }); }
 });
 

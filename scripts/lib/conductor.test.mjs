@@ -65,7 +65,9 @@ test('SessionStart honors cfg.language -> directive names the language + keeps t
     fs.mkdirSync(path.join(tmp, '.git'));
     fs.mkdirSync(path.join(tmp, '.claude'), { recursive: true });
     fs.writeFileSync(path.join(tmp, '.claude', '.coaltipple.json'), JSON.stringify({ language: 'th' }));
-    const r = run({ hook_event_name: 'SessionStart' }, tmp, tmp); // empty home -> no global layer
+    // No home argument: EMPTY_HOME, a folder apart from the project. Passing tmp as home made <tmp>/.claude/.coaltipple.json BOTH the global
+    // file and a legacy project candidate, so the global layer alone could satisfy this leg (29sr F-2).
+    const r = run({ hook_event_name: 'SessionStart' }, tmp);
     assert.equal(r.status, 0);
     assert.match(r.stdout, /Respond to the user in Thai/);
     assert.match(r.stdout, /NEVER translate technical terms/);
@@ -191,7 +193,7 @@ test('UserPromptSubmit honors enableRouting:false -> fully silent (the always-on
     fs.mkdirSync(path.join(tmp, '.git'));
     fs.mkdirSync(path.join(tmp, '.claude'), { recursive: true });
     fs.writeFileSync(path.join(tmp, '.claude', '.coaltipple.json'), JSON.stringify({ enableRouting: false }));
-    const r = run({ hook_event_name: 'UserPromptSubmit', prompt: 'fix the race condition in the mutex' }, tmp, tmp);
+    const r = run({ hook_event_name: 'UserPromptSubmit', prompt: 'fix the race condition in the mutex' }, tmp); // EMPTY_HOME: only the PROJECT layer says false (29sr F-2)
     assert.equal(r.status, 0);
     assert.equal(r.stdout, '');
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
@@ -265,7 +267,7 @@ test('enableRouting:false (project) -> fully silent', () => {
     fs.mkdirSync(path.join(tmp, '.git'));
     fs.mkdirSync(path.join(tmp, '.claude'), { recursive: true });
     fs.writeFileSync(path.join(tmp, '.claude', '.coaltipple.json'), JSON.stringify({ enableRouting: false }));
-    const r = run({ hook_event_name: 'SessionStart' }, tmp, tmp); // empty home -> no global layer
+    const r = run({ hook_event_name: 'SessionStart' }, tmp); // EMPTY_HOME, apart from the project: only the PROJECT layer says false (29sr F-2)
     assert.equal(r.status, 0);
     assert.equal(r.stdout, '');
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
@@ -839,3 +841,21 @@ test('T-29ar-6: a non-boolean project enableRouting under a global false never r
     assert.equal(r.stdout, '');
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); }
 });
+
+// 29sr F-3: with NO global file the conductor's clamp must not touch the missing global layer. A project true over no global
+// is the schema default (routing on), so SessionStart prints the contract; a TypeError there would be swallowed (Phoenix #4)
+// and read as routing off.
+for (const key of ['enableRouting', 'routing']) {
+  test(`T-29ar-6: with no global file, a project ${key}:true leaves routing on -- SessionStart prints the contract`, () => {
+    const tmp = mk();
+    try {
+      fs.mkdirSync(path.join(tmp, '.git'));
+      fs.mkdirSync(path.join(tmp, '.claude'), { recursive: true });
+      fs.writeFileSync(path.join(tmp, '.claude', '.coaltipple.json'), JSON.stringify({ [key]: true }));
+      const r = run({ hook_event_name: 'SessionStart' }, tmp); // EMPTY_HOME: no global layer at all
+      assert.equal(r.status, 0);
+      assert.equal(r.stderr, '');
+      assert.match(r.stdout, /\[CoalTipple\].*routing active/);
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+  });
+}
