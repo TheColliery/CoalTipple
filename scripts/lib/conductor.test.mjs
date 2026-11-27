@@ -808,3 +808,34 @@ test('UserPromptSubmit: the hyphenated hot forms still fire on their own, at a s
     }
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 });
+
+// T-29ar-6 (hooks-safety.md §9): the conductor's own merge clamps enableRouting and the legacy `routing` key lower-only,
+// in step with scripts/lib/config-load.mjs (SAFER_LOWER_ONLY in both, each with a keep-in-sync comment).
+for (const [key, ev] of [['enableRouting', 'SessionStart'], ['enableRouting', 'UserPromptSubmit'], ['routing', 'SessionStart']]) {
+  test(`T-29ar-6: a project ${key}:true cannot beat a global ${key}:false -- ${ev} stays silent`, () => {
+    const tmp = mk();
+    const home = mkHomeGlobal({ [key]: false });
+    try {
+      fs.mkdirSync(path.join(tmp, '.git'));
+      fs.mkdirSync(path.join(tmp, '.claude'), { recursive: true });
+      fs.writeFileSync(path.join(tmp, '.claude', '.coaltipple.json'), JSON.stringify({ [key]: true }));
+      const r = run({ hook_event_name: ev, prompt: 'refactor the parser' }, tmp, home);
+      assert.equal(r.status, 0);
+      assert.equal(r.stderr, '');
+      assert.equal(r.stdout, '', 'a cloned-repo project config cannot turn routing back on');
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); }
+  });
+}
+
+test('T-29ar-6: a non-boolean project enableRouting under a global false never raises -- SessionStart stays silent', () => {
+  const tmp = mk();
+  const home = mkHomeGlobal({ enableRouting: false });
+  try {
+    fs.mkdirSync(path.join(tmp, '.git'));
+    fs.mkdirSync(path.join(tmp, '.claude'), { recursive: true });
+    fs.writeFileSync(path.join(tmp, '.claude', '.coaltipple.json'), JSON.stringify({ enableRouting: 'true' }));
+    const r = run({ hook_event_name: 'SessionStart' }, tmp, home);
+    assert.equal(r.status, 0);
+    assert.equal(r.stdout, '');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); fs.rmSync(home, { recursive: true, force: true }); }
+});

@@ -222,6 +222,10 @@ const SAFER_ENUM = { mode: ['off', 'delegation', 'escalation', 'auto'], updateMo
 // install). fableConsent has no entry here at all (see the header comment above), so it
 // never needed this and isn't part of the discussion the config-load.mjs comment records.
 const SCHEMA_DEFAULT_ENUM = { mode: 'auto', updateMode: 'ask' };
+// T-29ar-6: the routing master switch and its legacy name are LOWER-ONLY. Safe end = false (routing off, read by
+// routingOff below), schema default = true, so a project false always wins and anything else (true, or a non-boolean)
+// reads as the effective global: false only when the global is an explicit false. Keep in sync with config-load.mjs's SAFER_LOWER_ONLY.
+const SAFER_LOWER_ONLY = ['enableRouting', 'routing'];
 // CB-R1 class (R14; CoalBoard 0a4163b is the exemplar): an UNKNOWN value -- not in the key's enum,
 // or not even a string -- is neither clamped nor validated by "skip it": the shallow-merge result
 // was then the raw junk, so a cloned repo's junk beat a global off. Inside the clamp an unknown
@@ -265,6 +269,10 @@ function loadCfg() {
       const effectiveGlobal = g !== null ? g : SCHEMA_DEFAULT_ENUM[key];
       const p = enumLiteral(order, project[key]); // unknown project value = ABSENT
       merged[key] = p !== null && order.indexOf(p) <= order.indexOf(effectiveGlobal) ? p : effectiveGlobal; // project may not move PAST the effective global toward the weaker end
+    }
+    for (const key of SAFER_LOWER_ONLY) {
+      if (project[key] === undefined) continue;
+      merged[key] = !(project[key] === false || (global && global[key] === false)); // a project may turn routing off, never back on
     }
   }
   _cfg = merged;

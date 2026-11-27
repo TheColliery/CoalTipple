@@ -298,6 +298,13 @@ const SAFER_FALSE = ['fableConsent'];
 // ordering, so it substitutes as a no-op ceiling; `updateMode` genuinely gains protection
 // an absent global previously left wide open.
 const SCHEMA_DEFAULT_ENUM = { mode: 'auto', updateMode: 'ask' };
+// T-29ar-6: the routing master switch and its legacy name (the conductor honors `routing: false`) are LOWER-ONLY.
+// Safe end = false (routing off), schema default = true, so a project false always wins and anything else (true, or a
+// non-boolean) reads as the effective global, a canonical boolean: false only when the global is an explicit false.
+// Unlike fableConsent, the absent-global substitution breaks no persistence flow: SKILL.md, the commands and the conductor
+// never write a project `true` (commands/off.md and README name a project `false`); a project `true` is written only by
+// hand, with configure.mjs --project --enableRouting, and is now clamped like a clone's. Keep in sync with the conductor's SAFER_LOWER_ONLY.
+const SAFER_LOWER_ONLY = ['enableRouting', 'routing'];
 
 // DELIBERATE NON-EXTENSION, found + reasoned through this session (do not "fix" this into
 // matching SAFER_ENUM's absent-global substitution -- that was tried and it breaks a
@@ -334,6 +341,10 @@ function applySaferValueWins(merged, global, project) {
   }
   for (const key of SAFER_FALSE) {
     if (global[key] === false) merged[key] = false; // project cannot turn an EXPLICIT global false into true (absent global: see the comment above)
+  }
+  for (const key of SAFER_LOWER_ONLY) {
+    if (project[key] === undefined) continue;
+    merged[key] = !(project[key] === false || global[key] === false); // a project may turn routing off, never back on
   }
   return merged;
 }

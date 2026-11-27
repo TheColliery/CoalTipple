@@ -683,3 +683,27 @@ test('writeConfigAtomic (L-3a): any other rename error still throws at once, unr
     assert.equal(fs.readFileSync(configPath, 'utf8'), '{"mode":"auto"}\n');
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+// T-29ar-6 (hooks-safety.md §9): enableRouting and its legacy name `routing` are lower-only. Safe end = false (routing off),
+// schema default = true, so a project may turn routing OFF but never back ON past the user's global false.
+test('T-29ar-6: a project enableRouting:true cannot beat a global false -- routing stays off', () => {
+  const s = sandbox({ global: JSON.stringify({ enableRouting: false }), project: JSON.stringify({ enableRouting: true }) });
+  try { assert.equal(loadMergedConfig(s).enableRouting, false); } finally { cleanup(s); }
+});
+
+test('T-29ar-6: with no global file, a project enableRouting:false turns routing off', () => {
+  const s = sandbox({ project: JSON.stringify({ enableRouting: false }) });
+  try { assert.equal(loadMergedConfig(s).enableRouting, false); } finally { cleanup(s); }
+});
+
+test('T-29ar-6: the legacy routing key gets the same clamp -- a project routing:true cannot beat a global routing:false', () => {
+  const s = sandbox({ global: JSON.stringify({ routing: false }), project: JSON.stringify({ routing: true }) });
+  try { assert.equal(loadMergedConfig(s).routing, false); } finally { cleanup(s); }
+});
+
+test('T-29ar-6: a non-boolean project enableRouting never raises -- it reads as the effective global, as a canonical boolean', () => {
+  const off = sandbox({ global: JSON.stringify({ enableRouting: false }), project: JSON.stringify({ enableRouting: 'TRUE' }) });
+  try { assert.equal(loadMergedConfig(off).enableRouting, false); } finally { cleanup(off); }
+  const none = sandbox({ project: JSON.stringify({ enableRouting: 'yes' }) });
+  try { assert.equal(loadMergedConfig(none).enableRouting, true, 'no global: the schema default true, never the raw string'); } finally { cleanup(none); }
+});
