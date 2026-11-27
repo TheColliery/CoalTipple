@@ -17,7 +17,7 @@ A project config can turn routing off but can no longer turn it back on over a g
 ### Documentation
 - SKILL.md (Lock) and the `modelTiers` row of README.md say a pin reaches the stored ranking only when the ranking is rebuilt. After a pin is added, changed or removed, delete `ranking.json`; plain `install.mjs --reset` does not rebuild it.
 - README.md: the project-config override names the one exception (`enableRouting`). `--uninstall` also removes an empty `coaltipple/` folder that no record names.
-- SKILL.md: a near-limit input counts more tokens under a newer tokenizer, so leave headroom when picking the context variant. The effort ladder `low` to `max` is a named divergence from the platform's own levels, not a leak: a level the model lacks falls back to the highest supported level at or below it.
+- SKILL.md: a near-limit input counts more tokens under a newer tokenizer, so leave headroom when picking the context variant.
 - The inode-0 pointer in both conductor copies names `scripts/lib/config-bound.mjs`, where that comment lives.
 
 ### Changed
