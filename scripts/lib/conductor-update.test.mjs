@@ -333,3 +333,55 @@ test('16e row 16: commands/update.md, the updateMode help and both platform-conf
   assert.doesNotMatch(cfg, /orthogonal to routing/i);
   assert.doesNotMatch(help, /orthogonal to routing/i);
 });
+
+// T-29ar-7 (node/runtime.md section 5): the stamp's temp file is opened exclusively ('wx', a per-pid name), so a planted
+// link at the temp name is never written through. A HARD link is used because Windows makes one without privilege, and
+// writeFileSync on an existing hard link truncates and rewrites the file it shares with the outside path.
+test('T-29ar-7: a hard link planted at the OLD fixed temp name (update-check.tmp) never carries the stamp into the outside file', () => {
+  const home = mkHome();
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-upd-outside-'));
+  try {
+    const victim = path.join(outside, 'victim.txt');
+    fs.writeFileSync(victim, 'VICTIM-BYTES', 'utf8');
+    const stampDir = path.dirname(path.join(home, STAMP_REL));
+    fs.mkdirSync(stampDir, { recursive: true });
+    fs.linkSync(victim, path.join(stampDir, 'update-check.tmp'));
+    const r = run(SESSION, home);
+    assert.equal(r.status, 0);
+    assert.equal(r.stderr, '', 'no stderr (Phoenix #13)');
+    assert.equal(fs.readFileSync(victim, 'utf8'), 'VICTIM-BYTES', 'the outside file is untouched');
+  } finally { fs.rmSync(home, { recursive: true, force: true }); fs.rmSync(outside, { recursive: true, force: true }); }
+});
+
+// The NEW per-pid name: a child node plants the link at update-check.<its own pid>.tmp, then requires the hook in the same
+// process, so the planted name is exactly the one the hook will try. 'wx' refuses it: nothing is written, the hook stays silent.
+test('T-29ar-7: a hard link planted at the per-pid temp name is refused -- the outside file is untouched, exit 0, no stderr', () => {
+  const home = mkHome();
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'ct-upd-outside-'));
+  try {
+    const victim = path.join(outside, 'victim.txt');
+    fs.writeFileSync(victim, 'VICTIM-BYTES', 'utf8');
+    const stampDir = path.dirname(path.join(home, STAMP_REL));
+    fs.mkdirSync(stampDir, { recursive: true });
+    const plant = "const fs=require('fs'),p=require('path');fs.linkSync(process.env.CT_VICTIM,p.join(process.env.CT_STAMP_DIR,'update-check.'+process.pid+'.tmp'));require(process.env.CT_HOOK);";
+    const env = sandboxEnv(home, { CT_VICTIM: victim, CT_STAMP_DIR: stampDir, CT_HOOK: HOOK });
+    const r = spawnSync(process.execPath, ['-e', plant], { input: JSON.stringify(SESSION), cwd: home, env, encoding: 'utf8', timeout: 20000 });
+    assert.equal(r.status, 0);
+    assert.equal(r.stderr, '', 'no stderr (Phoenix #13)');
+    assert.equal(fs.readFileSync(victim, 'utf8'), 'VICTIM-BYTES', 'the outside file is untouched');
+    assert.notEqual(readStamp(home), todayISO(), 'a refused open writes no stamp');
+  } finally { fs.rmSync(home, { recursive: true, force: true }); fs.rmSync(outside, { recursive: true, force: true }); }
+});
+
+test('T-29ar-7: a rename that fails (a folder sits at the stamp path) leaves no temp file behind, exit 0, no stderr', () => {
+  const home = mkHome();
+  try {
+    const stampPath = path.join(home, STAMP_REL);
+    fs.mkdirSync(stampPath, { recursive: true }); // renameSync(temp, <a folder>) fails on every platform
+    const r = run(SESSION, home);
+    assert.equal(r.status, 0);
+    assert.equal(r.stderr, '', 'no stderr (Phoenix #13)');
+    const left = fs.readdirSync(path.dirname(stampPath)).filter((n) => n.endsWith('.tmp'));
+    assert.deepEqual(left, [], 'the failure branch removed the temp it created');
+  } finally { fs.rmSync(home, { recursive: true, force: true }); }
+});

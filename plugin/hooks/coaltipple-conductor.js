@@ -336,17 +336,26 @@ function updateDue(stamp, today, days) {
   return d >= days;
 }
 // Crash-safe write: temp sibling then atomic rename, so a kill mid-write can never
-// leave a half-written (unparseable) stamp.
+// leave a half-written (unparseable) stamp. T-29ar-7 (node/runtime.md section 5): the temp is a per-pid
+// name opened 'wx', which refuses an existing entry and so never writes through a planted link; a refused
+// open writes nothing (Phoenix #4). Only a temp THIS call created is removed on a failure branch.
 function writeUpdateStamp(today) {
+  let tmp = null;
   try {
     const dir = path.dirname(updateStampPath());
     try { fs.mkdirSync(dir, { recursive: true }); } catch {}
     const final = updateStampPath();
-    const tmp = final + '.tmp';
-    fs.writeFileSync(tmp, today, 'utf8');
+    const name = `${final}.${process.pid}.tmp`;
+    const fd = fs.openSync(name, 'wx');
+    tmp = name;
+    try { fs.writeFileSync(fd, today, 'utf8'); } finally { fs.closeSync(fd); }
     fs.renameSync(tmp, final);
+    tmp = null;
     try { fs.rmSync(oldUpdateStampPath(), { force: true }); } catch {}
-  } catch {}
+  } catch {
+  } finally {
+    if (tmp !== null) { try { fs.rmSync(tmp, { force: true }); } catch {} }
+  }
 }
 
 // The KIND-1 directive per updateMode. English (the agent localizes for the user,
