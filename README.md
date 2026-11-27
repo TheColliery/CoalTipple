@@ -195,7 +195,7 @@ The grader only decides the *starting* tier from the prompt text—everything pa
 
 ## ⚙️ Configure
 
-Everything is tunable in `.coaltipple.json`—a global `~/.claude/.coaltipple.json` overlaid per key by the first-found project config (`<gitroot>/.claude/coal/coaltipple.json` → `.agents/coal/coaltipple.json` → `.gemini/coal/coaltipple.json` → deprecated `.claude/.coaltipple.json` → deprecated `.coaltipple.json`; project wins), so you can **tune or shut off a globally-installed skill per project** (off-switch: `enableRouting: false`)—a skill you don't need in a given project stops loading (and burning tokens) there. Ships zero-config with optimal defaults. The high-impact keys:
+Everything is tunable in `.coaltipple.json`—a global `~/.claude/.coaltipple.json` overlaid per key by the first-found project config (`<gitroot>/.claude/coal/coaltipple.json` → `.agents/coal/coaltipple.json` → `.gemini/coal/coaltipple.json` → deprecated `.claude/.coaltipple.json` → deprecated `.coaltipple.json`; project wins, except that a project file can lower `enableRouting` but never raise it over a global `false`), so you can **tune or shut off a globally-installed skill per project** (off-switch: `enableRouting: false`)—a skill you don't need in a given project stops loading (and burning tokens) there. Ships zero-config with optimal defaults. The high-impact keys:
 
 | Key | Default | What it does |
 |---|---|---|
@@ -224,7 +224,7 @@ Full key reference: every key + default lives in [`scripts/lib/config-schema.mjs
 
 Removing the **plugin** (`claude plugin uninstall coaltipple@coaltipple`) removes the skill, the conductor hook, and the four `/coaltipple` commands—the platform's own plugin-cache install, gone in one step.
 
-Removing a **file-copy install** by deleting its `coaltipple/` skill directory removes only the skill. `node scripts/install.mjs --uninstall <agent>` removes that directory only when the install record names it; otherwise it keeps the folder and exits 1 (see Install). The conductor hook it seeded at `<gitroot>/.claude/.coaltipple/hooks/coaltipple-conductor.js` is a separate file outside that directory and is not touched—delete it by hand too if you wired it into your own settings.
+Removing a **file-copy install** by deleting its `coaltipple/` skill directory removes only the skill. `node scripts/install.mjs --uninstall <agent>` removes that directory when the install record names it, or when the folder is empty whether or not a record names it; a folder that holds files no record names is kept and the command exits 1 (see Install). The conductor hook it seeded at `<gitroot>/.claude/.coaltipple/hooks/coaltipple-conductor.js` is a separate file outside that directory and is not touched—delete it by hand too if you wired it into your own settings.
 
 Neither path removes, and neither ever has removed, your state—by design, so a reinstall recovers exactly where you left off:
 

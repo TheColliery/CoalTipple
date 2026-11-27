@@ -2,6 +2,27 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [1.8.16] - 2026-11-28
+
+a project file cannot lift a global routing off-switch
+
+A project config can turn routing off but can no longer turn it back on over a global `false`, on every read that decides it. The update stamp's temp file is opened exclusively, and the docs now state the pin, uninstall and headroom rules that the code already has.
+
+### Security
+- **`enableRouting` is quieten-only on every read.** A project `enableRouting: true` no longer beats a global `false`; a project `false` still turns routing off. The clamp covers the conductor hook (`loadCfg`), the config reader (`applySaferValueWins`) and the agent's own merge instruction (the Always section of SKILL.md). The deprecated `routing` key is clamped the same way. A user whose global `enableRouting` is `false` can no longer turn routing on for one project through a project file; change the global.
+
+### Fixed
+- **The update stamp's temp file is opened exclusively.** The temp is `<stamp>.<pid>.tmp`, opened `wx`, so a link planted at that name is refused and the stamp is never written through it. A run that cannot create its temp writes no stamp, and the nudge comes again next session. Residual: a temp left by a hard-killed run is never removed, because nothing proves it is ours.
+
+### Documentation
+- SKILL.md (Lock) and the `modelTiers` row of README.md say a pin reaches the stored ranking only when the ranking is rebuilt. After a pin is added, changed or removed, delete `ranking.json`; plain `install.mjs --reset` does not rebuild it.
+- README.md: the project-config override names the one exception (`enableRouting`). `--uninstall` also removes an empty `coaltipple/` folder that no record names.
+- SKILL.md: a near-limit input counts more tokens under a newer tokenizer, so leave headroom when picking the context variant. The effort ladder `low` to `max` is a named divergence from the platform's own levels, not a leak: a level the model lacks falls back to the highest supported level at or below it.
+- The inode-0 pointer in both conductor copies names `scripts/lib/config-bound.mjs`, where that comment lives.
+
+### Changed
+- CI: Node 26 joins the test matrix (Active LTS since 2026-10-28). Test 4 of the install-ownership suite runs its uninstall leg under its planted record entry.
+
 ## [1.8.15] - 2026-11-22
 
 a folder swap between walk and file check is a stated limit
