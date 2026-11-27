@@ -147,7 +147,7 @@ const MAX_CONFIG_BYTES = 1024 * 1024;
 // 29nn (T, the check-then-use window): the openChecked block below is scripts/lib/config-bound.mjs's, inlined verbatim (Phoenix #9: the hook cannot import; scripts/verify.mjs fails if the
 // two drift). A PROJECT file is read with its project root: a link in the folder chain, a link at the file, or a file that is not the one lstat checked (dev and ino compared with the
 // opened handle) is REFUSED and reads as ABSENT, silently (Phoenix #4 and #13): a file swapped at its own name is never read where the volume reports an inode. On a volume that reports inode 0 the dev/ino compare is skipped (the
-// openChecked comment below), so that leg is the old check by name. ONE further exception, a stated limit: a folder of the chain swapped for a link after the walk and before the file's
+// header comment of scripts/lib/config-bound.mjs), so that leg is the old check by name. ONE further exception, a stated limit: a folder of the chain swapped for a link after the walk and before the file's
 // lstat is still read (the comment at the open below; the config-bound.mjs header). The global file passes no root.
 // <identity-read-shared: openChecked> -- the conductor inlines this block verbatim; edit it here, then mirror it there
 function openChecked(file, root) {
