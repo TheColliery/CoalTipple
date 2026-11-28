@@ -4,7 +4,7 @@ All notable changes to CoalTipple are documented here. Format follows [Keep a Ch
 
 ## [1.8.17] - 2026-11-28
 
-a slash-invoked /coaltipple reads the config and checks the off-state first
+a slash-invoked /coaltipple is ordered to read the config and check the off-state first
 
 The skill now orders the agent to read the merged config and check the off-states before its first step, so a slash-invoked `/coaltipple` under `enableRouting: false` is told to read both config files and name the off-state before anything else. This is an instruction the agent follows, not a check the plugin enforces, and the measured figures below are the whole claim.
 
