@@ -6,7 +6,7 @@ All notable changes to CoalTipple are documented here. Format follows [Keep a Ch
 
 a project file cannot lift a global routing off-switch
 
-A project config can turn routing off but can no longer turn it back on over a global `false`, on every read that decides it. The update stamp's temp file is opened exclusively, and the docs now state the pin and uninstall rules the code already has, and the headroom rule.
+A project config can turn routing off but can no longer turn it back on over a global `false`, on every read that decides it. The update stamp's temp file is opened exclusively, and the docs now state the pin and uninstall rules the code already has, and the headroom rule. With hooks off, a slash-invoked `/coaltipple` may route although the project config sets `enableRouting: false`, because the agent can decide before it reads that config; this was present in 1.8.15 too, and it is tracked as T-29st-1.
 
 ### Security
 - **`enableRouting` is quieten-only on every read.** A project `enableRouting: true` no longer beats a global `false`; a project `false` still turns routing off. The clamp covers the conductor hook (`loadCfg`), the config reader (`applySaferValueWins`) and the agent's own merge instruction (the Always section of SKILL.md). The deprecated `routing` key is clamped the same way. A user whose global `enableRouting` is `false` can no longer turn routing on for one project through a project file; change the global.
