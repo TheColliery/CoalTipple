@@ -2,7 +2,23 @@
 
 All notable changes to CoalTipple are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
-## [1.8.16] - 2026-11-28
+## [1.8.17] - 2026-11-28
+
+a slash-invoked /coaltipple reads the config and checks the off-state first
+
+The skill now reads the merged config and checks the off-states before its first step, so the step tells a slash-invoked `/coaltipple` under `enableRouting: false` to read the project config and name the off-state before anything else; what the agent then does is measured below. This is an instruction the agent follows, not a check the plugin enforces, and the measured rate below is the whole claim.
+
+### Fixed
+- **The off-state is checked before the first step (T-29st-1).** A new paragraph at the top of SKILL.md, before the ledgers and Step 0, orders the agent to read the merged config and check `enableRouting` (and the deprecated `routing`), `mode: 'off'` and a `disableRouting` list holding `all`. It holds whether or not a hook line in the session said so, because with hooks off a slash-invoked skill receives no conductor line.
+
+### Changed
+- `/coaltipple update` reads `updateMode` and the routing off-states from the merged config before it chooses a section (`commands/update.md`).
+
+### Known limit (measured, not enforced)
+- The step is prose the agent reads. Measured on the text at `e899509` with 5 rounds each of haiku and sonnet (a point estimate, not a rate with an interval): under a project `enableRouting: false`, the leaf read the project config and named the off-state in 10 of 10 rounds with hooks off and in 9 of 10 with hooks on. The one miss, a haiku round with hooks on, read the global config and not the project file, then graded.
+- Most rounds then described a route they did not take. A stricter reading, that the leaf named no route at all, held in 3 of 10 rounds with hooks off and 2 of 10 with hooks on. A slash-invoked `/coaltipple` can therefore still describe a route under a project `enableRouting: false`.
+- The remaining miss is tracked as T-29sy-1 (the step should name both config files, not only the merged read).
+
 
 a project file cannot lift a global routing off-switch
 

@@ -189,7 +189,7 @@ Three real prompts, put through the shipped grader so nothing below is invented�
 
 The grader only decides the *starting* tier from the prompt text—everything past that point is `SKILL.md`'s behavior, not something this table observed: a delegate-down grade like the first row routes the mechanical bulk to a cheaper worker; the sensitive third row can still climb the staircase but never falls below its graded `heavy` start; and a climb that reaches the fable rung stops at a consent ask before it spends real money—unless `fableConsent` is already `true`.
 
-**Turn it off:** `/coaltipple off` disables routing for this session only. `enableRouting: false` in this project's `.coaltipple.json` disables it for the whole project.
+**Turn it off:** `/coaltipple off` disables routing for this session only. `enableRouting: false` in this project's `.coaltipple.json` disables it for the whole project. The skill reads the merged config and checks these off-states before its first step, including when you run `/coaltipple` yourself; that is an instruction the agent follows, not a plugin check (see the 1.8.17 entry in CHANGELOG.md).
 
 ---
 
