@@ -6,19 +6,20 @@ All notable changes to CoalTipple are documented here. Format follows [Keep a Ch
 
 a slash-invoked /coaltipple reads the config and checks the off-state first
 
-The skill now reads the merged config and checks the off-states before its first step, so the step tells a slash-invoked `/coaltipple` under `enableRouting: false` to read the project config and name the off-state before anything else; what the agent then does is measured below. This is an instruction the agent follows, not a check the plugin enforces, and the measured rate below is the whole claim.
+The skill now orders the agent to read the merged config and check the off-states before its first step, so a slash-invoked `/coaltipple` under `enableRouting: false` is told to read both config files and name the off-state before anything else. This is an instruction the agent follows, not a check the plugin enforces, and the measured figures below are the whole claim.
 
 ### Fixed
-- **The off-state is checked before the first step (T-29st-1).** A new paragraph at the top of SKILL.md, before the ledgers and Step 0, orders the agent to read the merged config and check `enableRouting` (and the deprecated `routing`), `mode: 'off'` and a `disableRouting` list holding `all`. It holds whether or not a hook line in the session said so, because with hooks off a slash-invoked skill receives no conductor line.
+- **The agent is ordered to check the off-state before the first step (T-29st-1).** A new paragraph at the top of SKILL.md, before the ledgers and Step 0, orders the agent to read the global `.coaltipple.json` and the first-found project config, then check `enableRouting` (and the deprecated `routing`), `mode: 'off'` and a `disableRouting` list holding `all`. It holds whether or not a hook line in the session said so, because with hooks off a slash-invoked skill receives no conductor line. The step names both files, so T-29sy-1 is closed by this release.
 
 ### Changed
-- `/coaltipple update` reads `updateMode` and the routing off-states from the merged config before it chooses a section (`commands/update.md`).
+- `/coaltipple update` is ordered to read `updateMode` and the routing off-states from both config files before it chooses a section (`commands/update.md`). A project value may only lower `updateMode`, never raise it; with a routing off-state it says so and stops.
 
 ### Known limit (measured, not enforced)
-- The step is prose the agent reads. Measured on the text at `e899509` with 5 rounds each of haiku and sonnet (a point estimate, not a rate with an interval): under a project `enableRouting: false`, the leaf read the project config and named the off-state in 10 of 10 rounds with hooks off and in 9 of 10 with hooks on. The one miss, a haiku round with hooks on, read the global config and not the project file, then graded.
-- Most rounds then described a route they did not take. A stricter reading, that the leaf named no route at all, held in 3 of 10 rounds with hooks off and 2 of 10 with hooks on. A slash-invoked `/coaltipple` can therefore still describe a route under a project `enableRouting: false`.
-- The remaining miss is tracked as T-29sy-1 (the step should name both config files, not only the merged read).
+- The step is prose the agent reads. Re-walked on the text that ships (`7a29f96`), with 5 rounds each of haiku and sonnet per cell (a point estimate, not a rate with an interval): under a project `enableRouting: false`, a slash-invoked `/coaltipple` read both config files and named the off-state in 10 of 10 rounds with hooks off, and in 10 of 10 with hooks on.
+- The stricter reading, that the leaf named no route at all, not even one it would take if routing were on, held in 4 of 10 rounds with hooks off and 3 of 10 with hooks on. A leaf may still describe a route it does not take.
+- The earlier text (`e899509`, which named the merged config only) measured 10 of 10 with hooks off and 9 of 10 with hooks on. Its one miss was a haiku round with hooks on that read the global file and not the project file. That figure belongs to the earlier text.
 
+## [1.8.16] - 2026-11-28
 
 a project file cannot lift a global routing off-switch
 
