@@ -18,7 +18,8 @@ const FILES = ['skills/coaltipple/SKILL.md', 'plugin/skills/coaltipple/SKILL.md'
 const READ = /\b(read|re-read|open|load|check)\b/i;
 const CONFIG = /\bconfig\b/i;
 const OFF = /\boff-state\b|\benableRouting\b|\bmode:\s*'?off|\brouting (is )?off\b/i;
-const ORDER = /\bbefore\b|\bfirst\b/i;
+// `\bfirst\b` alone matches "first-found" (a hyphen is a word boundary), the cascade word all over SKILL.md: not an order (29sy F-4).
+const ORDER = /\bbefore\b|\bfirst\b(?!-)/i;
 
 // The sentences before `## Step 1` (frontmatter and table rows left out) that carry all four parts at once.
 export function offStateFirstSentences(text) {
@@ -39,8 +40,9 @@ for (const f of FILES) {
   });
 }
 
-test('the check reads a table row as no order, and a prose sentence after Step 1 as too late', () => {
+test('the check reads a table row as no order, a "first-found" cascade sentence as no order, and a prose sentence after Step 1 as too late', () => {
   const head = '---\nname: x\n---\n';
+  assert.deepEqual(offStateFirstSentences(`${head}Read the global config overlaid by the first-found project config; enableRouting is one key.\n\n## Step 1\n`), []);
   assert.deepEqual(offStateFirstSentences(`${head}| read | the merged config, check routing off first |\n\n## Step 1\n`), []);
   assert.deepEqual(offStateFirstSentences(`${head}Intro.\n\n## Step 1\n\nFirst read the config and check the off-state.\n`), []);
   assert.equal(offStateFirstSentences(`${head}First read the config and check the off-state.\n\n## Step 1\n`).length, 1);

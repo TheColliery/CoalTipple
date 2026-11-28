@@ -4,7 +4,7 @@ description: CoalTipple self-update — check for a newer CoalTipple version and
 
 CoalTipple keeps itself current through the conductor (session start), gated by `.coaltipple.json` `updateMode` (ask | auto | remind | off, default ask) and throttled to once per `updateCheckDays` (default 14). Self-update runs only while routing is on: routing off (`enableRouting: false`, `mode: "off"` or `disableRouting: ["all"]`) silences the whole conductor, self-update included, and no stamp is written; with routing on, its own off-switch is `updateMode: off`. This command is the agent procedure each mode triggers — and a manual entry point. Always answer in the user's language; offer choices via your question tool; never spend tokens or change config without a chosen option.
 
-Before choosing a section below, read `updateMode` and the routing off-states named above from the merged `.coaltipple.json` (the global file overlaid by the project file); with no `updateMode` set in either, the mode is **ask**.
+Before choosing a section below, read `updateMode` and the routing off-states named above from both the global `.coaltipple.json` and the project one: a project value may only lower `updateMode` below the global's (toward `off`: `auto`, `ask`, `remind`, `off`), or below `ask` when the global sets none, never raise it, and with none set the mode is **ask**; if a routing off-state holds, routing is off and there is no update activity: say so and stop.
 
 **ask** — present the 3-way choice via your question tool:
 - **auto** — the agent web-checks on a ~`updateCheckDays` cadence and offers updates (~1-2K tokens/check).
