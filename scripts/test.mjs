@@ -68,6 +68,7 @@ const TESTS = [
   'scripts/front-door-links.test.mjs',
   'scripts/lib/wave-run.test.mjs',
   'scripts/lib/test-suite.test.mjs',
+  'scripts/lib/skill-offstate-first.test.mjs',
 ];
 
 async function main() {
